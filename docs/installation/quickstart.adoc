@@ -409,8 +409,8 @@ kubectl get workloadnetworkpolicy deployment-http-client-egress -o yaml | grep v
     denyingPolicyName: deployment-http-client-egress
     denyingPolicyNamespace: default
     dest:
-      namespace: '-' # todo!: fix this
-      ownerName: pvt
+      namespace: default
+      ownerName: http-server-5658b848f-*
     direction: Egress
     dstPort: 18081
     id: 105
