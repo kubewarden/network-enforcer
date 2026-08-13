@@ -248,6 +248,7 @@ func run(logger *slog.Logger, conf *config) error {
 	istioScraper := scraper.NewIstioScraper(scraper.IstioScraperConfig{
 		ViolationBuffer:      monitorViolationBuffer,
 		EnqueueLearningEvent: learningReconciler.GetEnqueueFunc(),
+		ViolationOtelLogger:  eventLogger,
 		Logger:               logger.With("component", "istio-scraper"),
 		OTLPConf: scraper.OTLPConf{
 			Port: conf.otlpPort,

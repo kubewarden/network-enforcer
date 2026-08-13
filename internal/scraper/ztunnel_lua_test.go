@@ -74,6 +74,94 @@ func TestLuaScript(t *testing.T) {
 			expectedOtelEvent: nil,
 		},
 		{
+			// Enforcement (protect mode) rejection with an explicit DENY policy.
+			// The policy name is present.
+			// {"level":"info","time":"2026-08-03T15:39:07.536444Z","scope":"ztunnel::state","message":"deny policy match","policy":"default/deny-http-server-protect","proxy":{"wl":"default/http-server-6cbcc86f5d-lhq82"},"inbound":{"id":"86c37af8d376fcc847c48d4730137d42","peer":"10.244.0.5:49084"}}
+			name: "violation_deny_policy",
+			record: map[string]any{
+				"message": "deny policy match",
+				"policy":  "default/deny-http-server-protect",
+				"proxy": map[string]any{
+					"wl": "default/http-server-6cbcc86f5d-lhq82",
+				},
+				"inbound": map[string]any{
+					"id":   "86c37af8d376fcc847c48d4730137d42",
+					"peer": "10.244.0.5:49084",
+				},
+			},
+			expectedOtelEvent: map[string]string{
+				eventTypeKey:         eventTypeViolation,
+				dstNamespacedNameKey: "default/http-server-6cbcc86f5d-lhq82",
+				policyKey:            "default/deny-http-server-protect",
+				srcAddrKey:           "10.244.0.5:49084",
+				bodyKey:              eventTypeViolation,
+			},
+		},
+		{
+			// Enforcement (protect mode) ALLOW-miss: no policy explicitly denies
+			// the traffic, so the record is produced without a policy name.
+			// {"level":"info","time":"2026-08-03T15:40:53.359711Z","scope":"ztunnel::state","message":"no allow policies matched","proxy":{"wl":"default/http-server-6cbcc86f5d-lhq82"},"inbound":{"id":"d1622760126925234857353d59b402dc","peer":"10.244.0.5:52814"}}
+			name: "violation_allow_miss",
+			record: map[string]any{
+				"message": "no allow policies matched",
+				"proxy": map[string]any{
+					"wl": "default/http-server-6cbcc86f5d-lhq82",
+				},
+				"inbound": map[string]any{
+					"id":   "d1622760126925234857353d59b402dc",
+					"peer": "10.244.0.5:52814",
+				},
+			},
+			expectedOtelEvent: map[string]string{
+				eventTypeKey:         eventTypeViolation,
+				dstNamespacedNameKey: "default/http-server-6cbcc86f5d-lhq82",
+				policyKey:            "",
+				srcAddrKey:           "10.244.0.5:52814",
+				bodyKey:              eventTypeViolation,
+			},
+		},
+		{
+			// "no allow policies, allow" means the connection is allowed:
+			// not a violation.
+			name: "violation_allowed_flow_not_recorded",
+			record: map[string]any{
+				"message": "no allow policies, allow",
+				"proxy": map[string]any{
+					"wl": "default/http-server-6cbcc86f5d-lhq82",
+				},
+				"inbound": map[string]any{
+					"id":   "86c37af8d376fcc847c48d4730137d42",
+					"peer": "10.244.0.5:49084",
+				},
+			},
+			expectedOtelEvent: nil,
+		},
+		{
+			// "allow policy match" means the connection is allowed: not a
+			// violation, even if a policy is present.
+			name: "violation_allow_policy_match_not_recorded",
+			record: map[string]any{
+				"message": "allow policy match",
+				"policy":  "default/allow-http-server-protect",
+				"proxy": map[string]any{
+					"wl": "default/http-server-6cbcc86f5d-lhq82",
+				},
+				"inbound": map[string]any{
+					"id":   "86c37af8d376fcc847c48d4730137d42",
+					"peer": "10.244.0.5:49084",
+				},
+			},
+			expectedOtelEvent: nil,
+		},
+		{
+			name: "violation_wrong_trigger_message",
+			record: map[string]any{
+				// the message is not an exact rejection trigger
+				"message": "something...deny policy match",
+			},
+			expectedOtelEvent: nil,
+		},
+		{
 			// {"level":"info","time":"2026-08-10T08:19:58.950669Z","scope":"access","message":"connection complete","src.addr":"10.244.0.6:57866","src.workload":"http-client-7fc85576c4-h95l5","src.namespace":"default","src.identity":"spiffe://cluster.local/ns/default/sa/http-client-sa","dst.addr":"10.244.0.7:15008","dst.hbone_addr":"10.244.0.7:18080","dst.service":"http-service.default.svc.cluster.local","dst.workload":"http-server-7bbf596dd9-4rgdc","dst.namespace":"default","dst.identity":"spiffe://cluster.local/ns/default/sa/http-server-sa","direction":"outbound","bytes_sent":16,"bytes_recv":16,"duration":"1006ms"}
 			name: "learn_outbound",
 			record: map[string]any{
