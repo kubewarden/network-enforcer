@@ -147,11 +147,16 @@ Print the otel environment variable settings.
 {{- end }}
 
 {{/*
-Print the otel volumeMounts settings (only relevant for the external strategy).
+Print the otel volumeMounts settings.
 The strategy gate mirrors network-enforcer.otel.config.volumes so mounts and
 volumes are always emitted (or omitted) as a pair.
 */}}
 {{- define "network-enforcer.otel.config.volumeMounts" }}
+{{- if eq .Values.telemetry.collectorStrategy "default" }}
+- name: otel-collector-ca-cert
+  mountPath: /etc/network-enforcer/certs
+  readOnly: true
+{{- end }}
 {{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
 - name: otel-collector-ca-cert
   mountPath: /tmp/otel-collector-certs
@@ -165,9 +170,14 @@ volumes are always emitted (or omitted) as a pair.
 {{- end }}
 
 {{/*
-Print the otel volumes settings (only relevant for the external strategy).
+Print the otel volumes settings.
 */}}
 {{- define "network-enforcer.otel.config.volumes" }}
+{{- if eq .Values.telemetry.collectorStrategy "default" }}
+- name: otel-collector-ca-cert
+  secret:
+    secretName: {{ include "network-enforcer.caSecretName" . }}
+{{- end }}
 {{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
 - name: otel-collector-ca-cert
   secret:

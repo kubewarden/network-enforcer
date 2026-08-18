@@ -48,6 +48,18 @@ sharedDefaultAsserts: &sharedDefaultAsserts
       content:
         name: OTEL_EXPORTER_OTLP_CERTIFICATE
         value: /etc/network-enforcer/certs/ca.crt
+  - contains:
+      path: spec.template.spec.containers[0].volumeMounts
+      content:
+        name: otel-collector-ca-cert
+        mountPath: /etc/network-enforcer/certs
+        readOnly: true
+  - contains:
+      path: spec.template.spec.volumes
+      content:
+        name: otel-collector-ca-cert
+        secret:
+          secretName: my-release-network-enforcer-ca
 
 sharedExternalAsserts: &sharedExternalAsserts
   - contains:

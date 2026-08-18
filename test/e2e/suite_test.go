@@ -127,6 +127,9 @@ func installNetEnforcerChart() env.Func {
 			helm.WithWait(),
 			helm.WithTimeout(defaultHelmTimeout.String()),
 		}
+		if !testCfg.HasE2EDependency("cert-manager") {
+			helmOpts = append(helmOpts, helm.WithArgs("--set", "telemetry.collectorStrategy=none"))
+		}
 
 		logger.InfoContext(ctx, "🛠️ installing network enforcer chart", "releaseName", testCfg.releaseName)
 		if err := manager.RunInstall(helmOpts...); err != nil {
@@ -144,6 +147,16 @@ func installNetEnforcerChart() env.Func {
 			wait.WithTimeout(defaultOperationTimeout),
 		); err != nil {
 			return ctx, fmt.Errorf("wait network enforcer deployment ready: %w", err)
+		}
+
+		if testCfg.HasE2EDependency("cert-manager") {
+			logger.InfoContext(ctx, "⏲️ waiting for default otel collector")
+			if err = wait.For(
+				conditions.New(r).DeploymentAvailable("network-enforcer-otel-collector", testCfg.releaseNS),
+				wait.WithTimeout(defaultOperationTimeout),
+			); err != nil {
+				return ctx, fmt.Errorf("wait default otel collector deployment ready: %w", err)
+			}
 		}
 
 		// the istio-fluent-bit DaemonSet tails ztunnel access logs and forwards

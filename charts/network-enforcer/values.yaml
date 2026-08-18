@@ -50,8 +50,7 @@ kubernetesClusterDomain: cluster.local
 imagePullSecrets: []
 
 telemetry:
-  # todo!: restore default otel collector
-  collectorStrategy: "none" # @schema enum: [none, default, external]
+  collectorStrategy: "default" # @schema enum: [none, default, external]
   defaultCollector:
     image:
       repository: otel/opentelemetry-collector-contrib
