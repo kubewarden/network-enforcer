@@ -71,18 +71,18 @@ tests:
           content: --provider-endpoint=goldmane.calico-system.svc:7443
       - notExists:
           path: spec.template.spec.containers[0].ports
-      - equal:
-          path: spec.template.spec.containers[0].volumeMounts[0].name
-          value: goldmane-certs
-      - equal:
-          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
-          value: /etc/goldmane/certs
-      - equal:
-          path: spec.template.spec.volumes[0].name
-          value: goldmane-certs
-      - equal:
-          path: spec.template.spec.volumes[0].secret.secretName
-          value: net-enf-goldmane-client-certs
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: goldmane-certs
+            mountPath: /etc/goldmane/certs
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: goldmane-certs
+            secret:
+              secretName: net-enf-goldmane-client-certs
 
   - it: "uses calico custom endpoint override"
     set:
