@@ -40,7 +40,7 @@ func TestLuaScript(t *testing.T) {
 				dstNamespacedNameKey: "default/http-server-7bbf596dd9-8gs65",
 				policyKey:            "default/deny-http-server-monitor",
 				srcAddrKey:           "10.244.0.9:46266",
-				bodyKey:              eventTypeMonitor,
+				messageKey:           "dry-run: deny policy match",
 			},
 		},
 		{
@@ -62,7 +62,7 @@ func TestLuaScript(t *testing.T) {
 				dstNamespacedNameKey: "default/http-server-7bbf596dd9-8gs65",
 				policyKey:            "",
 				srcAddrKey:           "10.244.0.9:46266",
-				bodyKey:              eventTypeMonitor,
+				messageKey:           "dry-run: no allow policies match",
 			},
 		},
 		{
@@ -120,7 +120,7 @@ func TestLuaScript(t *testing.T) {
 				dstNamespacedNameKey: "default/http-server-7bbf596dd9-8gs65",
 				policyKey:            "default/deny-http-server",
 				srcAddrKey:           "10.244.0.9:46266",
-				bodyKey:              eventTypeProtect,
+				messageKey:           "deny policy match",
 			},
 		},
 		{
@@ -143,7 +143,7 @@ func TestLuaScript(t *testing.T) {
 				dstNamespacedNameKey: "default/http-server-7bbf596dd9-8gs65",
 				policyKey:            "",
 				srcAddrKey:           "10.244.0.9:46266",
-				bodyKey:              eventTypeProtect,
+				messageKey:           "no allow policies matched",
 			},
 		},
 		{
@@ -204,7 +204,7 @@ func TestLuaScript(t *testing.T) {
 				dstNamespaceKey: "default",
 				dstPortKey:      "18080",
 				srcIdentityKey:  "spiffe://cluster.local/ns/default/sa/http-client-sa",
-				bodyKey:         eventTypeLearn,
+				messageKey:      learningMessage,
 			},
 		},
 		{
