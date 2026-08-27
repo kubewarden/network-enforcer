@@ -184,8 +184,6 @@ func (r *WorkloadNetworkPolicyStatusSync) correlateViolationsToWNPs(
 	result := make(map[types.NamespacedName][]securityv1alpha1.ViolationRecord)
 
 	for _, obs := range scraped {
-		// todo!: rework all this violation attribution logic, it shouldn't be necessary,
-		// each scraper should populate DenyingPolicyNamespace/Name for all observations
 		wnpKey, ok := r.wnpKeyForViolation(obs, wnpByKey)
 		if !ok {
 			continue
@@ -228,8 +226,7 @@ func (r *WorkloadNetworkPolicyStatusSync) wnpKeyForViolation(
 	wnpByKey map[types.NamespacedName]*securityv1alpha1.WorkloadNetworkPolicy,
 ) (types.NamespacedName, bool) {
 	if obs.DenyingPolicyName == "" {
-		// Uncorrelatable: neither a denying policy (DENY) nor a selector-matched
-		// owning WNP (ALLOW-miss) was resolved for this observation.
+		// The scraper was not able to correlate the observation, we cannot do anything here.
 		return types.NamespacedName{}, false
 	}
 
