@@ -116,8 +116,11 @@ keys, mounted via cert-manager CSI.
 CA certificate path used by the controller when sending OTLP logs to the
 shipped in-cluster collector.
 */}}
+{{- define "network-enforcer.otel.caCertDir" -}}
+/tmp/otel-collector-certs
+{{- end -}}
 {{- define "network-enforcer.otel.caCertPath" -}}
-/etc/network-enforcer/certs/ca.crt
+{{ include "network-enforcer.otel.caCertDir" . }}/ca.crt
 {{- end -}}
 
 
@@ -139,7 +142,7 @@ Print the otel environment variable settings.
   value: {{ .Values.telemetry.externalCollector.protocol }}
 {{- if .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
 - name: OTEL_EXPORTER_OTLP_CERTIFICATE
-  value: /tmp/otel-collector-certs/ca.crt
+  value: {{ include "network-enforcer.otel.caCertPath" . }}
 {{- else }}
 - name: OTEL_EXPORTER_OTLP_INSECURE
   value: "true"
@@ -161,12 +164,12 @@ volumes are always emitted (or omitted) as a pair.
 {{- define "network-enforcer.otel.config.volumeMounts" }}
 {{- if eq .Values.telemetry.collectorStrategy "default" }}
 - name: otel-collector-ca-cert
-  mountPath: /etc/network-enforcer/certs
+  mountPath: {{ include "network-enforcer.otel.caCertDir" . }}
   readOnly: true
 {{- end }}
 {{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
 - name: otel-collector-ca-cert
-  mountPath: /tmp/otel-collector-certs
+  mountPath: {{ include "network-enforcer.otel.caCertDir" . }}
   readOnly: true
 {{- end }}
 {{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorClientCertificateSecret }}
@@ -184,6 +187,9 @@ Print the otel volumes settings.
 - name: otel-collector-ca-cert
   secret:
     secretName: {{ include "network-enforcer.caSecretName" . }}
+    items:
+    - key: ca.crt
+      path: ca.crt
 {{- end }}
 {{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
 - name: otel-collector-ca-cert
