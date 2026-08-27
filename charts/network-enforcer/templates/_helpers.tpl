@@ -162,12 +162,7 @@ The strategy gate mirrors network-enforcer.otel.config.volumes so mounts and
 volumes are always emitted (or omitted) as a pair.
 */}}
 {{- define "network-enforcer.otel.config.volumeMounts" }}
-{{- if eq .Values.telemetry.collectorStrategy "default" }}
-- name: otel-collector-ca-cert
-  mountPath: {{ include "network-enforcer.otel.caCertDir" . }}
-  readOnly: true
-{{- end }}
-{{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
+{{- if or (eq .Values.telemetry.collectorStrategy "default") (and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorCertificateSecret) }}
 - name: otel-collector-ca-cert
   mountPath: {{ include "network-enforcer.otel.caCertDir" . }}
   readOnly: true
