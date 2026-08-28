@@ -31,6 +31,9 @@ spec:
       containers:
       - args:
         - --log-level={{ .Values.controller.logLevel }}
+        - --flow-dumper-enabled={{ .Values.controller.flowDumper.enabled }}
+        - --flow-dumper-port={{ .Values.controller.flowDumper.port }}
+        - --flow-dumper-buffer-size={{ .Values.controller.flowDumper.bufferSize }}
         {{- toYaml .Values.controller.args | nindent 8 }}
         - --provider-name={{ .Values.controller.provider.name }}
         - --provider-endpoint={{ include "network-enforcer.controller.providerEndpoint" . }}
@@ -48,11 +51,18 @@ spec:
           | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
         name: manager
-        {{- if eq .Values.controller.provider.name "istio" }}
+        {{- if or (eq .Values.controller.provider.name "istio") .Values.controller.flowDumper.enabled }}
         ports:
+        {{- if eq .Values.controller.provider.name "istio" }}
         - containerPort: {{ include "network-enforcer.controller.istioPort" . }}
           name: otlp-grpc
           protocol: TCP
+        {{- end }}
+        {{- if .Values.controller.flowDumper.enabled }}
+        - containerPort: {{ .Values.controller.flowDumper.port }}
+          name: flow-dumper
+          protocol: TCP
+        {{- end }}
         {{- end }}
         livenessProbe:
           httpGet:

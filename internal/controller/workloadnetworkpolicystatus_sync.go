@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
+	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
 	"github.com/rancher-sandbox/network-enforcer/internal/types/loglevel"
 	"github.com/rancher-sandbox/network-enforcer/internal/violation"
 )
@@ -34,14 +35,14 @@ type WorkloadNetworkPolicyStatusSync struct {
 	updateInterval  time.Duration
 	eventLogger     otellog.Logger
 	logger          logr.Logger
-	violationBuffer *violation.Buffer
+	violationBuffer *ringbuf.Buffer[violation.Observation]
 }
 
 type WorkloadNetworkPolicyStatusSyncConfig struct {
 	UpdateInterval time.Duration
 	// EventLogger for OTLP policy_violation_acknowledged; nil = disabled.
 	EventLogger     otellog.Logger
-	ViolationBuffer *violation.Buffer
+	ViolationBuffer *ringbuf.Buffer[violation.Observation]
 }
 
 func NewWorkloadNetworkPolicyStatusSync(

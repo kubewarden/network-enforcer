@@ -1,4 +1,4 @@
-package violation
+package ringbuf
 
 import (
 	"fmt"
@@ -6,15 +6,16 @@ import (
 	"time"
 
 	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
+	"github.com/rancher-sandbox/network-enforcer/internal/violation"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestBufferRecordAndDrain(t *testing.T) {
-	buf := NewBuffer()
+	buf := New[violation.Observation]()
 
-	buf.Record(Observation{
+	buf.Record(violation.Observation{
 		ViolationInfo: securityv1alpha1.ViolationInfo{
 			Source:                 securityv1alpha1.WorkloadRef{Namespace: "ns1", OwnerName: "pod1"},
 			Dest:                   securityv1alpha1.WorkloadRef{Namespace: "ns2", OwnerName: "svc1"},
@@ -37,11 +38,12 @@ func TestBufferRecordAndDrain(t *testing.T) {
 }
 
 func TestBufferOverwritesOldest(t *testing.T) {
-	buf := NewBuffer()
+	size := 100
+	buf := NewWithSize[violation.Observation](size)
 
 	// Fill the buffer to capacity.
-	for i := range MaxBufferEntries {
-		dropped := buf.Record(Observation{
+	for i := range size {
+		dropped := buf.Record(violation.Observation{
 			ViolationInfo: securityv1alpha1.ViolationInfo{
 				Source:  securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
 				Action:  securityv1alpha1.WorkloadNetworkPolicyModeProtect,
@@ -52,7 +54,7 @@ func TestBufferOverwritesOldest(t *testing.T) {
 	}
 
 	// Add one more — should overwrite the oldest (pod-0).
-	dropped := buf.Record(Observation{
+	dropped := buf.Record(violation.Observation{
 		ViolationInfo: securityv1alpha1.ViolationInfo{
 			Source:  securityv1alpha1.WorkloadRef{OwnerName: "pod-overflow"},
 			Action:  securityv1alpha1.WorkloadNetworkPolicyModeProtect,
@@ -62,7 +64,7 @@ func TestBufferOverwritesOldest(t *testing.T) {
 	require.True(t, dropped, "should report a drop when buffer overflows")
 
 	records := buf.Drain()
-	require.Len(t, records, MaxBufferEntries)
+	require.Len(t, records, size)
 
 	// Newest should be pod-overflow (first in newest-to-oldest order).
 	require.Equal(t, "pod-overflow", records[0].Source.OwnerName)
@@ -71,11 +73,11 @@ func TestBufferOverwritesOldest(t *testing.T) {
 }
 
 func TestBufferDrainReverseChronologicalOrder(t *testing.T) {
-	buf := NewBuffer()
+	buf := New[violation.Observation]()
 
 	baseTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := range 5 {
-		buf.Record(Observation{
+		buf.Record(violation.Observation{
 			ViolationInfo: securityv1alpha1.ViolationInfo{
 				Timestamp: metav1.NewTime(baseTime.Add(time.Duration(i) * time.Second)),
 				Source:    securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
@@ -92,12 +94,13 @@ func TestBufferDrainReverseChronologicalOrder(t *testing.T) {
 }
 
 func TestBufferDrainAfterOverflow(t *testing.T) {
-	buf := NewBuffer()
+	size := 80
+	buf := NewWithSize[violation.Observation](size)
 
-	totalRecords := MaxBufferEntries + 50
+	totalRecords := size + 50
 
 	for i := range totalRecords {
-		buf.Record(Observation{
+		buf.Record(violation.Observation{
 			ViolationInfo: securityv1alpha1.ViolationInfo{
 				Source: securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
 				Action: securityv1alpha1.WorkloadNetworkPolicyModeProtect,
@@ -106,7 +109,7 @@ func TestBufferDrainAfterOverflow(t *testing.T) {
 	}
 
 	records := buf.Drain()
-	require.Len(t, records, MaxBufferEntries)
+	require.Len(t, records, size)
 
 	// The oldest 50 entries (pod-0 through pod-49) were overwritten.
 	// Records should be in reverse chronological order: pod-(totalRecords-1), ..., pod-50.
@@ -125,14 +128,14 @@ func TestBufferDrainAfterOverflow(t *testing.T) {
 }
 
 func TestConcurrentRecordAndDrain(_ *testing.T) {
-	buf := NewBuffer()
+	buf := New[violation.Observation]()
 
 	done := make(chan struct{})
 
 	// Concurrently record.
 	go func() {
 		for i := range 1000 {
-			buf.Record(Observation{
+			buf.Record(violation.Observation{
 				ViolationInfo: securityv1alpha1.ViolationInfo{
 					Source: securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
 					Action: securityv1alpha1.WorkloadNetworkPolicyModeProtect,

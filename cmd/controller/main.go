@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -44,7 +45,9 @@ import (
 	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
 	"github.com/rancher-sandbox/network-enforcer/internal/controller"
 	"github.com/rancher-sandbox/network-enforcer/internal/events"
+	"github.com/rancher-sandbox/network-enforcer/internal/flowdumper"
 	"github.com/rancher-sandbox/network-enforcer/internal/istio"
+	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
 	"github.com/rancher-sandbox/network-enforcer/internal/scraper"
 	"github.com/rancher-sandbox/network-enforcer/internal/types"
 	"github.com/rancher-sandbox/network-enforcer/internal/violation"
@@ -87,6 +90,7 @@ type config struct {
 	enableHTTP2          bool
 	logLevel             string
 	provider             providerConfig
+	flowDumper           flowdumper.Config
 	otel                 otelConf
 	tlsOpts              []func(*tls.Config)
 	wnpStatusSyncConfig  controller.WorkloadNetworkPolicyStatusSyncConfig
@@ -106,7 +110,8 @@ func setupProviderScraper(
 	mgr manager.Manager,
 	conf *config,
 	learningEnqueueFunc func(types.LearningEvent) bool,
-	violationBuffer *violation.Buffer,
+	violationBuffer *ringbuf.Buffer[violation.Observation],
+	flowDumperBuffer *ringbuf.Buffer[json.RawMessage],
 	eventLogger otellog.Logger,
 ) error {
 	providerName := types.Provider(conf.provider.name)
@@ -124,6 +129,7 @@ func setupProviderScraper(
 			Logger:               logger.With("component", "istio-scraper"),
 			OtelPort:             otelPort,
 			Enricher:             istio.NewEnricher(mgr.GetClient()),
+			FlowDumperBuffer:     flowDumperBuffer,
 		})
 		if err = mgr.Add(istioScraper); err != nil {
 			return fmt.Errorf("unable to add istio scraper to manager: %w", err)
@@ -136,6 +142,7 @@ func setupProviderScraper(
 			Endpoint:             conf.provider.endpoint,
 			EnqueueLearningEvent: learningEnqueueFunc,
 			ViolationBuffer:      violationBuffer,
+			FlowDumperBuffer:     flowDumperBuffer,
 		})
 		if err := mgr.Add(ciliumScraper); err != nil {
 			return fmt.Errorf("unable to add cilium scraper to manager: %w", err)
@@ -148,6 +155,7 @@ func setupProviderScraper(
 			Logger:               logger.With("component", "calico-scraper"),
 			Client:               mgr.GetClient(),
 			ViolationBuffer:      violationBuffer,
+			FlowDumperBuffer:     flowDumperBuffer,
 		})
 		if err := mgr.Add(calicoScraper); err != nil {
 			return fmt.Errorf("unable to add calico scraper to manager: %w", err)
@@ -226,6 +234,19 @@ func setupOtelLogExporter(
 	return eventLogger, nil
 }
 
+func setupFlowDumper(
+	logger *slog.Logger,
+	mgr manager.Manager,
+	conf *flowdumper.Config,
+) (*ringbuf.Buffer[json.RawMessage], error) {
+	flowDumperBuffer := ringbuf.NewWithSize[json.RawMessage](conf.BufferSize)
+	flowDumper := flowdumper.New(flowDumperBuffer, logger, conf.Port)
+	if err := mgr.Add(flowDumper); err != nil {
+		return nil, fmt.Errorf("unable to add flow dumper to manager: %w", err)
+	}
+	return flowDumperBuffer, nil
+}
+
 func run(logger *slog.Logger, conf *config) error {
 	ctx := ctrl.SetupSignalHandler()
 
@@ -263,7 +284,20 @@ func run(logger *slog.Logger, conf *config) error {
 	}
 
 	// Create the violation ring buffer shared
-	violationBuffer := violation.NewBuffer()
+	violationBuffer := ringbuf.New[violation.Observation]()
+
+	// Configure flowDumper if necessary
+	var flowDumperBuffer *ringbuf.Buffer[json.RawMessage]
+	flowDumperConf := conf.flowDumper
+	if flowDumperConf.Enabled {
+		logger.InfoContext(ctx, "Flow dumper enabled",
+			"bufferSize", flowDumperConf.BufferSize,
+			"port", flowDumperConf.Port,
+		)
+		if flowDumperBuffer, err = setupFlowDumper(logger, mgr, &flowDumperConf); err != nil {
+			return err
+		}
+	}
 
 	learningReconciler := controller.NewLearningReconciler(mgr.GetClient(), violationBuffer)
 	if err = learningReconciler.SetupWithManager(mgr); err != nil {
@@ -276,6 +310,7 @@ func run(logger *slog.Logger, conf *config) error {
 		conf,
 		learningReconciler.GetEnqueueFunc(),
 		violationBuffer,
+		flowDumperBuffer,
 		eventLogger,
 	); err != nil {
 		return err
@@ -302,7 +337,7 @@ func setupControllers(
 	mgr manager.Manager,
 	conf *config,
 	eventLogger otellog.Logger,
-	violationBuffer *violation.Buffer,
+	violationBuffer *ringbuf.Buffer[violation.Observation],
 ) error {
 	if err := (&controller.WorkloadNetworkPolicyReconciler{
 		Client: mgr.GetClient(),
@@ -361,6 +396,12 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics server")
 	flag.StringVar(&conf.logLevel, "log-level", "info",
 		"Log level for controller logs. Valid values: debug, info, warn, error.")
+	flag.BoolVar(&conf.flowDumper.Enabled, "flow-dumper-enabled", false,
+		"Enable flow debug collection and periodic file dumps.")
+	flag.IntVar(&conf.flowDumper.Port, "flow-dumper-port", flowdumper.DefaultPort,
+		"Port for the flow dumper HTTP server.")
+	flag.IntVar(&conf.flowDumper.BufferSize, "flow-dumper-buffer-size", flowdumper.DefaultBufferSize,
+		"In-memory ring buffer size for flow debug dumps.")
 	flag.StringVar(&conf.provider.name, "provider-name", "",
 		"Data-plane provider used by the controller. Valid values: istio, cilium, calico.")
 	flag.StringVar(

@@ -42,6 +42,21 @@
                 "env": {
                     "type": "array"
                 },
+                "flowDumper": {
+                    "type": "object",
+                    "properties": {
+                        "bufferSize": {
+                            "type": "integer"
+                        },
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "port": {
+                            "type": "integer"
+                        }
+                    },
+                    "additionalProperties": false
+                },
                 "image": {
                     "type": "object",
                     "properties": {

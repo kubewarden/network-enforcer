@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
+	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
 	netypes "github.com/rancher-sandbox/network-enforcer/internal/types"
 	"github.com/rancher-sandbox/network-enforcer/internal/violation"
 )
@@ -32,7 +33,7 @@ func newTestLearningReconciler(t *testing.T, objs []client.Object) *LearningReco
 		WithScheme(scheme).
 		WithObjects(objs...).
 		Build()
-	r := NewLearningReconciler(cl, violation.NewBuffer())
+	r := NewLearningReconciler(cl, ringbuf.New[violation.Observation]())
 	require.NotNil(t, r)
 	return r
 }

@@ -47,6 +47,10 @@ controller:
     # @schema type: [integer, string]
     endpoint: ""
   wnpStatusUpdateInterval: 30s
+  flowDumper:
+    enabled: false
+    port: 9080
+    bufferSize: 10000
 
 kubernetesClusterDomain: cluster.local
 imagePullSecrets: []

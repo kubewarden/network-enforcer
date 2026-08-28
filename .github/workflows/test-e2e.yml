@@ -35,11 +35,23 @@ jobs:
       - name: Running Test e2e
         run: |
           make test-e2e E2E_PROVIDER=${{ matrix.provider }}
+      - name: Collect flow debug dump
+        if: failure()
+        run: |
+          NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}') && curl http://$NODE_IP:30080/flow > test/e2e/logs/flow-debug.jsonl
       - name: Upload cluster logs
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-test-cluster-logs-${{ matrix.arch }}-${{ matrix.provider }}
           path: test/e2e/logs
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload flow debug logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-test-flow-debug-${{ matrix.arch }}-${{ matrix.provider }}
+          path: test/e2e/logs/flow-debug.jsonl
           if-no-files-found: error
           retention-days: 7

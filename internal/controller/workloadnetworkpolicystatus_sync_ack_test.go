@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
+	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
 	"github.com/rancher-sandbox/network-enforcer/internal/violation"
 )
 
@@ -123,7 +124,7 @@ func newTestWorkloadNetworkStatusSync(client client.Client) *WorkloadNetworkPoli
 		updateInterval:  time.Hour,
 		eventLogger:     &fakeEventLogger{},
 		logger:          ctrl.Log.WithName("test"),
-		violationBuffer: violation.NewBuffer(),
+		violationBuffer: ringbuf.New[violation.Observation](),
 	}
 }
 

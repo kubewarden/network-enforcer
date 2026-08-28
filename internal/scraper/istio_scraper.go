@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -13,6 +14,7 @@ import (
 
 	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
 	"github.com/rancher-sandbox/network-enforcer/internal/istio"
+	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
 	"github.com/rancher-sandbox/network-enforcer/internal/types"
 	"github.com/rancher-sandbox/network-enforcer/internal/violation"
 	otellog "go.opentelemetry.io/otel/log"
@@ -50,12 +52,13 @@ const (
 
 // IstioScraperConfig configures IstioScraper.
 type IstioScraperConfig struct {
-	ViolationBuffer      *violation.Buffer
+	ViolationBuffer      *ringbuf.Buffer[violation.Observation]
 	EnqueueLearningEvent LearningEnqueueFunc
 	Logger               *slog.Logger
 	ViolationOtelLogger  otellog.Logger
 	OtelPort             int
 	Enricher             *istio.Enricher
+	FlowDumperBuffer     *ringbuf.Buffer[json.RawMessage]
 }
 
 // IstioScraper receives OTLP log events from istio-watchers.
@@ -137,7 +140,8 @@ func (s *IstioScraper) Export(
 		for _, scopeLogs := range resourceLogs.GetScopeLogs() {
 			for _, record := range scopeLogs.GetLogRecords() {
 				attrs := mergeAttrMaps(resourceAttrs, attrMap(record.GetAttributes()))
-				s.Logger.InfoContext(ctx, "Received OTLP log record", "attrs", attrs)
+				s.Logger.DebugContext(ctx, "Received OTLP log record", "attrs", attrs)
+				dumpFlow(ctx, s.Logger, s.FlowDumperBuffer, record)
 				switch attrs[eventTypeKey] {
 				case eventTypeLearn:
 					s.enqueueLearningEvent(ctx, attrs)

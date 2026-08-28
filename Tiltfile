@@ -27,6 +27,7 @@ helm_set_values = [
     "controller.containerSecurityContext.runAsUser=null",
     "controller.podSecurityContext.runAsNonRoot=false",
 	"controller.provider.name=" + providerName,
+	"controller.flowDumper.enabled=true",
 ]
 
 yaml = helm(

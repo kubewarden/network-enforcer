@@ -113,6 +113,8 @@
 		"deepcopy",
 		"loglevel",
 		"testutil",
+		"flowdumper",
+		"ringbuf",
     ],
     "import": []
 }
