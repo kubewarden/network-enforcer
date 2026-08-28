@@ -168,3 +168,19 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: "annotates the fluent-bit daemonset with a config checksum"
+    set:
+      controller:
+        provider:
+          name: istio
+    documentSelector:
+      path: kind
+      value: DaemonSet
+      skipEmptyTemplates: true
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/config"]
+      - matchRegex:
+          path: spec.template.metadata.annotations["checksum/config"]
+          pattern: ^[a-f0-9]{64}$

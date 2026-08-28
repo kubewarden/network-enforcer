@@ -17,6 +17,8 @@ spec:
       labels:
         app.kubernetes.io/component: istio-fluent-bit
         {{- include "network-enforcer.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/istio-fluent-bit/configmap.yaml") . | sha256sum }}
     spec:
       serviceAccountName: {{ include "network-enforcer.fullname" . }}-istio-fluent-bit
       securityContext:
