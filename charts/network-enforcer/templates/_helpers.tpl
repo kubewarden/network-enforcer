@@ -116,8 +116,11 @@ keys, mounted via cert-manager CSI.
 CA certificate path used by the controller when sending OTLP logs to the
 shipped in-cluster collector.
 */}}
+{{- define "network-enforcer.otel.caCertDir" -}}
+/tmp/otel-collector-certs
+{{- end -}}
 {{- define "network-enforcer.otel.caCertPath" -}}
-/etc/network-enforcer/certs/ca.crt
+{{ include "network-enforcer.otel.caCertDir" . }}/ca.crt
 {{- end -}}
 
 
@@ -139,7 +142,7 @@ Print the otel environment variable settings.
   value: {{ .Values.telemetry.externalCollector.protocol }}
 {{- if .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
 - name: OTEL_EXPORTER_OTLP_CERTIFICATE
-  value: /tmp/otel-collector-certs/ca.crt
+  value: {{ include "network-enforcer.otel.caCertPath" . }}
 {{- else }}
 - name: OTEL_EXPORTER_OTLP_INSECURE
   value: "true"
@@ -154,14 +157,14 @@ Print the otel environment variable settings.
 {{- end }}
 
 {{/*
-Print the otel volumeMounts settings (only relevant for the external strategy).
+Print the otel volumeMounts settings.
 The strategy gate mirrors network-enforcer.otel.config.volumes so mounts and
 volumes are always emitted (or omitted) as a pair.
 */}}
 {{- define "network-enforcer.otel.config.volumeMounts" }}
-{{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
+{{- if or (eq .Values.telemetry.collectorStrategy "default") (and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorCertificateSecret) }}
 - name: otel-collector-ca-cert
-  mountPath: /tmp/otel-collector-certs
+  mountPath: {{ include "network-enforcer.otel.caCertDir" . }}
   readOnly: true
 {{- end }}
 {{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorClientCertificateSecret }}
@@ -172,9 +175,17 @@ volumes are always emitted (or omitted) as a pair.
 {{- end }}
 
 {{/*
-Print the otel volumes settings (only relevant for the external strategy).
+Print the otel volumes settings.
 */}}
 {{- define "network-enforcer.otel.config.volumes" }}
+{{- if eq .Values.telemetry.collectorStrategy "default" }}
+- name: otel-collector-ca-cert
+  secret:
+    secretName: {{ include "network-enforcer.caSecretName" . }}
+    items:
+    - key: ca.crt
+      path: ca.crt
+{{- end }}
 {{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
 - name: otel-collector-ca-cert
   secret:
