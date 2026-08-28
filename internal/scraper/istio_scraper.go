@@ -38,7 +38,7 @@ const (
 	dstNamespaceKey      = "dst.namespace"
 	dstNameKey           = "dst.name"
 	dstPortKey           = "dst.port"
-	bodyKey              = "body"
+	messageKey           = "message"
 	policyKey            = "policy"
 	dstNamespacedNameKey = "dst.namespaced_name"
 	srcAddrKey           = "src.addr"

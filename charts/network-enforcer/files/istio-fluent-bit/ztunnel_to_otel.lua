@@ -49,7 +49,7 @@ local function to_policy_event(timestamp, record, evt_type)
   out["policy"] = record["policy"] or ""
   -- `ip:port` format
   out["src.addr"] = inbound["peer"] or ""
-  out["body"] = evt_type
+  out["message"] = record["message"] or ""
   return 1, timestamp, out
 end
 
@@ -71,9 +71,9 @@ local function to_learn_event(timestamp, record)
   out["dst.namespace"] = record["dst.namespace"]
   out["dst.port"] = extract_port(record["dst.hbone_addr"])
   out["src.identity"] = record["src.identity"]
-  -- we need a body field for the OpenTelemetry output plugin to work correctly
-  -- todo! check if there is an alternative way
-  out["body"] = EVT_LEARN
+  -- Original ztunnel message: Fluent Bit Logs_Body_Key $message maps this to
+  -- OTLP LogRecord.body.
+  out["message"] = record["message"] or ""
   return 1, timestamp, out
 end
 

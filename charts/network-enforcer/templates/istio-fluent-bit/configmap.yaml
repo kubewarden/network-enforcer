@@ -46,7 +46,7 @@ data:
         Port                     {{ include "network-enforcer.controller.istioPort" . }}
         grpc                     On
         grpc_logs_uri            /opentelemetry.proto.collector.logs.v1.LogsService/Export
-        Logs_Body_Key            body
+        Logs_Body_Key            $message
         Logs_Body_Key_Attributes true
         Tls                      Off
         Tls.verify               On
