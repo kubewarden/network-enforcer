@@ -17,6 +17,7 @@ The goal is to reduce manual NetworkPolicy authoring effort while improving visi
 ### Getting Started
 
 - [Quick Start](docs/installation/quickstart.adoc)
+- [Compatibility](docs/compatibility.adoc)
 - [Uninstall](docs/installation/uninstall.adoc)
 
 ## License
