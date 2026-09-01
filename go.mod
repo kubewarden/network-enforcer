@@ -1,6 +1,6 @@
 module github.com/rancher-sandbox/network-enforcer
 
-go 1.26.6
+go 1.27.0
 
 require (
 	github.com/avast/retry-go/v4 v4.7.0
