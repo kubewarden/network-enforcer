@@ -19,7 +19,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-const defaultCalicoTestNamespace = "default"
+const (
+	defaultCalicoTestNamespace = "default"
+	defaultGoldmaneEndpoint    = "goldmane.calico-system.svc:7443"
+)
 
 func calicoTestFlowTime() time.Time {
 	return time.Date(2026, 8, 24, 10, 11, 12, 0, time.UTC)
@@ -431,7 +434,7 @@ func TestProcessCalicoFlowResolvesWorkloadsWithFakeClient(t *testing.T) {
 
 	s := NewCalicoScraper(CalicoScraperConfig{
 		Client:               cl,
-		Endpoint:             types.DefaultGoldmaneEndpoint,
+		Endpoint:             defaultGoldmaneEndpoint,
 		EnqueueLearningEvent: func(types.LearningEvent) bool { return true },
 		Logger:               testutil.NewTestLogger(t),
 	})
