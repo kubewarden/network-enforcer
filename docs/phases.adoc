@@ -35,7 +35,7 @@ Operationally, if you want complete proposals, install network-enforcer first an
 === CRDs created/updated during this phase
 
 * *Created/updated*: `WorkloadNetworkPolicyProposal`
-** Name format is `<kind>-<name>-<ingress|egress>`, using the owning workload kind and name in lowercase. Examples: `deployment-http-client-egress`, `deployment-http-server-ingress`.
+** Name format is `<kind>-<name>-<ingress|egress>`, where `<kind>` is the owning workload kind lowercased (`deployment`, `statefulset`, `daemonset`), `<name>` is the owning workload name as-is, and the direction suffix is lowercase. Examples: `deployment-http-client-egress`, `deployment-http-server-ingress`.
 ** Istio produces only the ingress name (`…-ingress`) for each destination workload. There is one proposal per workload *and* direction for the Kubernetes backend.
 
 [#monitor-phase]
@@ -116,7 +116,7 @@ Promotion is explicit. Network-enforcer does not turn a proposal into a policy u
 ** The proposal reconciler copies the backend spec onto a new `WorkloadNetworkPolicy` in the same name and namespace, sets `.spec.mode` from the label value, and adds `security.rancher.io/promoted-from: <proposal-name>` so the promotion relationship is explicit.
 ** The proposal is then deleted.
 * *Leftover proposals*
-** After promotion, a scraper can recreate a proposal at the same name before caches catch up. If a `WorkloadNetworkPolicy` already exists with `security.rancher.io/promoted-from=<proposal-name>`, the leftover proposal is deleted. That usually happens as soon as the recreate is watched; if both objects sit idle, it is picked up on the next controller-runtime resync.
+** After promotion, a scraper can recreate a proposal at the same name before caches catch up. If a `WorkloadNetworkPolicy` already exists with `security.rancher.io/promoted-from=<proposal-name>`, the leftover proposal is deleted. That usually happens as soon as the recreate is watched; if both objects sit idle, it is picked up on the next controller-runtime resync (defaulted to 10h).
 * *Return to learning*
 ** Delete the `WorkloadNetworkPolicy`. The next observed flow creates or updates a `WorkloadNetworkPolicyProposal` again. If a leftover proposal is still around after you delete the policy, learning resumes by updating that object; delete it first if you want a clean slate.
 ** Creating a `WorkloadNetworkPolicy` by hand *without* `security.rancher.io/promoted-from` does *not* remove a same-named proposal. Delete the proposal yourself in that case.
@@ -185,4 +185,4 @@ Event names:
 
 |===
 
-Important: the `WorkloadNetworkPolicy` CRD only supports `monitor` and `protect` (`.spec.mode`). `Learn` is implemented as `WorkloadNetworkPolicyProposal` generation.
+Important: the `WorkloadNetworkPolicy` CRD only supports `monitor` and `protect` (`.spec.mode`, defaults to `monitor`). `Learn` is implemented as `WorkloadNetworkPolicyProposal` generation.
