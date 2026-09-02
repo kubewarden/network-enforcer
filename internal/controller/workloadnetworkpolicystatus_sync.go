@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -302,25 +303,25 @@ func (r *WorkloadNetworkPolicyStatusSync) emitAcknowledgedViolationOtelLog(
 	var rec otellog.Record
 	rec.SetEventName(eventNamePolicyViolationAcknowledged)
 	rec.SetSeverity(otellog.SeverityInfo)
-	rec.SetBody(otellog.StringValue(eventNamePolicyViolationAcknowledged))
+	rec.SetBody(attribute.StringValue(eventNamePolicyViolationAcknowledged))
 	rec.SetTimestamp(time.Now())
 	rec.AddAttributes(
-		otellog.Int64("id", violation.ID),
-		otellog.String("timestamp", violation.Timestamp.UTC().Format(time.RFC3339)),
-		otellog.String("reason", ack.Reason),
-		otellog.String("source.namespace", violation.Source.Namespace),
-		otellog.String("source.workload.kind", string(violation.Source.OwnerKind)),
-		otellog.String("source.workload.name", violation.Source.OwnerName),
-		otellog.String("source.workload.identity", violation.Source.Identity),
-		otellog.String("dest.namespace", violation.Dest.Namespace),
-		otellog.String("dest.workload.kind", string(violation.Dest.OwnerKind)),
-		otellog.String("dest.workload.name", violation.Dest.OwnerName),
-		otellog.String("dest.workload.identity", violation.Dest.Identity),
-		otellog.String("protocol", string(violation.Protocol)),
-		otellog.Int64("dstPort", int64(violation.DstPort)),
-		otellog.String("action", string(violation.Action)),
-		otellog.String("denyingPolicy.namespace", violation.DenyingPolicyNamespace),
-		otellog.String("denyingPolicy.name", violation.DenyingPolicyName),
+		attribute.Int64("id", violation.ID),
+		attribute.String("timestamp", violation.Timestamp.UTC().Format(time.RFC3339)),
+		attribute.String("reason", ack.Reason),
+		attribute.String("source.namespace", violation.Source.Namespace),
+		attribute.String("source.workload.kind", string(violation.Source.OwnerKind)),
+		attribute.String("source.workload.name", violation.Source.OwnerName),
+		attribute.String("source.workload.identity", violation.Source.Identity),
+		attribute.String("dest.namespace", violation.Dest.Namespace),
+		attribute.String("dest.workload.kind", string(violation.Dest.OwnerKind)),
+		attribute.String("dest.workload.name", violation.Dest.OwnerName),
+		attribute.String("dest.workload.identity", violation.Dest.Identity),
+		attribute.String("protocol", string(violation.Protocol)),
+		attribute.Int64("dstPort", int64(violation.DstPort)),
+		attribute.String("action", string(violation.Action)),
+		attribute.String("denyingPolicy.namespace", violation.DenyingPolicyNamespace),
+		attribute.String("denyingPolicy.name", violation.DenyingPolicyName),
 	)
 
 	if r.eventLogger != nil {
