@@ -80,19 +80,25 @@ Download `istioctl` and install the ambient profile:
 curl -L https://istio.io/downloadIstio | ISTIO_VERSION=1.30.3 sh -
 
 ./istio-1.30.3/bin/istioctl install --set profile=ambient \
+  --set values.cni.ambient.ipv6=false \
   --set values.pilot.env.AMBIENT_ENABLE_DRY_RUN_AUTHORIZATION_POLICY=true \
   --set values.ztunnel.env.AUTHZ_POLICY_INFO_LOGGING=true \
   --set values.ztunnel.logAsJson=true \
   --skip-confirmation
 ----
 
-The three `--set` flags are not optional for Network-Enforcer:
+These `--set` flags are not optional for Network-Enforcer:
 
 * `AMBIENT_ENABLE_DRY_RUN_AUTHORIZATION_POLICY` lets `ztunnel` evaluate the dry-run `AuthorizationPolicy`
   that `monitor` mode installs, without blocking traffic.
 * `AUTHZ_POLICY_INFO_LOGGING` makes `ztunnel` log the policy decision of every connection.
 * `logAsJson` makes `ztunnel` emit JSON access logs, which is the format the `istio-fluent-bit` pipeline
   shipped with the chart parses.
+
+The `values.cni.ambient.ipv6=false` flag is not required by Network-Enforcer, but `istio-cni` programs
+IPv6 redirection rules by default and fails on IPv4-only nodes, which is what a default kind cluster
+gives you.
+Drop the flag if your cluster is dual-stack.
 
 Finally, enroll the namespaces you want to observe in the mesh.
 Do this *before* creating the workloads: `istio-cni` decides at pod creation time whether a pod's traffic
@@ -378,7 +384,10 @@ allowed to reach port `18080` of the pods selected by `app: http-server`.
 Both providers report full flows, so Network-Enforcer creates an egress proposal for the client and an
 ingress proposal for the server.
 Learning is cluster-wide, so you also see proposals for the workloads that talk to each other in the
-system namespaces:
+system namespaces.
+The listing below is from a Calico cluster.
+On Cilium, the system names differ (`hubble-relay`, `cilium-operator`, …), but the two `default`
+proposals are the same:
 
 [source,bash]
 ----
