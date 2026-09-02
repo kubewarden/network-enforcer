@@ -20,6 +20,10 @@ The goal is to reduce manual NetworkPolicy authoring effort while improving visi
 - [Compatibility](docs/compatibility.adoc)
 - [Uninstall](docs/installation/uninstall.adoc)
 
+### Usage
+
+- [Phases: Learn, Monitor, Protect](docs/phases.adoc)
+
 ## License
 
 Copyright 2026.
