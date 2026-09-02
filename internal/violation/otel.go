@@ -35,6 +35,26 @@ const (
 	otelAttrPolicyName      = "policy.ref.name"
 )
 
+// OtelAttributeKeys returns every attribute key of the stable schema above.
+func OtelAttributeKeys() []string {
+	return []string{
+		otelAttrEnforcementProvider,
+		otelAttrAction,
+		otelAttrSrcName,
+		otelAttrSrcNamespace,
+		otelAttrSrcKind,
+		otelAttrSrcIdentity,
+		otelAttrDstName,
+		otelAttrDstNamespace,
+		otelAttrDstKind,
+		otelAttrDstIdentity,
+		otelAttrTransport,
+		otelAttrDstPort,
+		otelAttrPolicyNamespace,
+		otelAttrPolicyName,
+	}
+}
+
 // EmitOtelLog emits the observation to the OTel log logger with the stable
 // attribute schema. It is a no-op when logger is nil (OTLP disabled).
 func EmitOtelLog(ctx context.Context, logger otellog.Logger, observation Observation) {

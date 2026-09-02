@@ -21,21 +21,32 @@ data:
           network_enforcer_policy_denies:
             description: "Total network policy deny events observed"
             conditions:
-              - 'attributes["cni.type"] != nil'
+              - 'attributes["enforcement.provider"] != nil'
             attributes:
-              - key: cni.type
-              - key: network.protocol
-              - key: node.name
-              - key: source.namespace
-              - key: source.name
-              - key: destination.namespace
-              - key: destination.name
+              - key: enforcement.provider
+              # The emitter skips empty attributes, so every optional key needs
+              # a default_value: without it the count connector drops the whole
+              # datapoint instead of counting it with an empty label.
+              - key: action
+                default_value: ""
+              - key: network.transport
+                default_value: ""
+              - key: source.workload.namespace
+                default_value: ""
+              - key: source.workload.name
+                default_value: ""
+              - key: destination.workload.namespace
+                default_value: ""
+              - key: destination.workload.name
+                default_value: ""
               - key: destination.port
                 default_value: "0"
-              # Slice attrs are stringified as JSON arrays on the Prometheus
-              # label (e.g. ["app=http-client"]). default_value keeps the
-              # datapoint when the OTLP log omits an optional slice.
-              - key: egress.enforced_by
+              # policy.ref.* are absent when the observation matched no
+              # WorkloadNetworkPolicy, which is the key security signal and must
+              # still be counted.
+              - key: policy.ref.namespace
+                default_value: ""
+              - key: policy.ref.name
                 default_value: ""
     processors:
       deltatocumulative: {}
