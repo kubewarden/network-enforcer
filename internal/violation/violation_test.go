@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/log/embedded"
 	corev1 "k8s.io/api/core/v1"
@@ -69,8 +70,8 @@ func TestEmitOtelLogSchema(t *testing.T) {
 	require.Len(t, logger.emitted, 1)
 
 	attrs := map[string]string{}
-	logger.emitted[0].WalkAttributes(func(kv otellog.KeyValue) bool {
-		attrs[kv.Key] = kv.Value.String()
+	logger.emitted[0].WalkAttributes(func(kv attribute.KeyValue) bool {
+		attrs[string(kv.Key)] = kv.Value.String()
 		return true
 	})
 
@@ -106,8 +107,8 @@ func TestEmitOtelLogAllowMiss(t *testing.T) {
 	require.Len(t, logger.emitted, 1)
 
 	attrs := map[string]string{}
-	logger.emitted[0].WalkAttributes(func(kv otellog.KeyValue) bool {
-		attrs[kv.Key] = kv.Value.String()
+	logger.emitted[0].WalkAttributes(func(kv attribute.KeyValue) bool {
+		attrs[string(kv.Key)] = kv.Value.String()
 		return true
 	})
 

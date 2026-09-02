@@ -3,6 +3,7 @@ package violation
 import (
 	"context"
 
+	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
 )
 
@@ -67,7 +68,7 @@ func EmitOtelLog(ctx context.Context, logger otellog.Logger, observation Observa
 	addStringAttrs(&rec, otelAttrPolicyNamespace, observation.DenyingPolicyNamespace)
 	addStringAttrs(&rec, otelAttrPolicyName, observation.DenyingPolicyName)
 
-	rec.AddAttributes(otellog.Int64(otelAttrDstPort, int64(observation.DstPort)))
+	rec.AddAttributes(attribute.Int64(otelAttrDstPort, int64(observation.DstPort)))
 
 	logger.Emit(ctx, rec)
 }
@@ -78,6 +79,6 @@ func EmitOtelLog(ctx context.Context, logger otellog.Logger, observation Observa
 // accidentally dropped or misaligned.
 func addStringAttrs(rec *otellog.Record, key, value string) {
 	if value != "" {
-		rec.AddAttributes(otellog.String(key, value))
+		rec.AddAttributes(attribute.String(key, value))
 	}
 }
