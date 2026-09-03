@@ -3,7 +3,7 @@
 | Feature Name | Monitor/Protect policy lifecycle                                |
 | Start Date   | 2026-06-26                                                      |
 | Category     | Architecture                                                    |
-| RFC PR       | https://github.com/rancher-sandbox/network-enforcer/pull/40     |
+| RFC PR       | https://github.com/kubewarden/network-enforcer/pull/40     |
 | State        | **ACCEPTED**                                                    |
 
 # Summary
@@ -21,7 +21,7 @@ Promotion from proposal to policy is explicit. The monitor phase is implemented 
 
 The current implementation can only create enforceable Kubernetes `NetworkPolicy` resources from proposals and cannot represent a first-class "monitor-only" policy.
 
-Issue [#32](https://github.com/rancher-sandbox/network-enforcer/issues/32) and team discussions highlighted two points:
+Issue [#32](https://github.com/kubewarden/network-enforcer/issues/32) and team discussions highlighted two points:
 
 - We want monitor mode in the MVP.
 - CNI-native monitor/audit capabilities are not consistently available across all CNIs and environments.

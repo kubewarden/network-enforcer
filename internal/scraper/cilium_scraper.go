@@ -8,11 +8,12 @@ import (
 
 	flowpb "github.com/cilium/cilium/api/v1/flow"
 	hubbleObserver "github.com/cilium/cilium/api/v1/observer"
-	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
-	"github.com/rancher-sandbox/network-enforcer/internal/violation"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/kubewarden/network-enforcer/internal/ringbuf"
+	"github.com/kubewarden/network-enforcer/internal/violation"
 )
 
 type CiliumScraperConfig struct {

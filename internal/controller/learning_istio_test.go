@@ -10,8 +10,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
-	netypes "github.com/rancher-sandbox/network-enforcer/internal/types"
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
+	netypes "github.com/kubewarden/network-enforcer/internal/types"
 )
 
 func newPromotedIstioWNP(namespacedName types.NamespacedName) *securityv1alpha1.WorkloadNetworkPolicy {

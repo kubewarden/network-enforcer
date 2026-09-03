@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
 )
 
 func assertNetworkPolicy(t *testing.T, expected, current *networkingv1.NetworkPolicy) {

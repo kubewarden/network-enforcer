@@ -6,13 +6,14 @@ import (
 	"maps"
 
 	"github.com/go-logr/logr"
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
 	istiosecurityv1beta1 "istio.io/api/security/v1beta1"
 	istiotypev1beta1 "istio.io/api/type/v1beta1"
 	istiosecurityv1 "istio.io/client-go/pkg/apis/security/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
 )
 
 // this annotation is experimental inside istio but for now we use it for monitor mode.

@@ -3,10 +3,6 @@ package controller
 import (
 	"context"
 
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
-	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
-	"github.com/rancher-sandbox/network-enforcer/internal/types"
-	"github.com/rancher-sandbox/network-enforcer/internal/violation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -14,6 +10,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
+	"github.com/kubewarden/network-enforcer/internal/ringbuf"
+	"github.com/kubewarden/network-enforcer/internal/types"
+	"github.com/kubewarden/network-enforcer/internal/violation"
 )
 
 const (

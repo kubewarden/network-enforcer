@@ -8,12 +8,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rancher-sandbox/network-enforcer/internal/tlsutil"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"google.golang.org/grpc/credentials"
+
+	"github.com/kubewarden/network-enforcer/internal/tlsutil"
 )
 
 // OTELConfig holds the configuration for the OTLP log exporter.

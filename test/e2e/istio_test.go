@@ -12,8 +12,9 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
-	"github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kubewarden/network-enforcer/api/v1alpha1"
 )
 
 // ambientNamespaceLabel is the namespace label that enrolls a namespace (and

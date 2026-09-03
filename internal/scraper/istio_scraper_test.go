@@ -6,11 +6,6 @@ import (
 	"testing"
 	"time"
 
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
-	"github.com/rancher-sandbox/network-enforcer/internal/istio"
-	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
-	"github.com/rancher-sandbox/network-enforcer/internal/types"
-	"github.com/rancher-sandbox/network-enforcer/internal/violation"
 	"github.com/stretchr/testify/require"
 	otellog "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/log/embedded"
@@ -22,6 +17,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
+	"github.com/kubewarden/network-enforcer/internal/istio"
+	"github.com/kubewarden/network-enforcer/internal/ringbuf"
+	"github.com/kubewarden/network-enforcer/internal/types"
+	"github.com/kubewarden/network-enforcer/internal/violation"
 )
 
 type fakeOtelEventLogger struct {

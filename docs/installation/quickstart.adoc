@@ -125,7 +125,7 @@ Calico is the cluster CNI, so create a kind cluster with the default CNI disable
 
 [source,bash]
 ----
-curl -sSL https://raw.githubusercontent.com/rancher-sandbox/network-enforcer/main/docs/yaml/kind_cluster.yaml \
+curl -sSL https://raw.githubusercontent.com/kubewarden/network-enforcer/main/docs/yaml/kind_cluster.yaml \
   | kind create cluster --name network-enforcer --config=-
 ----
 
@@ -140,7 +140,7 @@ Otherwise, run it straight from the repository:
 
 [source,bash]
 ----
-curl -sSL https://raw.githubusercontent.com/rancher-sandbox/network-enforcer/main/hack/setup-calico.sh | bash
+curl -sSL https://raw.githubusercontent.com/kubewarden/network-enforcer/main/hack/setup-calico.sh | bash
 ----
 
 The script installs the Calico CRDs and the Tigera operator with `goldmane.enabled=true`, waits for the
@@ -162,7 +162,7 @@ Cilium is the cluster CNI, so create a kind cluster with the default CNI disable
 
 [source,bash]
 ----
-curl -sSL https://raw.githubusercontent.com/rancher-sandbox/network-enforcer/main/docs/yaml/kind_cluster.yaml \
+curl -sSL https://raw.githubusercontent.com/kubewarden/network-enforcer/main/docs/yaml/kind_cluster.yaml \
   | kind create cluster --name network-enforcer --config=-
 ----
 
@@ -177,7 +177,7 @@ Otherwise, run it straight from the repository:
 
 [source,bash]
 ----
-curl -sSL https://raw.githubusercontent.com/rancher-sandbox/network-enforcer/main/hack/setup-cilium.sh | bash
+curl -sSL https://raw.githubusercontent.com/kubewarden/network-enforcer/main/hack/setup-cilium.sh | bash
 ----
 
 The script installs Cilium with the settings Network-Enforcer needs, and waits for the agent, the
@@ -229,7 +229,7 @@ no longer exported as OpenTelemetry logs.
 
 [source,bash]
 ----
-helm repo add network-enforcer https://rancher-sandbox.github.io/network-enforcer/
+helm repo add network-enforcer https://kubewarden.github.io/network-enforcer/
 helm repo update
 ----
 
@@ -304,7 +304,7 @@ Only the traffic you actually generate is learned, which is what lets you produc
 
 [source,bash]
 ----
-kubectl apply -f https://raw.githubusercontent.com/rancher-sandbox/network-enforcer/main/docs/yaml/simple_application.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubewarden/network-enforcer/main/docs/yaml/simple_application.yaml
 kubectl wait --for=condition=Ready pod -l app=http-server --timeout=300s
 kubectl wait --for=condition=Ready pod -l app=http-client --timeout=300s
 ----

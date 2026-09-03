@@ -14,8 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rancher-sandbox/network-enforcer/internal/events"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kubewarden/network-enforcer/internal/events"
 )
 
 func generateCACertPEM(t *testing.T) []byte {

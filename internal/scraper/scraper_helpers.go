@@ -10,9 +10,10 @@ import (
 	"time"
 
 	retry "github.com/avast/retry-go/v4"
-	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/kubewarden/network-enforcer/internal/ringbuf"
 )
 
 func isContextCancellation(err error) bool {

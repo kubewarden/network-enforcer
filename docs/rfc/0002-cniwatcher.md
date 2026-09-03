@@ -9,7 +9,7 @@
 | :--------------- | :-----------------------------------------------------------|
 | **Start Date**   | Jun 19, 2026                                                |
 | **Category**     | DaemonSet, Component, OpenTelemetry                         |
-| **RFC PR**       | https://github.com/rancher-sandbox/network-enforcer/pull/22 |
+| **RFC PR**       | https://github.com/kubewarden/network-enforcer/pull/22 |
 | **State**        | **SUPERSEDED**                                              |
 
 - [Summary](#summary)

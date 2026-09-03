@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	netypes "github.com/rancher-sandbox/network-enforcer/internal/types"
+	netypes "github.com/kubewarden/network-enforcer/internal/types"
 )
 
 const (
 	defaultChartPath               = "../../charts/network-enforcer"
 	defaultLogsDir                 = "./logs"
-	defaultControllerImage         = "ghcr.io/rancher-sandbox/network-enforcer/controller:latest"
+	defaultControllerImage         = "ghcr.io/kubewarden/network-enforcer/controller:latest"
 	defaultReleaseName             = "network-enforcer"
 	defaultReleaseNS               = "network-enforcer"
 	defaultNamespacePref           = "network-enforcer-e2e"

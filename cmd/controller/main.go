@@ -42,15 +42,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
-	"github.com/rancher-sandbox/network-enforcer/internal/controller"
-	"github.com/rancher-sandbox/network-enforcer/internal/events"
-	"github.com/rancher-sandbox/network-enforcer/internal/flowdumper"
-	"github.com/rancher-sandbox/network-enforcer/internal/istio"
-	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
-	"github.com/rancher-sandbox/network-enforcer/internal/scraper"
-	"github.com/rancher-sandbox/network-enforcer/internal/types"
-	"github.com/rancher-sandbox/network-enforcer/internal/violation"
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
+	"github.com/kubewarden/network-enforcer/internal/controller"
+	"github.com/kubewarden/network-enforcer/internal/events"
+	"github.com/kubewarden/network-enforcer/internal/flowdumper"
+	"github.com/kubewarden/network-enforcer/internal/istio"
+	"github.com/kubewarden/network-enforcer/internal/ringbuf"
+	"github.com/kubewarden/network-enforcer/internal/scraper"
+	"github.com/kubewarden/network-enforcer/internal/types"
+	"github.com/kubewarden/network-enforcer/internal/violation"
 	// +kubebuilder:scaffold:imports
 )
 

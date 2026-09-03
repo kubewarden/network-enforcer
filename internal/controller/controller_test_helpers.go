@@ -7,7 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
 )
 
 const testLabelKey = "app"

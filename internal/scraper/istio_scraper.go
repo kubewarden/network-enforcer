@@ -12,11 +12,6 @@ import (
 	"strings"
 	"time"
 
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
-	"github.com/rancher-sandbox/network-enforcer/internal/istio"
-	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
-	"github.com/rancher-sandbox/network-enforcer/internal/types"
-	"github.com/rancher-sandbox/network-enforcer/internal/violation"
 	otellog "go.opentelemetry.io/otel/log"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
@@ -25,6 +20,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
+	"github.com/kubewarden/network-enforcer/internal/istio"
+	"github.com/kubewarden/network-enforcer/internal/ringbuf"
+	"github.com/kubewarden/network-enforcer/internal/types"
+	"github.com/kubewarden/network-enforcer/internal/violation"
 )
 
 const gracefulGRPCTimeout = 5 * time.Second

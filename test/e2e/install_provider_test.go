@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	netypes "github.com/rancher-sandbox/network-enforcer/internal/types"
 	"sigs.k8s.io/e2e-framework/pkg/env"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
+
+	netypes "github.com/kubewarden/network-enforcer/internal/types"
 )
 
 // installProvider sets up the data-plane provider selected via

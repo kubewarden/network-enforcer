@@ -3,7 +3,7 @@
 | Feature Name | Istio-first provider model for learn/monitor/protect             |
 | Start Date   | 2026-08-06                                                       |
 | Category     | Architecture                                                     |
-| RFC PR       | <https://github.com/rancher-sandbox/network-enforcer/pull/204>   |
+| RFC PR       | <https://github.com/kubewarden/network-enforcer/pull/204>   |
 | State        |                                                                  |
 
 ## Summary

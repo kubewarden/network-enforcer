@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
 	"github.com/stretchr/testify/require"
 	"istio.io/api/annotation"
 	istiosecurityv1beta1 "istio.io/api/security/v1beta1"
@@ -15,6 +14,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
+
+	"github.com/kubewarden/network-enforcer/api/v1alpha1"
 )
 
 // istioIngressProposalName is the name of the learned ingress proposal for the
