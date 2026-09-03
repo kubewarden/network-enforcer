@@ -1,0 +1,105 @@
+name: Update golangci-lint version
+
+pipelineid: golangci-lint/version
+
+sources:
+  golangciLint:
+    name: Get latest golangci-lint version
+    kind: githubrelease
+    spec:
+      owner: golangci
+      repository: golangci-lint
+      token: "{{ requiredEnv .github.token }}"
+      typefilter: # Only official releases, no pre-releases nor drafts
+        release: true
+      versionfilter:
+        kind: semver
+
+  golangciLintCommit:
+    name: Get commit SHA of the latest golangci-lint version
+    # The pre-commit hook is pinned to a commit SHA, so the tag must be resolved.
+    kind: shell
+    spec:
+      command: |
+        set -eu
+        repository="https://github.com/golangci/golangci-lint"
+        tag="$(git -c 'versionsort.suffix=-' ls-remote --refs --tags --sort=-v:refname "$repository" 'v[0-9]*' \
+          | sed 's@.*refs/tags/@@' \
+          | head -n 1)"
+        git ls-remote --refs "$repository" "refs/tags/${tag}" | cut -f 1
+
+conditions:
+  commitMatchesVersion:
+    name: Check that the golangci-lint commit SHA matches the release tag
+    disablesourceinput: true
+    kind: shell
+    spec:
+      command: |
+        test "$(git ls-remote --refs https://github.com/golangci/golangci-lint 'refs/tags/{{ source "golangciLint" }}' | cut -f 1)" = '{{ source "golangciLintCommit" }}'
+
+targets:
+  makefile:
+    name: 'deps(golangci-lint): update Makefile version to {{ source "golangciLint" }}'
+    kind: file
+    sourceid: golangciLint
+    scmid: default
+    spec:
+      file: Makefile
+      matchpattern: 'GOLANGCI_LINT_VERSION \?= v\d+\.\d+\.\d+'
+      replacepattern: 'GOLANGCI_LINT_VERSION ?= {{ source "golangciLint" }}'
+
+  custom-gcl-yaml:
+    name: 'deps(golangci-lint): update custom golangci-lint plugin build version to {{ source "golangciLint" }}'
+    kind: yaml
+    sourceid: golangciLint
+    scmid: default
+    spec:
+      file: .custom-gcl.yml
+      key: $.version
+
+  pre-commit-yaml:
+    name: 'deps(golangci-lint): update pre-commit hook to {{ source "golangciLint" }}'
+    kind: file
+    sourceid: golangciLintCommit
+    scmid: default
+    spec:
+      file: .pre-commit-config.yaml
+      matchpattern: 'rev: [0-9a-f]{40} # v\d+\.\d+\.\d+'
+      replacepattern: 'rev: {{ source "golangciLintCommit" }} # {{ source "golangciLint" }}'
+
+actions:
+  default:
+    title: 'deps(golangci-lint): update golangci-lint to {{ source "golangciLint" }} version'
+    kind: github/pullrequest
+    scmid: default
+    spec:
+      automerge: false
+      mergemethod: squash
+      description: |
+        Automatic golangci-lint version {{ source "golangciLint" }} update.
+        This PR has been created by the automation used to automatically update the golangci-lint version in the network-enforcer project.
+        Linter findings may change between releases, so `make lint-config` and `make lint` should pass before merging.
+        REMEMBER IF YOU WANT TO MERGE IN A SINGLE COMMIT CHANGES AND VERSION BUMP, YOU MUST SQUASH THE COMMIT BEFORE MERGING THIS PR!
+      draft: false
+      labels:
+        - "chore"
+        - "dependencies"
+
+scms:
+  default:
+    kind: github
+    spec:
+      user: "{{ .github.author }}"
+      email: "{{ .github.email }}"
+      owner: "{{ requiredEnv .github.owner }}"
+      repository: "network-enforcer"
+      token: "{{ requiredEnv .github.token }}"
+      username: "{{ requiredEnv .github.user }}"
+      branch: "{{ .github.branch }}"
+      commitusingapi: true
+      commitmessage:
+        type: "chore"
+        scope: deps
+        title: "update golangci-lint version"
+        hidecredit: true
+        footers: "Signed-off-by: NetworkEnforcer bot <network-enforcer-bot@users.noreply.github.com>"
