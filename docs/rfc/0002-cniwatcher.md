@@ -1,10 +1,16 @@
+> **Superseded.** cniWatcher was designed as a per-node DaemonSet that
+> normalized CNI deny logs and exported them over OTLP. That component was not
+> shipped. Flow collection and violation export now live in the controller
+> (`controller.provider.name`: Istio, Calico, or Cilium; see
+> `docs/installation/quickstart.adoc` and `docs/compatibility.adoc`). Read this
+> RFC as historical design, not current architecture.
 
 | **Feature Name** | cniWatcher                                                  |
 | :--------------- | :-----------------------------------------------------------|
 | **Start Date**   | Jun 19, 2026                                                |
 | **Category**     | DaemonSet, Component, OpenTelemetry                         |
 | **RFC PR**       | https://github.com/rancher-sandbox/network-enforcer/pull/22 |
-| **State**        | **ACCEPTED**                                                |
+| **State**        | **SUPERSEDED**                                              |
 
 - [Summary](#summary)
 - [Motivation](#motivation)
