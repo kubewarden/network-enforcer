@@ -36,7 +36,7 @@ func labelNamespaceAmbient(ctx context.Context, t *testing.T, _ *envconf.Config)
 	namespace := getNamespace(ctx)
 	r := getSecurityV1Alpha1Client(ctx)
 
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+	ns := &corev1.Namespace{Name: namespace}
 	require.NoError(t, r.Get(ctx, namespace, "", ns), "failed to get test namespace %q", namespace)
 	if ns.Labels == nil {
 		ns.Labels = map[string]string{}
@@ -88,10 +88,8 @@ func assessIstioProposalGenerated(ctx context.Context, t *testing.T, _ *envconf.
 	namespace := getNamespace(ctx)
 
 	expected := v1alpha1.WorkloadNetworkPolicyProposal{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "deployment-" + simpleAppServerDeploymentName + "-ingress",
-			Namespace: namespace,
-		},
+		Name:      "deployment-" + simpleAppServerDeploymentName + "-ingress",
+		Namespace: namespace,
 		Spec: v1alpha1.WorkloadNetworkPolicyProposalSpec{
 			PolicyBackendSpec: v1alpha1.PolicyBackendSpec{
 				Backend: v1alpha1.PolicyBackendIstio,

@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/e2e-framework/klient/conf"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/klient/wait"
@@ -170,10 +169,8 @@ func installNetEnforcerChart() env.Func {
 			if err = wait.For(
 				conditions.New(r).DaemonSetReady(
 					&appsv1.DaemonSet{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "network-enforcer-istio-fluent-bit",
-							Namespace: testCfg.releaseNS,
-						},
+						Name:      "network-enforcer-istio-fluent-bit",
+						Namespace: testCfg.releaseNS,
 					}),
 				wait.WithTimeout(defaultOperationTimeout),
 			); err != nil {

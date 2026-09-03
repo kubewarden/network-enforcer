@@ -22,11 +22,9 @@ func newTestScheme() *runtime.Scheme {
 
 func newTestWNP(name, namespace string) *securityv1alpha1.WorkloadNetworkPolicy {
 	return &securityv1alpha1.WorkloadNetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			UID:       types.UID(name + "-uid"),
-		},
+		Name:      name,
+		Namespace: namespace,
+		UID:       types.UID(name + "-uid"),
 		Spec: securityv1alpha1.WorkloadNetworkPolicySpec{
 			Mode: securityv1alpha1.WorkloadNetworkPolicyModeProtect,
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
@@ -45,18 +43,16 @@ func newOwnedNetworkPolicy(wnp *securityv1alpha1.WorkloadNetworkPolicy) *network
 	controller := true
 	blockOwnerDeletion := true
 	return &networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      wnp.Name,
-			Namespace: wnp.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion:         securityv1alpha1.GroupVersion.String(),
-					Kind:               securityv1alpha1.WorkloadNetworkPolicyKind,
-					Name:               wnp.Name,
-					UID:                wnp.UID,
-					Controller:         &controller,
-					BlockOwnerDeletion: &blockOwnerDeletion,
-				},
+		Name:      wnp.Name,
+		Namespace: wnp.Namespace,
+		OwnerReferences: []metav1.OwnerReference{
+			{
+				APIVersion:         securityv1alpha1.GroupVersion.String(),
+				Kind:               securityv1alpha1.WorkloadNetworkPolicyKind,
+				Name:               wnp.Name,
+				UID:                wnp.UID,
+				Controller:         &controller,
+				BlockOwnerDeletion: &blockOwnerDeletion,
 			},
 		},
 		Spec: *wnp.Spec.Kubernetes,

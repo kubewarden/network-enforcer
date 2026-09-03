@@ -115,10 +115,8 @@ func assessKubernetesProposalGenerated(ctx context.Context, t *testing.T, _ *env
 	dnsPort := intstr.FromInt32(53)
 
 	expectedClientEgressProposal := securityv1alpha1.WorkloadNetworkPolicyProposal{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "deployment-" + simpleAppClientDeploymentName + "-egress",
-			Namespace: namespace,
-		},
+		Name:      "deployment-" + simpleAppClientDeploymentName + "-egress",
+		Namespace: namespace,
 		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 				Backend: securityv1alpha1.PolicyBackendKubernetes,
@@ -170,10 +168,8 @@ func assessKubernetesProposalGenerated(ctx context.Context, t *testing.T, _ *env
 		},
 	}
 	expectedServerIngressProposal := securityv1alpha1.WorkloadNetworkPolicyProposal{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "deployment-" + simpleAppServerDeploymentName + "-ingress",
-			Namespace: namespace,
-		},
+		Name:      "deployment-" + simpleAppServerDeploymentName + "-ingress",
+		Namespace: namespace,
 		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 				Backend: securityv1alpha1.PolicyBackendKubernetes,

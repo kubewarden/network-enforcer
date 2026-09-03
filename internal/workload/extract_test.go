@@ -19,12 +19,10 @@ const testNamespace = "default"
 
 func ownedPod(name string, owner *metav1.OwnerReference, labels map[string]string) *corev1.Pod {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: testNamespace,
-			Labels:    labels,
-			UID:       types.UID(name + "-uid"),
-		},
+		Name:      name,
+		Namespace: testNamespace,
+		Labels:    labels,
+		UID:       types.UID(name + "-uid"),
 	}
 	if owner != nil {
 		pod.OwnerReferences = []metav1.OwnerReference{*owner}
@@ -155,7 +153,7 @@ func TestWorkloadKeyFromPod(t *testing.T) {
 		map[string]string{appsv1.DefaultDeploymentUniqueLabelKey: "abc123"},
 	)
 	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "frontend", Namespace: testNamespace},
+		Name: "frontend", Namespace: testNamespace,
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "frontend"}},
 		},

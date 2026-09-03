@@ -198,19 +198,17 @@ func parseCiliumFlowResponse(flow *flowpb.Flow) processFlowResult {
 		observation := violation.Observation{
 			Provider:  securityv1alpha1.PolicyBackendKubernetes,
 			Direction: direction,
-			ViolationInfo: securityv1alpha1.ViolationInfo{
-				Timestamp: violationTimestamp(flow),
-				Source:    *sourceWorkload,
-				Dest:      *destWorkload,
-				Protocol:  proto,
-				DstPort:   dstPort,
-				Action:    securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-				// for now our policy are of ALLOW type so we never have a
-				// correlation cilium-side. We will try to resolve the denying
-				// policy later on in the flow
-				DenyingPolicyNamespace: "",
-				DenyingPolicyName:      "",
-			},
+			Timestamp: violationTimestamp(flow),
+			Source:    *sourceWorkload,
+			Dest:      *destWorkload,
+			Protocol:  proto,
+			DstPort:   dstPort,
+			Action:    securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+			// for now our policy are of ALLOW type so we never have a
+			// correlation cilium-side. We will try to resolve the denying
+			// policy later on in the flow
+			DenyingPolicyNamespace: "",
+			DenyingPolicyName:      "",
 		}
 		return processFlowRecordViolation(observation)
 	}

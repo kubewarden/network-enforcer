@@ -33,24 +33,22 @@ func newViolation(
 	denyName string,
 ) violation.Observation {
 	return violation.Observation{
-		ViolationInfo: securityv1alpha1.ViolationInfo{
-			Timestamp: metav1.NewTime(ts),
-			Source: securityv1alpha1.WorkloadRef{
-				Namespace: srcNS,
-				OwnerKind: "Deployment",
-				OwnerName: srcName,
-			},
-			Dest: securityv1alpha1.WorkloadRef{
-				Namespace: dstNS,
-				OwnerKind: "Service",
-				OwnerName: dstName,
-			},
-			Protocol:               corev1.ProtocolTCP,
-			DstPort:                80,
-			Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-			DenyingPolicyNamespace: denyNS,
-			DenyingPolicyName:      denyName,
+		Timestamp: metav1.NewTime(ts),
+		Source: securityv1alpha1.WorkloadRef{
+			Namespace: srcNS,
+			OwnerKind: "Deployment",
+			OwnerName: srcName,
 		},
+		Dest: securityv1alpha1.WorkloadRef{
+			Namespace: dstNS,
+			OwnerKind: "Service",
+			OwnerName: dstName,
+		},
+		Protocol:               corev1.ProtocolTCP,
+		DstPort:                80,
+		Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+		DenyingPolicyNamespace: denyNS,
+		DenyingPolicyName:      denyName,
 	}
 }
 
@@ -277,20 +275,18 @@ func TestProcessWorkloadNetworkPolicy_TwoPhasePatch(t *testing.T) {
 
 	violations := []securityv1alpha1.ViolationRecord{
 		{
-			ViolationInfo: securityv1alpha1.ViolationInfo{
-				Timestamp: metav1.NewTime(now.Add(-10 * time.Minute)),
-				Source: securityv1alpha1.WorkloadRef{
-					Namespace: "src-ns", OwnerKind: "Deployment", OwnerName: "app",
-				},
-				Dest: securityv1alpha1.WorkloadRef{
-					Namespace: "dst-ns", OwnerKind: "Service", OwnerName: "svc",
-				},
-				Protocol:               corev1.ProtocolTCP,
-				DstPort:                80,
-				Action:                 "protect",
-				DenyingPolicyNamespace: "ns1",
-				DenyingPolicyName:      "policy-1",
+			Timestamp: metav1.NewTime(now.Add(-10 * time.Minute)),
+			Source: securityv1alpha1.WorkloadRef{
+				Namespace: "src-ns", OwnerKind: "Deployment", OwnerName: "app",
 			},
+			Dest: securityv1alpha1.WorkloadRef{
+				Namespace: "dst-ns", OwnerKind: "Service", OwnerName: "svc",
+			},
+			Protocol:               corev1.ProtocolTCP,
+			DstPort:                80,
+			Action:                 "protect",
+			DenyingPolicyNamespace: "ns1",
+			DenyingPolicyName:      "policy-1",
 		},
 	}
 
@@ -319,10 +315,8 @@ func TestBuildOwnershipIndex(t *testing.T) {
 	ownedNP2 := newOwnedNetworkPolicy(wnp2)
 	// A NetworkPolicy with no owner reference.
 	unownedNP := &networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "raw-policy",
-			Namespace: "ns1",
-		},
+		Name:      "raw-policy",
+		Namespace: "ns1",
 	}
 
 	fakeClient := fake.NewClientBuilder().
@@ -416,21 +410,19 @@ func TestSyncClearsViolationsWithNoNewScrapedViolations(t *testing.T) {
 		ActiveViolationCount: 1,
 		Violations: []securityv1alpha1.ViolationRecord{
 			{
-				ID: 0,
-				ViolationInfo: securityv1alpha1.ViolationInfo{
-					Timestamp: metav1.NewTime(now.Add(-10 * time.Minute)),
-					Source: securityv1alpha1.WorkloadRef{
-						Namespace: "src-ns", OwnerKind: "Deployment", OwnerName: "app",
-					},
-					Dest: securityv1alpha1.WorkloadRef{
-						Namespace: "dst-ns", OwnerKind: "Service", OwnerName: "svc",
-					},
-					Protocol:               corev1.ProtocolTCP,
-					DstPort:                80,
-					Action:                 "protect",
-					DenyingPolicyNamespace: "ns1",
-					DenyingPolicyName:      "policy-1",
+				ID:        0,
+				Timestamp: metav1.NewTime(now.Add(-10 * time.Minute)),
+				Source: securityv1alpha1.WorkloadRef{
+					Namespace: "src-ns", OwnerKind: "Deployment", OwnerName: "app",
 				},
+				Dest: securityv1alpha1.WorkloadRef{
+					Namespace: "dst-ns", OwnerKind: "Service", OwnerName: "svc",
+				},
+				Protocol:               corev1.ProtocolTCP,
+				DstPort:                80,
+				Action:                 "protect",
+				DenyingPolicyNamespace: "ns1",
+				DenyingPolicyName:      "policy-1",
 			},
 		},
 	}
@@ -492,20 +484,18 @@ func TestTwoPhasePatchConflict(t *testing.T) {
 
 	violations := []securityv1alpha1.ViolationRecord{
 		{
-			ViolationInfo: securityv1alpha1.ViolationInfo{
-				Timestamp: metav1.NewTime(time.Now()),
-				Source: securityv1alpha1.WorkloadRef{
-					Namespace: "ns1", OwnerKind: "Deployment", OwnerName: "app",
-				},
-				Dest: securityv1alpha1.WorkloadRef{
-					Namespace: "ns2", OwnerKind: "Service", OwnerName: "svc",
-				},
-				Protocol:               corev1.ProtocolTCP,
-				DstPort:                80,
-				Action:                 "protect",
-				DenyingPolicyNamespace: "ns1",
-				DenyingPolicyName:      "conflict-policy",
+			Timestamp: metav1.NewTime(time.Now()),
+			Source: securityv1alpha1.WorkloadRef{
+				Namespace: "ns1", OwnerKind: "Deployment", OwnerName: "app",
 			},
+			Dest: securityv1alpha1.WorkloadRef{
+				Namespace: "ns2", OwnerKind: "Service", OwnerName: "svc",
+			},
+			Protocol:               corev1.ProtocolTCP,
+			DstPort:                80,
+			Action:                 "protect",
+			DenyingPolicyNamespace: "ns1",
+			DenyingPolicyName:      "conflict-policy",
 		},
 	}
 

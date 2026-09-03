@@ -68,22 +68,20 @@ func calicoProtectObservation(
 	return violation.Observation{
 		Provider:  securityv1alpha1.PolicyBackendKubernetes,
 		Direction: direction,
-		ViolationInfo: securityv1alpha1.ViolationInfo{
-			Timestamp: metav1.NewTime(calicoTestFlowTime()),
-			Source: securityv1alpha1.WorkloadRef{
-				Namespace: defaultCalicoTestNamespace,
-				OwnerName: "http-client-abc123-*",
-			},
-			Dest: securityv1alpha1.WorkloadRef{
-				Namespace: defaultCalicoTestNamespace,
-				OwnerName: "http-server-def456-*",
-			},
-			Protocol:               protocol,
-			DstPort:                dstPort,
-			Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-			DenyingPolicyNamespace: denyingNamespace,
-			DenyingPolicyName:      denyingName,
+		Timestamp: metav1.NewTime(calicoTestFlowTime()),
+		Source: securityv1alpha1.WorkloadRef{
+			Namespace: defaultCalicoTestNamespace,
+			OwnerName: "http-client-abc123-*",
 		},
+		Dest: securityv1alpha1.WorkloadRef{
+			Namespace: defaultCalicoTestNamespace,
+			OwnerName: "http-server-def456-*",
+		},
+		Protocol:               protocol,
+		DstPort:                dstPort,
+		Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+		DenyingPolicyNamespace: denyingNamespace,
+		DenyingPolicyName:      denyingName,
 	}
 }
 
@@ -299,99 +297,89 @@ func TestProcessCalicoFlowResolvesWorkloadsWithFakeClient(t *testing.T) {
 	t.Parallel()
 
 	clientPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:         "http-client-abc123-xyz",
-			Namespace:    defaultCalicoTestNamespace,
-			GenerateName: "http-client-abc123-",
-			Labels:       map[string]string{appsv1.DefaultDeploymentUniqueLabelKey: "abc123", "app": "http-client"},
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: "apps/v1",
-				Kind:       string(securityv1alpha1.WorkloadKindReplicaSet),
-				Name:       "http-client-abc123",
-				UID:        "client-rs",
-				Controller: new(true),
-			}},
-		},
+		Name:         "http-client-abc123-xyz",
+		Namespace:    defaultCalicoTestNamespace,
+		GenerateName: "http-client-abc123-",
+		Labels:       map[string]string{appsv1.DefaultDeploymentUniqueLabelKey: "abc123", "app": "http-client"},
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "apps/v1",
+			Kind:       string(securityv1alpha1.WorkloadKindReplicaSet),
+			Name:       "http-client-abc123",
+			UID:        "client-rs",
+			Controller: new(true),
+		}},
 	}
 	serverPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:         "http-server-def456-xyz",
-			Namespace:    defaultCalicoTestNamespace,
-			GenerateName: "http-server-def456-",
-			Labels:       map[string]string{appsv1.DefaultDeploymentUniqueLabelKey: "def456", "app": "http-server"},
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: "apps/v1",
-				Kind:       string(securityv1alpha1.WorkloadKindReplicaSet),
-				Name:       "http-server-def456",
-				UID:        "server-rs",
-				Controller: new(true),
-			}},
-		},
+		Name:         "http-server-def456-xyz",
+		Namespace:    defaultCalicoTestNamespace,
+		GenerateName: "http-server-def456-",
+		Labels:       map[string]string{appsv1.DefaultDeploymentUniqueLabelKey: "def456", "app": "http-server"},
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "apps/v1",
+			Kind:       string(securityv1alpha1.WorkloadKindReplicaSet),
+			Name:       "http-server-def456",
+			UID:        "server-rs",
+			Controller: new(true),
+		}},
 	}
 	jobPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:         "batch-job-pq2qc",
-			Namespace:    defaultCalicoTestNamespace,
-			GenerateName: "batch-job-",
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: "batch/v1",
-				Kind:       "Job",
-				Name:       "batch-job",
-				UID:        "job",
-				Controller: new(true),
-			}},
-		},
+		Name:         "batch-job-pq2qc",
+		Namespace:    defaultCalicoTestNamespace,
+		GenerateName: "batch-job-",
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "batch/v1",
+			Kind:       "Job",
+			Name:       "batch-job",
+			UID:        "job",
+			Controller: new(true),
+		}},
 	}
 	clientDeploy := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "http-client", Namespace: defaultCalicoTestNamespace},
+		Name: "http-client", Namespace: defaultCalicoTestNamespace,
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "http-client"}},
 		},
 	}
 	serverDeploy := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "http-server", Namespace: defaultCalicoTestNamespace},
+		Name: "http-server", Namespace: defaultCalicoTestNamespace,
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "http-server"}},
 		},
 	}
 	stsPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:         "web-0",
-			Namespace:    defaultCalicoTestNamespace,
-			GenerateName: "web-",
-			Labels:       map[string]string{"app": "web"},
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: "apps/v1",
-				Kind:       string(securityv1alpha1.WorkloadKindStatefulSet),
-				Name:       "web",
-				UID:        "sts",
-				Controller: new(true),
-			}},
-		},
+		Name:         "web-0",
+		Namespace:    defaultCalicoTestNamespace,
+		GenerateName: "web-",
+		Labels:       map[string]string{"app": "web"},
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "apps/v1",
+			Kind:       string(securityv1alpha1.WorkloadKindStatefulSet),
+			Name:       "web",
+			UID:        "sts",
+			Controller: new(true),
+		}},
 	}
 	dsPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:         "fluent-bit-xyz",
-			Namespace:    defaultCalicoTestNamespace,
-			GenerateName: "fluent-bit-",
-			Labels:       map[string]string{"app": "fluent-bit"},
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: "apps/v1",
-				Kind:       string(securityv1alpha1.WorkloadKindDaemonSet),
-				Name:       "fluent-bit",
-				UID:        "ds",
-				Controller: new(true),
-			}},
-		},
+		Name:         "fluent-bit-xyz",
+		Namespace:    defaultCalicoTestNamespace,
+		GenerateName: "fluent-bit-",
+		Labels:       map[string]string{"app": "fluent-bit"},
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "apps/v1",
+			Kind:       string(securityv1alpha1.WorkloadKindDaemonSet),
+			Name:       "fluent-bit",
+			UID:        "ds",
+			Controller: new(true),
+		}},
 	}
 	sts := &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: defaultCalicoTestNamespace},
+		Name: "web", Namespace: defaultCalicoTestNamespace,
 		Spec: appsv1.StatefulSetSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "web"}},
 		},
 	}
 	ds := &appsv1.DaemonSet{
-		ObjectMeta: metav1.ObjectMeta{Name: "fluent-bit", Namespace: defaultCalicoTestNamespace},
+		Name: "fluent-bit", Namespace: defaultCalicoTestNamespace,
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "fluent-bit"}},
 		},
@@ -412,7 +400,7 @@ func TestProcessCalicoFlowResolvesWorkloadsWithFakeClient(t *testing.T) {
 		WithObjects(
 			clientPod, serverPod, jobPod, clientDeploy, serverDeploy, stsPod, dsPod, sts, ds,
 			&securityv1alpha1.WorkloadNetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: sourcePolicyName, Namespace: defaultCalicoTestNamespace},
+				Name: sourcePolicyName, Namespace: defaultCalicoTestNamespace,
 				Spec: securityv1alpha1.WorkloadNetworkPolicySpec{
 					PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 						Backend:    securityv1alpha1.PolicyBackendKubernetes,
@@ -421,7 +409,7 @@ func TestProcessCalicoFlowResolvesWorkloadsWithFakeClient(t *testing.T) {
 				},
 			},
 			&securityv1alpha1.WorkloadNetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: dstPolicyName, Namespace: defaultCalicoTestNamespace},
+				Name: dstPolicyName, Namespace: defaultCalicoTestNamespace,
 				Spec: securityv1alpha1.WorkloadNetworkPolicySpec{
 					PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 						Backend:    securityv1alpha1.PolicyBackendKubernetes,
@@ -539,36 +527,32 @@ func TestProcessCalicoFlowResolvesWorkloadsWithFakeClient(t *testing.T) {
 			name: "deny_ingress_resolves_violation_policy_on_destination",
 			flow: calicoFlowResult(denyDstWorkloadKey()),
 			processFlowResult: processFlowRecordViolation(violation.Observation{
-				Provider:  securityv1alpha1.PolicyBackendKubernetes,
-				Direction: networkingv1.PolicyTypeIngress,
-				ViolationInfo: securityv1alpha1.ViolationInfo{
-					Timestamp:              metav1.NewTime(calicoTestFlowTime()),
-					Source:                 *deploySource,
-					Dest:                   *deployDest,
-					Protocol:               corev1.ProtocolTCP,
-					DstPort:                18080,
-					Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-					DenyingPolicyNamespace: defaultCalicoTestNamespace,
-					DenyingPolicyName:      dstPolicyName,
-				},
+				Provider:               securityv1alpha1.PolicyBackendKubernetes,
+				Direction:              networkingv1.PolicyTypeIngress,
+				Timestamp:              metav1.NewTime(calicoTestFlowTime()),
+				Source:                 *deploySource,
+				Dest:                   *deployDest,
+				Protocol:               corev1.ProtocolTCP,
+				DstPort:                18080,
+				Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+				DenyingPolicyNamespace: defaultCalicoTestNamespace,
+				DenyingPolicyName:      dstPolicyName,
 			}),
 		},
 		{
 			name: "deny_egress_resolves_violation_policy_on_source",
 			flow: calicoFlowResult(denySrcWorkloadKey()),
 			processFlowResult: processFlowRecordViolation(violation.Observation{
-				Provider:  securityv1alpha1.PolicyBackendKubernetes,
-				Direction: networkingv1.PolicyTypeEgress,
-				ViolationInfo: securityv1alpha1.ViolationInfo{
-					Timestamp:              metav1.NewTime(calicoTestFlowTime()),
-					Source:                 *deploySource,
-					Dest:                   *deployDest,
-					Protocol:               corev1.ProtocolTCP,
-					DstPort:                18080,
-					Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-					DenyingPolicyNamespace: defaultCalicoTestNamespace,
-					DenyingPolicyName:      sourcePolicyName,
-				},
+				Provider:               securityv1alpha1.PolicyBackendKubernetes,
+				Direction:              networkingv1.PolicyTypeEgress,
+				Timestamp:              metav1.NewTime(calicoTestFlowTime()),
+				Source:                 *deploySource,
+				Dest:                   *deployDest,
+				Protocol:               corev1.ProtocolTCP,
+				DstPort:                18080,
+				Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+				DenyingPolicyNamespace: defaultCalicoTestNamespace,
+				DenyingPolicyName:      sourcePolicyName,
 			}),
 		},
 	}

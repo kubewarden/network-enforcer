@@ -62,18 +62,16 @@ func parseCalicoFlow(flowResult *pb.FlowResult) processFlowResult {
 
 		denyingPolicyName, denyingPolicyNamespace := getDenyingPolicy(key)
 		return processFlowRecordViolation(violation.Observation{
-			Provider:  securityv1alpha1.PolicyBackendKubernetes,
-			Direction: direction,
-			ViolationInfo: securityv1alpha1.ViolationInfo{
-				Timestamp:              calicoViolationTimestamp(flow),
-				Source:                 *source,
-				Dest:                   *dest,
-				Protocol:               proto,
-				DstPort:                dstPort,
-				Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-				DenyingPolicyNamespace: denyingPolicyNamespace,
-				DenyingPolicyName:      denyingPolicyName,
-			},
+			Provider:               securityv1alpha1.PolicyBackendKubernetes,
+			Direction:              direction,
+			Timestamp:              calicoViolationTimestamp(flow),
+			Source:                 *source,
+			Dest:                   *dest,
+			Protocol:               proto,
+			DstPort:                dstPort,
+			Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+			DenyingPolicyNamespace: denyingPolicyNamespace,
+			DenyingPolicyName:      denyingPolicyName,
 		})
 	}
 

@@ -116,19 +116,17 @@ func TestExportRoutesRecordsByEventType(t *testing.T) {
 				srcAddrKey:           "10.244.0.9:46266",
 			},
 			wantRecord: &violation.Observation{
-				Provider: securityv1alpha1.PolicyBackendIstio,
-				ViolationInfo: securityv1alpha1.ViolationInfo{
-					Timestamp: metav1.NewTime(wantTimestamp),
-					Source:    securityv1alpha1.WorkloadRef{OwnerName: "10.244.0.9:46266"},
-					Dest: securityv1alpha1.WorkloadRef{
-						Namespace: "default",
-						OwnerName: "http-server-7bbf596dd9-8gs65",
-					},
-					Protocol:               corev1.ProtocolTCP,
-					Action:                 securityv1alpha1.WorkloadNetworkPolicyModeMonitor,
-					DenyingPolicyNamespace: "default",
-					DenyingPolicyName:      "deny-http-server-monitor",
+				Provider:  securityv1alpha1.PolicyBackendIstio,
+				Timestamp: metav1.NewTime(wantTimestamp),
+				Source:    securityv1alpha1.WorkloadRef{OwnerName: "10.244.0.9:46266"},
+				Dest: securityv1alpha1.WorkloadRef{
+					Namespace: "default",
+					OwnerName: "http-server-7bbf596dd9-8gs65",
 				},
+				Protocol:               corev1.ProtocolTCP,
+				Action:                 securityv1alpha1.WorkloadNetworkPolicyModeMonitor,
+				DenyingPolicyNamespace: "default",
+				DenyingPolicyName:      "deny-http-server-monitor",
 			},
 			wantOtel: 1,
 		},
@@ -141,19 +139,17 @@ func TestExportRoutesRecordsByEventType(t *testing.T) {
 				srcAddrKey:           "10.244.0.5:49084",
 			},
 			wantRecord: &violation.Observation{
-				Provider: securityv1alpha1.PolicyBackendIstio,
-				ViolationInfo: securityv1alpha1.ViolationInfo{
-					Timestamp: metav1.NewTime(wantTimestamp),
-					Source:    securityv1alpha1.WorkloadRef{OwnerName: "10.244.0.5:49084"},
-					Dest: securityv1alpha1.WorkloadRef{
-						Namespace: "default",
-						OwnerName: "http-server-6cbcc86f5d-lhq82",
-					},
-					Protocol:               corev1.ProtocolTCP,
-					Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-					DenyingPolicyNamespace: "default",
-					DenyingPolicyName:      "deny-http-server-protect",
+				Provider:  securityv1alpha1.PolicyBackendIstio,
+				Timestamp: metav1.NewTime(wantTimestamp),
+				Source:    securityv1alpha1.WorkloadRef{OwnerName: "10.244.0.5:49084"},
+				Dest: securityv1alpha1.WorkloadRef{
+					Namespace: "default",
+					OwnerName: "http-server-6cbcc86f5d-lhq82",
 				},
+				Protocol:               corev1.ProtocolTCP,
+				Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+				DenyingPolicyNamespace: "default",
+				DenyingPolicyName:      "deny-http-server-protect",
 			},
 			wantOtel: 1,
 		},
@@ -165,17 +161,15 @@ func TestExportRoutesRecordsByEventType(t *testing.T) {
 				srcAddrKey:           "10.244.0.5:52814",
 			},
 			wantRecord: &violation.Observation{
-				Provider: securityv1alpha1.PolicyBackendIstio,
-				ViolationInfo: securityv1alpha1.ViolationInfo{
-					Timestamp: metav1.NewTime(wantTimestamp),
-					Source:    securityv1alpha1.WorkloadRef{OwnerName: "10.244.0.5:52814"},
-					Dest: securityv1alpha1.WorkloadRef{
-						Namespace: "default",
-						OwnerName: "http-server-6cbcc86f5d-lhq82",
-					},
-					Protocol: corev1.ProtocolTCP,
-					Action:   securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+				Provider:  securityv1alpha1.PolicyBackendIstio,
+				Timestamp: metav1.NewTime(wantTimestamp),
+				Source:    securityv1alpha1.WorkloadRef{OwnerName: "10.244.0.5:52814"},
+				Dest: securityv1alpha1.WorkloadRef{
+					Namespace: "default",
+					OwnerName: "http-server-6cbcc86f5d-lhq82",
 				},
+				Protocol: corev1.ProtocolTCP,
+				Action:   securityv1alpha1.WorkloadNetworkPolicyModeProtect,
 			},
 			wantOtel: 1,
 		},
@@ -213,24 +207,22 @@ func TestExportRoutesRecordsByEventType(t *testing.T) {
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, securityv1alpha1.AddToScheme(scheme))
 	learnDstPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "http-server-7bbf596dd9-4rgdc",
-			Namespace: "default",
-			Labels: map[string]string{
-				appsv1.DefaultDeploymentUniqueLabelKey: "7bbf596dd9",
-				"app":                                  "http-server",
-			},
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: appsv1.SchemeGroupVersion.String(),
-				Kind:       string(securityv1alpha1.WorkloadKindReplicaSet),
-				Name:       "http-server-7bbf596dd9",
-				UID:        "http-server-rs-uid",
-				Controller: new(true),
-			}},
+		Name:      "http-server-7bbf596dd9-4rgdc",
+		Namespace: "default",
+		Labels: map[string]string{
+			appsv1.DefaultDeploymentUniqueLabelKey: "7bbf596dd9",
+			"app":                                  "http-server",
 		},
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: appsv1.SchemeGroupVersion.String(),
+			Kind:       string(securityv1alpha1.WorkloadKindReplicaSet),
+			Name:       "http-server-7bbf596dd9",
+			UID:        "http-server-rs-uid",
+			Controller: new(true),
+		}},
 	}
 	learnDstDeploy := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "http-server", Namespace: "default"},
+		Name: "http-server", Namespace: "default",
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "http-server"}},
 		},
@@ -296,37 +288,33 @@ func TestExportEnrichesObservations(t *testing.T) {
 	const dstPodName = "http-server-" + podTemplateHash + "-lhq82"
 
 	srcPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "http-client-pod",
-			Namespace: "default",
-			UID:       "http-client-pod-uid",
-		},
-		Spec:   corev1.PodSpec{ServiceAccountName: "http-client-sa"},
-		Status: corev1.PodStatus{PodIP: "10.244.0.9"},
+		Name:      "http-client-pod",
+		Namespace: "default",
+		UID:       "http-client-pod-uid",
+		Spec:      corev1.PodSpec{ServiceAccountName: "http-client-sa"},
+		Status:    corev1.PodStatus{PodIP: "10.244.0.9"},
 	}
 	dstPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      dstPodName,
-			Namespace: "default",
-			UID:       "http-server-pod-uid",
-			Labels: map[string]string{
-				appsv1.DefaultDeploymentUniqueLabelKey: podTemplateHash,
-				"app":                                  "http-server",
-			},
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: appsv1.SchemeGroupVersion.String(),
-				Kind:       string(securityv1alpha1.WorkloadKindReplicaSet),
-				Name:       "http-server-" + podTemplateHash,
-				UID:        "http-server-rs-uid",
-				Controller: new(true),
-			}},
+		Name:      dstPodName,
+		Namespace: "default",
+		UID:       "http-server-pod-uid",
+		Labels: map[string]string{
+			appsv1.DefaultDeploymentUniqueLabelKey: podTemplateHash,
+			"app":                                  "http-server",
 		},
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: appsv1.SchemeGroupVersion.String(),
+			Kind:       string(securityv1alpha1.WorkloadKindReplicaSet),
+			Name:       "http-server-" + podTemplateHash,
+			UID:        "http-server-rs-uid",
+			Controller: new(true),
+		}},
 		Spec: corev1.PodSpec{ServiceAccountName: "http-server-sa"},
 	}
 	// owningWNP selects the destination workload by label, so an ALLOW-miss (which
 	// carries no denying policy on the wire) resolves its owning WNP by selector.
 	owningWNP := &securityv1alpha1.WorkloadNetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{Name: "allow-http-server", Namespace: "default"},
+		Name: "allow-http-server", Namespace: "default",
 		Spec: securityv1alpha1.WorkloadNetworkPolicySpec{
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 				Backend: securityv1alpha1.PolicyBackendIstio,

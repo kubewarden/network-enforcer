@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -67,10 +66,8 @@ func (r *WorkloadNetworkPolicyProposalReconciler) Reconcile(
 	}
 
 	policy := securityv1alpha1.WorkloadNetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      proposal.Name,
-			Namespace: proposal.Namespace,
-		},
+		Name:      proposal.Name,
+		Namespace: proposal.Namespace,
 		Spec: securityv1alpha1.WorkloadNetworkPolicySpec{
 			Mode:              mode,
 			PolicyBackendSpec: proposal.Spec.PolicyBackendSpec,

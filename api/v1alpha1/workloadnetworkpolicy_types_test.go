@@ -22,32 +22,26 @@ func TestSelectorExtraction(t *testing.T) {
 		{
 			name: "no_kubernetes_backend",
 			spec: &WorkloadNetworkPolicySpec{
-				PolicyBackendSpec: PolicyBackendSpec{
-					Backend:    PolicyBackendKubernetes,
-					Kubernetes: nil,
-				},
+				Backend:    PolicyBackendKubernetes,
+				Kubernetes: nil,
 			},
 			selector: nil,
 		},
 		{
 			name: "no_istio_backend",
 			spec: &WorkloadNetworkPolicySpec{
-				PolicyBackendSpec: PolicyBackendSpec{
-					Backend: PolicyBackendIstio,
-					Istio:   nil,
-				},
+				Backend: PolicyBackendIstio,
+				Istio:   nil,
 			},
 			selector: nil,
 		},
 		{
 			name: "kubernetes_backend",
 			spec: &WorkloadNetworkPolicySpec{
-				PolicyBackendSpec: PolicyBackendSpec{
-					Backend: PolicyBackendKubernetes,
-					Kubernetes: &v1.NetworkPolicySpec{
-						PodSelector: metav1.LabelSelector{
-							MatchLabels: map[string]string{"app": "my-app"},
-						},
+				Backend: PolicyBackendKubernetes,
+				Kubernetes: &v1.NetworkPolicySpec{
+					PodSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": "my-app"},
 					},
 				},
 			},
@@ -58,12 +52,10 @@ func TestSelectorExtraction(t *testing.T) {
 		{
 			name: "istio_backend",
 			spec: &WorkloadNetworkPolicySpec{
-				PolicyBackendSpec: PolicyBackendSpec{
-					Backend: PolicyBackendIstio,
-					Istio: &IstioAuthorizationPolicySpec{
-						Selector: metav1.LabelSelector{
-							MatchLabels: map[string]string{"app": "my-app"},
-						},
+				Backend: PolicyBackendIstio,
+				Istio: &IstioAuthorizationPolicySpec{
+					Selector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": "my-app"},
 					},
 				},
 			},

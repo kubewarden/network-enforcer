@@ -268,16 +268,14 @@ func policyEventToObservation(
 	}
 
 	return violation.Observation{
-		Provider: securityv1alpha1.PolicyBackendIstio,
-		ViolationInfo: securityv1alpha1.ViolationInfo{
-			Timestamp:              timestampFromRecord(rec),
-			Source:                 securityv1alpha1.WorkloadRef{OwnerName: attrs[srcAddrKey]},
-			Dest:                   securityv1alpha1.WorkloadRef{Namespace: dstNamespace, OwnerName: dstName},
-			Protocol:               corev1.ProtocolTCP,
-			Action:                 action,
-			DenyingPolicyNamespace: policyNamespace,
-			DenyingPolicyName:      policyName,
-		},
+		Provider:               securityv1alpha1.PolicyBackendIstio,
+		Timestamp:              timestampFromRecord(rec),
+		Source:                 securityv1alpha1.WorkloadRef{OwnerName: attrs[srcAddrKey]},
+		Dest:                   securityv1alpha1.WorkloadRef{Namespace: dstNamespace, OwnerName: dstName},
+		Protocol:               corev1.ProtocolTCP,
+		Action:                 action,
+		DenyingPolicyNamespace: policyNamespace,
+		DenyingPolicyName:      policyName,
 	}
 }
 

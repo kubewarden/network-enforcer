@@ -18,10 +18,8 @@ func (r *WorkloadNetworkPolicyReconciler) reconcileK8sPolicy(
 	wnp *securityv1alpha1.WorkloadNetworkPolicy,
 ) error {
 	np := &networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      wnp.Name,
-			Namespace: wnp.Namespace,
-		},
+		Name:      wnp.Name,
+		Namespace: wnp.Namespace,
 	}
 	err := r.Get(ctx, wnp.NamespacedName(), np)
 	switch {

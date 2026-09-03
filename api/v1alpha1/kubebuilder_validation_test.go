@@ -141,10 +141,8 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 		{
 			name: "kubernetes_valid_policy",
 			policy: &WorkloadNetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "valid-k8s",
-					Namespace: "default",
-				},
+				Name:      "valid-k8s",
+				Namespace: "default",
 				Spec: WorkloadNetworkPolicySpec{
 					Mode: WorkloadNetworkPolicyModeMonitor,
 					PolicyBackendSpec: PolicyBackendSpec{
@@ -164,10 +162,8 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 		{
 			name: "istio_valid_policy",
 			policy: &WorkloadNetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "valid-istio",
-					Namespace: "default",
-				},
+				Name:      "valid-istio",
+				Namespace: "default",
 				Spec: WorkloadNetworkPolicySpec{
 					Mode: WorkloadNetworkPolicyModeMonitor,
 					PolicyBackendSpec: PolicyBackendSpec{
