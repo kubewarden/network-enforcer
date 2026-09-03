@@ -15,25 +15,23 @@ import (
 
 func mkViolation() ViolationRecord {
 	return ViolationRecord{
-		ID: 0,
-		ViolationInfo: ViolationInfo{
-			Timestamp: metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
-			Source: WorkloadRef{
-				Namespace: "ns1",
-				OwnerKind: "Deployment",
-				OwnerName: "app",
-			},
-			Dest: WorkloadRef{
-				Namespace: "ns2",
-				OwnerKind: "Service",
-				OwnerName: "svc",
-			},
-			Protocol:               corev1.ProtocolTCP,
-			DstPort:                80,
-			Action:                 "protect",
-			DenyingPolicyNamespace: "ns1",
-			DenyingPolicyName:      "deny-all",
+		ID:        0,
+		Timestamp: metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
+		Source: WorkloadRef{
+			Namespace: "ns1",
+			OwnerKind: "Deployment",
+			OwnerName: "app",
 		},
+		Dest: WorkloadRef{
+			Namespace: "ns2",
+			OwnerKind: "Service",
+			OwnerName: "svc",
+		},
+		Protocol:               corev1.ProtocolTCP,
+		DstPort:                80,
+		Action:                 "protect",
+		DenyingPolicyNamespace: "ns1",
+		DenyingPolicyName:      "deny-all",
 	}
 }
 
@@ -595,25 +593,23 @@ func TestAcknowledgeViolationsFromAnnotations(t *testing.T) {
 
 	newViolation := func(id int64) ViolationRecord {
 		return ViolationRecord{
-			ID: id,
-			ViolationInfo: ViolationInfo{
-				Timestamp: metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
-				Source: WorkloadRef{
-					Namespace: "ns1",
-					OwnerKind: "Deployment",
-					OwnerName: "app",
-				},
-				Dest: WorkloadRef{
-					Namespace: "ns2",
-					OwnerKind: "Service",
-					OwnerName: fmt.Sprintf("svc-%d", id),
-				},
-				Protocol:               corev1.ProtocolTCP,
-				DstPort:                80,
-				Action:                 "protect",
-				DenyingPolicyNamespace: "ns1",
-				DenyingPolicyName:      "deny-all",
+			ID:        id,
+			Timestamp: metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
+			Source: WorkloadRef{
+				Namespace: "ns1",
+				OwnerKind: "Deployment",
+				OwnerName: "app",
 			},
+			Dest: WorkloadRef{
+				Namespace: "ns2",
+				OwnerKind: "Service",
+				OwnerName: fmt.Sprintf("svc-%d", id),
+			},
+			Protocol:               corev1.ProtocolTCP,
+			DstPort:                80,
+			Action:                 "protect",
+			DenyingPolicyNamespace: "ns1",
+			DenyingPolicyName:      "deny-all",
 		}
 	}
 
@@ -724,7 +720,7 @@ func TestAcknowledgeViolationsFromAnnotations(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			wnp := &WorkloadNetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+				Annotations: tt.annotations,
 				Status: WorkloadNetworkPolicyStatus{
 					Violations:             tt.violations,
 					AcknowledgedViolations: tt.acknowledged,
@@ -758,10 +754,8 @@ func TestRecomputeStatus(t *testing.T) {
 
 	t.Run("merge_and_acknowledge", func(t *testing.T) {
 		wnp := &WorkloadNetworkPolicy{
-			ObjectMeta: metav1.ObjectMeta{
-				Annotations: map[string]string{
-					ViolationAcknowledgePrefix + "0": "known issue",
-				},
+			Annotations: map[string]string{
+				ViolationAcknowledgePrefix + "0": "known issue",
 			},
 		}
 

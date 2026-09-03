@@ -11,7 +11,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/e2e-framework/klient/decoder"
@@ -52,7 +51,7 @@ func teardownSimpleAppWorkload(ctx context.Context, t *testing.T, _ *envconf.Con
 	require.NoError(t, err, "failed to delete simple app manifest")
 
 	clientDeployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: simpleAppClientDeploymentName, Namespace: namespace},
+		Name: simpleAppClientDeploymentName, Namespace: namespace,
 	}
 	err = wait.For(
 		conditions.New(getSecurityV1Alpha1Client(ctx)).ResourceDeleted(clientDeployment),
@@ -61,7 +60,7 @@ func teardownSimpleAppWorkload(ctx context.Context, t *testing.T, _ *envconf.Con
 	require.NoError(t, err, "wait client deployment deletion")
 
 	serverDeployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: simpleAppServerDeploymentName, Namespace: namespace},
+		Name: simpleAppServerDeploymentName, Namespace: namespace,
 	}
 	err = wait.For(
 		conditions.New(getSecurityV1Alpha1Client(ctx)).ResourceDeleted(serverDeployment),

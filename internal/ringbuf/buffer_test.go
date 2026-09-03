@@ -16,15 +16,13 @@ func TestBufferRecordAndDrain(t *testing.T) {
 	buf := New[violation.Observation]()
 
 	buf.Record(violation.Observation{
-		ViolationInfo: securityv1alpha1.ViolationInfo{
-			Source:                 securityv1alpha1.WorkloadRef{Namespace: "ns1", OwnerName: "pod1"},
-			Dest:                   securityv1alpha1.WorkloadRef{Namespace: "ns2", OwnerName: "svc1"},
-			Protocol:               corev1.ProtocolTCP,
-			DstPort:                80,
-			Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-			DenyingPolicyName:      "deny-all",
-			DenyingPolicyNamespace: "ns1",
-		},
+		Source:                 securityv1alpha1.WorkloadRef{Namespace: "ns1", OwnerName: "pod1"},
+		Dest:                   securityv1alpha1.WorkloadRef{Namespace: "ns2", OwnerName: "svc1"},
+		Protocol:               corev1.ProtocolTCP,
+		DstPort:                80,
+		Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+		DenyingPolicyName:      "deny-all",
+		DenyingPolicyNamespace: "ns1",
 	})
 
 	records := buf.Drain()
@@ -44,22 +42,18 @@ func TestBufferOverwritesOldest(t *testing.T) {
 	// Fill the buffer to capacity.
 	for i := range size {
 		dropped := buf.Record(violation.Observation{
-			ViolationInfo: securityv1alpha1.ViolationInfo{
-				Source:  securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
-				Action:  securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-				DstPort: int32(i),
-			},
+			Source:  securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
+			Action:  securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+			DstPort: int32(i),
 		})
 		require.False(t, dropped, "should not drop while filling buffer")
 	}
 
 	// Add one more — should overwrite the oldest (pod-0).
 	dropped := buf.Record(violation.Observation{
-		ViolationInfo: securityv1alpha1.ViolationInfo{
-			Source:  securityv1alpha1.WorkloadRef{OwnerName: "pod-overflow"},
-			Action:  securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-			DstPort: 9999,
-		},
+		Source:  securityv1alpha1.WorkloadRef{OwnerName: "pod-overflow"},
+		Action:  securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+		DstPort: 9999,
 	})
 	require.True(t, dropped, "should report a drop when buffer overflows")
 
@@ -78,11 +72,9 @@ func TestBufferDrainReverseChronologicalOrder(t *testing.T) {
 	baseTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := range 5 {
 		buf.Record(violation.Observation{
-			ViolationInfo: securityv1alpha1.ViolationInfo{
-				Timestamp: metav1.NewTime(baseTime.Add(time.Duration(i) * time.Second)),
-				Source:    securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
-				Action:    securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-			},
+			Timestamp: metav1.NewTime(baseTime.Add(time.Duration(i) * time.Second)),
+			Source:    securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
+			Action:    securityv1alpha1.WorkloadNetworkPolicyModeProtect,
 		})
 	}
 
@@ -101,10 +93,8 @@ func TestBufferDrainAfterOverflow(t *testing.T) {
 
 	for i := range totalRecords {
 		buf.Record(violation.Observation{
-			ViolationInfo: securityv1alpha1.ViolationInfo{
-				Source: securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
-				Action: securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-			},
+			Source: securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
+			Action: securityv1alpha1.WorkloadNetworkPolicyModeProtect,
 		})
 	}
 
@@ -136,10 +126,8 @@ func TestConcurrentRecordAndDrain(_ *testing.T) {
 	go func() {
 		for i := range 1000 {
 			buf.Record(violation.Observation{
-				ViolationInfo: securityv1alpha1.ViolationInfo{
-					Source: securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
-					Action: securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-				},
+				Source: securityv1alpha1.WorkloadRef{OwnerName: fmt.Sprintf("pod-%d", i)},
+				Action: securityv1alpha1.WorkloadNetworkPolicyModeProtect,
 			})
 		}
 		close(done)

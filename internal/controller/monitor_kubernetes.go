@@ -101,17 +101,15 @@ func generateViolationObservation(
 	}
 
 	observation := violation.Observation{
-		ViolationInfo: securityv1alpha1.ViolationInfo{
-			Timestamp:              metav1.NewTime(time.Now()),
-			Source:                 source,
-			Dest:                   dest,
-			Protocol:               protocol,
-			DstPort:                dstPort,
-			Action:                 securityv1alpha1.WorkloadNetworkPolicyModeMonitor,
-			DenyingPolicyNamespace: workload.Namespace,
-			DenyingPolicyName:      policyName,
-		},
-		Provider: securityv1alpha1.PolicyBackendKubernetes,
+		Timestamp:              metav1.NewTime(time.Now()),
+		Source:                 source,
+		Dest:                   dest,
+		Protocol:               protocol,
+		DstPort:                dstPort,
+		Action:                 securityv1alpha1.WorkloadNetworkPolicyModeMonitor,
+		DenyingPolicyNamespace: workload.Namespace,
+		DenyingPolicyName:      policyName,
+		Provider:               securityv1alpha1.PolicyBackendKubernetes,
 	}
 	return observation
 }

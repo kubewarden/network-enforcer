@@ -96,24 +96,22 @@ func TestParseCiliumFlow(t *testing.T) {
 			processFlowResult: processFlowRecordViolation(violation.Observation{
 				Provider:  securityv1alpha1.PolicyBackendKubernetes,
 				Direction: networkingv1.PolicyTypeIngress,
-				ViolationInfo: securityv1alpha1.ViolationInfo{
-					Timestamp: metav1.NewTime(flowTimestamp),
-					Source: securityv1alpha1.WorkloadRef{
-						Namespace: defaultCiliumTestNamespace,
-						OwnerName: "source-deploy",
-						OwnerKind: securityv1alpha1.WorkloadKindDeployment,
-					},
-					Dest: securityv1alpha1.WorkloadRef{
-						Namespace: defaultCiliumTestNamespace,
-						OwnerName: "dest-deploy",
-						OwnerKind: securityv1alpha1.WorkloadKindDeployment,
-					},
-					Protocol:               corev1.ProtocolTCP,
-					DstPort:                8080,
-					Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-					DenyingPolicyNamespace: "",
-					DenyingPolicyName:      "",
+				Timestamp: metav1.NewTime(flowTimestamp),
+				Source: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "source-deploy",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
 				},
+				Dest: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "dest-deploy",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+				},
+				Protocol:               corev1.ProtocolTCP,
+				DstPort:                8080,
+				Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+				DenyingPolicyNamespace: "",
+				DenyingPolicyName:      "",
 			}),
 		},
 		{
@@ -130,24 +128,22 @@ func TestParseCiliumFlow(t *testing.T) {
 			processFlowResult: processFlowRecordViolation(violation.Observation{
 				Provider:  securityv1alpha1.PolicyBackendKubernetes,
 				Direction: networkingv1.PolicyTypeEgress,
-				ViolationInfo: securityv1alpha1.ViolationInfo{
-					Timestamp: metav1.NewTime(flowTimestamp),
-					Source: securityv1alpha1.WorkloadRef{
-						Namespace: defaultCiliumTestNamespace,
-						OwnerName: "source-sts",
-						OwnerKind: securityv1alpha1.WorkloadKindStatefulSet,
-					},
-					Dest: securityv1alpha1.WorkloadRef{
-						Namespace: defaultCiliumTestNamespace,
-						OwnerName: "dest-ds",
-						OwnerKind: securityv1alpha1.WorkloadKindDaemonSet,
-					},
-					Protocol:               corev1.ProtocolUDP,
-					DstPort:                5353,
-					Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-					DenyingPolicyNamespace: "",
-					DenyingPolicyName:      "",
+				Timestamp: metav1.NewTime(flowTimestamp),
+				Source: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "source-sts",
+					OwnerKind: securityv1alpha1.WorkloadKindStatefulSet,
 				},
+				Dest: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "dest-ds",
+					OwnerKind: securityv1alpha1.WorkloadKindDaemonSet,
+				},
+				Protocol:               corev1.ProtocolUDP,
+				DstPort:                5353,
+				Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+				DenyingPolicyNamespace: "",
+				DenyingPolicyName:      "",
 			}),
 		},
 		{
@@ -330,43 +326,39 @@ func TestProcessFlowResolvesSelectorsWithFakeClient(t *testing.T) {
 		WithScheme(scheme).
 		WithObjects(
 			&appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{Name: "source-deploy", Namespace: defaultCiliumTestNamespace},
+				Name: "source-deploy", Namespace: defaultCiliumTestNamespace,
 				Spec: appsv1.DeploymentSpec{
 					Selector: &sourceSelector,
 				},
 			},
 			&appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{Name: "dest-deploy", Namespace: defaultCiliumTestNamespace},
+				Name: "dest-deploy", Namespace: defaultCiliumTestNamespace,
 				Spec: appsv1.DeploymentSpec{
 					Selector: &dstSelector,
 				},
 			},
 			&appsv1.DaemonSet{
-				ObjectMeta: metav1.ObjectMeta{Name: "dns-daemon", Namespace: "kube-system"},
+				Name: "dns-daemon", Namespace: "kube-system",
 				Spec: appsv1.DaemonSetSpec{
 					Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": "kube-dns"}},
 				},
 			},
 			&corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "coredns-pod",
-					Namespace: "kube-system",
-					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "apps/v1",
-						Kind:       "DaemonSet",
-						Name:       "dns-daemon",
-						Controller: &controller,
-					}},
-				},
+				Name:      "coredns-pod",
+				Namespace: "kube-system",
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "apps/v1",
+					Kind:       "DaemonSet",
+					Name:       "dns-daemon",
+					Controller: &controller,
+				}},
 			},
 			&corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "standalone-pod",
-					Namespace: "kube-system",
-				},
+				Name:      "standalone-pod",
+				Namespace: "kube-system",
 			},
 			&securityv1alpha1.WorkloadNetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: sourcePolicyName, Namespace: defaultCiliumTestNamespace},
+				Name: sourcePolicyName, Namespace: defaultCiliumTestNamespace,
 				Spec: securityv1alpha1.WorkloadNetworkPolicySpec{
 					PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 						Backend: securityv1alpha1.PolicyBackendKubernetes,
@@ -377,7 +369,7 @@ func TestProcessFlowResolvesSelectorsWithFakeClient(t *testing.T) {
 				},
 			},
 			&securityv1alpha1.WorkloadNetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: dstPolicyName, Namespace: defaultCiliumTestNamespace},
+				Name: dstPolicyName, Namespace: defaultCiliumTestNamespace,
 				Spec: securityv1alpha1.WorkloadNetworkPolicySpec{
 					PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 						Backend: securityv1alpha1.PolicyBackendKubernetes,
@@ -484,26 +476,24 @@ func TestProcessFlowResolvesSelectorsWithFakeClient(t *testing.T) {
 			processFlowResult: processFlowRecordViolation(violation.Observation{
 				Provider:  securityv1alpha1.PolicyBackendKubernetes,
 				Direction: networkingv1.PolicyTypeIngress,
-				ViolationInfo: securityv1alpha1.ViolationInfo{
-					Timestamp: metav1.NewTime(flowTimestamp),
-					Source: securityv1alpha1.WorkloadRef{
-						Namespace: defaultCiliumTestNamespace,
-						OwnerName: "source-deploy",
-						OwnerKind: securityv1alpha1.WorkloadKindDeployment,
-						Selector:  sourceSelector,
-					},
-					Dest: securityv1alpha1.WorkloadRef{
-						Namespace: defaultCiliumTestNamespace,
-						OwnerName: "dest-deploy",
-						OwnerKind: securityv1alpha1.WorkloadKindDeployment,
-						Selector:  dstSelector,
-					},
-					Protocol:               corev1.ProtocolTCP,
-					DstPort:                8080,
-					Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-					DenyingPolicyNamespace: defaultCiliumTestNamespace,
-					DenyingPolicyName:      dstPolicyName,
+				Timestamp: metav1.NewTime(flowTimestamp),
+				Source: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "source-deploy",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+					Selector:  sourceSelector,
 				},
+				Dest: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "dest-deploy",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+					Selector:  dstSelector,
+				},
+				Protocol:               corev1.ProtocolTCP,
+				DstPort:                8080,
+				Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+				DenyingPolicyNamespace: defaultCiliumTestNamespace,
+				DenyingPolicyName:      dstPolicyName,
 			}),
 		},
 		{
@@ -526,26 +516,24 @@ func TestProcessFlowResolvesSelectorsWithFakeClient(t *testing.T) {
 			processFlowResult: processFlowRecordViolation(violation.Observation{
 				Provider:  securityv1alpha1.PolicyBackendKubernetes,
 				Direction: networkingv1.PolicyTypeEgress,
-				ViolationInfo: securityv1alpha1.ViolationInfo{
-					Timestamp: metav1.NewTime(flowTimestamp),
-					Source: securityv1alpha1.WorkloadRef{
-						Namespace: defaultCiliumTestNamespace,
-						OwnerName: "source-deploy",
-						OwnerKind: securityv1alpha1.WorkloadKindDeployment,
-						Selector:  sourceSelector,
-					},
-					Dest: securityv1alpha1.WorkloadRef{
-						Namespace: defaultCiliumTestNamespace,
-						OwnerName: "dest-deploy",
-						OwnerKind: securityv1alpha1.WorkloadKindDeployment,
-						Selector:  dstSelector,
-					},
-					Protocol:               corev1.ProtocolTCP,
-					DstPort:                8080,
-					Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
-					DenyingPolicyNamespace: defaultCiliumTestNamespace,
-					DenyingPolicyName:      sourcePolicyName,
+				Timestamp: metav1.NewTime(flowTimestamp),
+				Source: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "source-deploy",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+					Selector:  sourceSelector,
 				},
+				Dest: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "dest-deploy",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+					Selector:  dstSelector,
+				},
+				Protocol:               corev1.ProtocolTCP,
+				DstPort:                8080,
+				Action:                 securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+				DenyingPolicyNamespace: defaultCiliumTestNamespace,
+				DenyingPolicyName:      sourcePolicyName,
 			}),
 		},
 		{

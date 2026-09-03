@@ -43,12 +43,10 @@ func newPromotedKubernetesWNP(
 	mode securityv1alpha1.WorkloadNetworkPolicyMode,
 ) *securityv1alpha1.WorkloadNetworkPolicy {
 	return &securityv1alpha1.WorkloadNetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      namespacedName.Name,
-			Namespace: namespacedName.Namespace,
-			Labels: map[string]string{
-				securityv1alpha1.PolicyPromotedFromLabelKey: namespacedName.Name,
-			},
+		Name:      namespacedName.Name,
+		Namespace: namespacedName.Namespace,
+		Labels: map[string]string{
+			securityv1alpha1.PolicyPromotedFromLabelKey: namespacedName.Name,
 		},
 		Spec: securityv1alpha1.WorkloadNetworkPolicySpec{
 			Mode: mode,

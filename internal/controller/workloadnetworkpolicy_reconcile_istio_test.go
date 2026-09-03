@@ -54,10 +54,8 @@ func createAssociatedAuthorizationPolicy(
 ) *istiosecurityv1.AuthorizationPolicy {
 	wnp := createIstioWorkloadNetworkPolicy(mode)
 	ap := &istiosecurityv1.AuthorizationPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      wnp.Name,
-			Namespace: wnp.Namespace,
-		},
+		Name:      wnp.Name,
+		Namespace: wnp.Namespace,
 	}
 	populateIstioAuthorizationPolicySpec(&ap.Spec, wnp.Spec.Istio)
 	controller := true

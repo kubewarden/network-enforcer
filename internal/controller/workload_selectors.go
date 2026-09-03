@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	networkingv1 "k8s.io/api/networking/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
 )
@@ -24,9 +23,7 @@ func getProposalMetadata(
 	direction networkingv1.PolicyType,
 ) *securityv1alpha1.WorkloadNetworkPolicyProposal {
 	return &securityv1alpha1.WorkloadNetworkPolicyProposal{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      getProposalName(wk, direction),
-			Namespace: wk.Namespace,
-		},
+		Name:      getProposalName(wk, direction),
+		Namespace: wk.Namespace,
 	}
 }

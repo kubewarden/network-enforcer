@@ -12,7 +12,6 @@ import (
 	istiosecurityv1 "istio.io/client-go/pkg/apis/security/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/klient/wait"
 	"sigs.k8s.io/e2e-framework/klient/wait/conditions"
@@ -78,9 +77,8 @@ func setupTestNamespace(ctx context.Context, t *testing.T, _ *envconf.Config) co
 	// RandomName already adds a `-` so we need to trim it from our prefix
 	testNamespace := envconf.RandomName(defaultNamespacePref, 32)
 	t.Logf("creating test namespace: %q", testNamespace)
-	err := getSecurityV1Alpha1Client(ctx).Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
-		Name: testNamespace,
-	}})
+	err := getSecurityV1Alpha1Client(ctx).Create(ctx, &corev1.Namespace{
+		Name: testNamespace})
 	require.NoError(t, err, "failed to create test namespace %q", testNamespace)
 	return context.WithValue(ctx, key("namespace"), testNamespace)
 }
@@ -89,7 +87,7 @@ func teardownTestNamespace(ctx context.Context, t *testing.T, _ *envconf.Config)
 	t.Helper()
 	namespace := getNamespace(ctx)
 
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+	ns := &corev1.Namespace{Name: namespace}
 	err := getSecurityV1Alpha1Client(ctx).Delete(ctx, ns)
 	if err != nil && !apierrors.IsNotFound(err) {
 		require.NoError(t, err, "failed to delete namespace %q", namespace)

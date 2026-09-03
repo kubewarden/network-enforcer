@@ -120,7 +120,7 @@ func destPod(deployName, namespace, serviceAccount string, matchLabels map[strin
 // the given labels, for ALLOW-miss owning-policy resolution tests.
 func istioWNP(namespace, name string, matchLabels map[string]string) *securityv1alpha1.WorkloadNetworkPolicy {
 	return &securityv1alpha1.WorkloadNetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Name: name, Namespace: namespace,
 		Spec: securityv1alpha1.WorkloadNetworkPolicySpec{
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 				Backend: securityv1alpha1.PolicyBackendIstio,
@@ -137,7 +137,7 @@ func istioWNP(namespace, name string, matchLabels map[string]string) *securityv1
 // tests of the kubernetes backend.
 func kubernetesWNP(namespace, name string, matchLabels map[string]string) *securityv1alpha1.WorkloadNetworkPolicy {
 	return &securityv1alpha1.WorkloadNetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Name: name, Namespace: namespace,
 		Spec: securityv1alpha1.WorkloadNetworkPolicySpec{
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 				Backend: securityv1alpha1.PolicyBackendKubernetes,

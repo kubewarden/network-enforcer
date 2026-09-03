@@ -25,10 +25,8 @@ func (r *WorkloadNetworkPolicyReconciler) reconcileIstioPolicy(
 	wnp *securityv1alpha1.WorkloadNetworkPolicy,
 ) error {
 	ap := &istiosecurityv1.AuthorizationPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      wnp.Name,
-			Namespace: wnp.Namespace,
-		},
+		Name:      wnp.Name,
+		Namespace: wnp.Namespace,
 	}
 	err := r.Get(ctx, wnp.NamespacedName(), ap)
 	if err != nil && !apierrors.IsNotFound(err) {

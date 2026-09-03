@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestWorkloadNetworkPolicyProposalPromotionLabel(t *testing.T) {
@@ -52,10 +51,8 @@ func TestWorkloadNetworkPolicyProposalPromotionLabel(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &WorkloadNetworkPolicyProposal{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						ProposalPromoteLabelKey: tc.labelValue,
-					},
+				Labels: map[string]string{
+					ProposalPromoteLabelKey: tc.labelValue,
 				},
 			}
 			mode, has := p.HasPromotionLabel()

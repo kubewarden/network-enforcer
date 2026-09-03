@@ -100,22 +100,20 @@ func wnpWithAckAnnotation(name string) *securityv1alpha1.WorkloadNetworkPolicy {
 
 func ackTestViolation(denyingPolicyName string) securityv1alpha1.ViolationRecord {
 	return securityv1alpha1.ViolationRecord{
-		ViolationInfo: securityv1alpha1.ViolationInfo{
-			Timestamp: metav1.NewTime(time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)),
-			Source: securityv1alpha1.WorkloadRef{
-				Namespace: "src-ns", OwnerKind: "Deployment", OwnerName: "app",
-				Identity: "cluster.local/ns/src-ns/sa/app-sa",
-			},
-			Dest: securityv1alpha1.WorkloadRef{
-				Namespace: "dst-ns", OwnerKind: "Service", OwnerName: "svc",
-				Identity: "cluster.local/ns/dst-ns/sa/svc-sa",
-			},
-			Protocol:               corev1.ProtocolTCP,
-			DstPort:                80,
-			Action:                 "protect",
-			DenyingPolicyNamespace: "ns1",
-			DenyingPolicyName:      denyingPolicyName,
+		Timestamp: metav1.NewTime(time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)),
+		Source: securityv1alpha1.WorkloadRef{
+			Namespace: "src-ns", OwnerKind: "Deployment", OwnerName: "app",
+			Identity: "cluster.local/ns/src-ns/sa/app-sa",
 		},
+		Dest: securityv1alpha1.WorkloadRef{
+			Namespace: "dst-ns", OwnerKind: "Service", OwnerName: "svc",
+			Identity: "cluster.local/ns/dst-ns/sa/svc-sa",
+		},
+		Protocol:               corev1.ProtocolTCP,
+		DstPort:                80,
+		Action:                 "protect",
+		DenyingPolicyNamespace: "ns1",
+		DenyingPolicyName:      denyingPolicyName,
 	}
 }
 

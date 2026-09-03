@@ -9,7 +9,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/e2e-framework/klient/k8s"
 	"sigs.k8s.io/e2e-framework/klient/wait"
 	"sigs.k8s.io/e2e-framework/klient/wait/conditions"
@@ -34,10 +33,8 @@ func waitGoldmaneDeployment(ctx context.Context, calicoNamespace string) error {
 	// so wait for the object to exist first.
 	if err := wait.For(
 		conditions.New(r).ResourceMatch(&appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      goldmaneDeployment,
-				Namespace: calicoNamespace,
-			},
+			Name:      goldmaneDeployment,
+			Namespace: calicoNamespace,
 		}, func(_ k8s.Object) bool { return true }),
 		wait.WithTimeout(goldmaneWaitTimeout),
 	); err != nil {
@@ -56,10 +53,8 @@ func waitGoldmaneConfigMap(ctx context.Context, calicoNamespace string) (*corev1
 
 	logger.InfoContext(ctx, "⏲️ waiting for Goldmane CA bundle configmap")
 	caBundleCM := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      goldmaneConfigMapName,
-			Namespace: calicoNamespace,
-		},
+		Name:      goldmaneConfigMapName,
+		Namespace: calicoNamespace,
 	}
 	if err := wait.For(
 		conditions.New(r).ResourceMatch(caBundleCM, func(_ k8s.Object) bool { return true }),
@@ -77,10 +72,8 @@ func waitGoldmaneSecret(ctx context.Context, calicoNamespace string) (*corev1.Se
 
 	logger.InfoContext(ctx, "⏲️ waiting for Goldmane secret")
 	goldmaneSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      goldmaneSecretName,
-			Namespace: calicoNamespace,
-		},
+		Name:      goldmaneSecretName,
+		Namespace: calicoNamespace,
 	}
 	if err := wait.For(
 		conditions.New(r).ResourceMatch(goldmaneSecret, func(_ k8s.Object) bool { return true }),
@@ -114,11 +107,9 @@ func generateGoldmaneClientSecret(ctx context.Context, configMap *corev1.ConfigM
 	}
 
 	clientSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      goldmaneClientSecret,
-			Namespace: getSuiteConfig(ctx).releaseNS,
-		},
-		Type: corev1.SecretTypeOpaque,
+		Name:      goldmaneClientSecret,
+		Namespace: getSuiteConfig(ctx).releaseNS,
+		Type:      corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
 			caBundleKey: []byte(caBundle),
 			tlsCrtKey:   crt,
@@ -231,9 +222,8 @@ func installCalico(ctx context.Context, cfg *envconf.Config) (context.Context, e
 	r := getSecurityV1Alpha1Client(ctx)
 	netEnforcerReleaseNs := getSuiteConfig(ctx).releaseNS
 	logger.InfoContext(ctx, "🛠️ create", "namespace", netEnforcerReleaseNs)
-	if err = r.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
-		Name: netEnforcerReleaseNs,
-	}}); err != nil {
+	if err = r.Create(ctx, &corev1.Namespace{
+		Name: netEnforcerReleaseNs}); err != nil {
 		return ctx, fmt.Errorf("create %s namespace: %w", netEnforcerReleaseNs, err)
 	}
 

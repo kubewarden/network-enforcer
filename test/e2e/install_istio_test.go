@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/klient/wait"
 	"sigs.k8s.io/e2e-framework/klient/wait/conditions"
@@ -116,7 +115,7 @@ func installIstioMesh() env.Func {
 			logger.InfoContext(ctx, "⏲️ waiting for "+dsName)
 			if err = wait.For(
 				conditions.New(r).DaemonSetReady(&appsv1.DaemonSet{
-					ObjectMeta: metav1.ObjectMeta{Name: dsName, Namespace: istioNamespace},
+					Name: dsName, Namespace: istioNamespace,
 				}),
 				wait.WithTimeout(defaultOperationTimeout),
 			); err != nil {

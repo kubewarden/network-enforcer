@@ -34,7 +34,7 @@ func newTestProposalReconciler(t *testing.T, objs ...client.Object) *WorkloadNet
 
 func newIstioProposal() *securityv1alpha1.WorkloadNetworkPolicyProposal {
 	return &securityv1alpha1.WorkloadNetworkPolicyProposal{
-		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "default"},
+		Name: "example", Namespace: "default",
 		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 				Backend: securityv1alpha1.PolicyBackendIstio,
@@ -72,7 +72,7 @@ func newBaseProposal() *securityv1alpha1.WorkloadNetworkPolicyProposal {
 	protocolUDP := corev1.ProtocolUDP
 	portDNS := intstr.FromInt32(53)
 	return &securityv1alpha1.WorkloadNetworkPolicyProposal{
-		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "default"},
+		Name: "example", Namespace: "default",
 		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 				Backend: securityv1alpha1.PolicyBackendKubernetes,
@@ -115,10 +115,8 @@ func TestWorkloadNetworkPolicyProposalReconciler(t *testing.T) {
 	baseProposal := newBaseProposal()
 	istioProposal := newIstioProposal()
 	basePolicy := securityv1alpha1.WorkloadNetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      baseProposal.Name,
-			Namespace: baseProposal.Namespace,
-		},
+		Name:      baseProposal.Name,
+		Namespace: baseProposal.Namespace,
 	}
 	require.NoError(t, basePolicy.SetPromotedLabel(baseProposal.Name))
 

@@ -29,23 +29,21 @@ func (f *fakeOtelLogger) Emit(_ context.Context, rec otellog.Record) {
 
 func testObservation() Observation {
 	return Observation{
-		Provider: securityv1alpha1.PolicyBackendIstio,
-		ViolationInfo: securityv1alpha1.ViolationInfo{
-			Timestamp: metav1.NewTime(time.Date(2026, 8, 3, 15, 39, 7, 0, time.UTC)),
-			Source: securityv1alpha1.WorkloadRef{
-				Namespace: "default",
-				OwnerName: "http-client-1",
-				Identity:  "spiffe://cluster.local/ns/default/sa/http-client-sa",
-			},
-			Dest: securityv1alpha1.WorkloadRef{
-				Namespace: "default",
-				OwnerName: "http-server-1",
-				Identity:  "cluster.local/ns/default/sa/http-server-sa",
-			},
-			Protocol: corev1.ProtocolTCP,
-			DstPort:  80,
-			Action:   securityv1alpha1.WorkloadNetworkPolicyModeMonitor,
+		Provider:  securityv1alpha1.PolicyBackendIstio,
+		Timestamp: metav1.NewTime(time.Date(2026, 8, 3, 15, 39, 7, 0, time.UTC)),
+		Source: securityv1alpha1.WorkloadRef{
+			Namespace: "default",
+			OwnerName: "http-client-1",
+			Identity:  "spiffe://cluster.local/ns/default/sa/http-client-sa",
 		},
+		Dest: securityv1alpha1.WorkloadRef{
+			Namespace: "default",
+			OwnerName: "http-server-1",
+			Identity:  "cluster.local/ns/default/sa/http-server-sa",
+		},
+		Protocol: corev1.ProtocolTCP,
+		DstPort:  80,
+		Action:   securityv1alpha1.WorkloadNetworkPolicyModeMonitor,
 	}
 }
 

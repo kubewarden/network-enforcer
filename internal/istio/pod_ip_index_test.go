@@ -14,11 +14,9 @@ import (
 // a service account, and an optional controller owner reference.
 func sourcePod(name, namespace, ip, serviceAccount string, owner *metav1.OwnerReference) *corev1.Pod {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			UID:       types.UID(name + "-uid"),
-		},
+		Name:      name,
+		Namespace: namespace,
+		UID:       types.UID(name + "-uid"),
 		Spec: corev1.PodSpec{
 			ServiceAccountName: serviceAccount,
 		},
