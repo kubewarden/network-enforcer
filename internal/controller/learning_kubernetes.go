@@ -106,6 +106,10 @@ func (r *LearningReconciler) reconcileKubernetesProposal(
 		return fmt.Errorf("create or update proposal %s/%s: %w", proposal.Namespace, proposal.Name, err)
 	}
 
+	if err = r.setOwnerReference(ctx, proposal, workload); err != nil {
+		return fmt.Errorf("setting owner reference on proposal %s/%s: %w", proposal.Namespace, proposal.Name, err)
+	}
+
 	return nil
 }
 

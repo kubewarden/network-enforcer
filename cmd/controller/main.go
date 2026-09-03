@@ -299,7 +299,7 @@ func run(logger *slog.Logger, conf *config) error {
 		}
 	}
 
-	learningReconciler := controller.NewLearningReconciler(mgr.GetClient(), violationBuffer)
+	learningReconciler := controller.NewLearningReconciler(mgr.GetClient(), mgr.GetScheme(), violationBuffer)
 	if err = learningReconciler.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create learning reconciler: %w", err)
 	}

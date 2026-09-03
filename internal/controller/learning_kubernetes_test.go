@@ -33,9 +33,21 @@ func newTestLearningReconciler(t *testing.T, objs []client.Object) *LearningReco
 		WithScheme(scheme).
 		WithObjects(objs...).
 		Build()
-	r := NewLearningReconciler(cl, ringbuf.New[violation.Observation]())
+	r := NewLearningReconciler(cl, scheme, ringbuf.New[violation.Observation]())
 	require.NotNil(t, r)
 	return r
+}
+
+func newDeployment(name string) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		Name:      name,
+		Namespace: "default",
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": name},
+			},
+		},
+	}
 }
 
 func newPromotedKubernetesWNP(
@@ -162,6 +174,10 @@ func TestProcessKubernetesLearningEvent(t *testing.T) {
 	}{
 		{
 			name: "stable_proposal_per_deployment_across_replicas",
+			objs: []client.Object{
+				newDeployment("frontend"),
+				newDeployment("backend"),
+			},
 			events: []netypes.LearningEvent{
 				newEvent(8080, corev1.ProtocolTCP),
 				newEvent(8080, corev1.ProtocolTCP),
@@ -177,6 +193,10 @@ func TestProcessKubernetesLearningEvent(t *testing.T) {
 		},
 		{
 			name: "merges_ports_and_protocols",
+			objs: []client.Object{
+				newDeployment("frontend"),
+				newDeployment("backend"),
+			},
 			events: []netypes.LearningEvent{
 				newEvent(8080, corev1.ProtocolTCP),
 				newEvent(53, corev1.ProtocolUDP),

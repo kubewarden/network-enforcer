@@ -2,12 +2,16 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -15,6 +19,7 @@ import (
 	"github.com/kubewarden/network-enforcer/internal/ringbuf"
 	"github.com/kubewarden/network-enforcer/internal/types"
 	"github.com/kubewarden/network-enforcer/internal/violation"
+	"github.com/kubewarden/network-enforcer/internal/workload"
 )
 
 const (
@@ -39,16 +44,43 @@ type LearningReconciler struct {
 
 func NewLearningReconciler(
 	client client.Client,
+	scheme *runtime.Scheme,
 	violationBuffer *ringbuf.Buffer[violation.Observation],
 ) *LearningReconciler {
 	return &LearningReconciler{
 		Client: client,
+		Scheme: scheme,
 		eventChan: make(
 			chan event.TypedGenericEvent[types.LearningEvent],
 			defaultEventChannelBufferSize,
 		),
 		violationBuffer: violationBuffer,
 	}
+}
+
+func (r *LearningReconciler) setOwnerReference(
+	ctx context.Context,
+	proposal *securityv1alpha1.WorkloadNetworkPolicyProposal,
+	wk *securityv1alpha1.WorkloadRef,
+) error {
+	if metav1.GetControllerOf(proposal) != nil {
+		return nil
+	}
+	owner := workload.OwnerObjectFor(wk.OwnerKind)
+	if owner == nil {
+		return fmt.Errorf("unsupported workload kind: %s", wk.OwnerKind)
+	}
+	key := client.ObjectKey{Namespace: wk.Namespace, Name: wk.OwnerName}
+	if err := r.Get(ctx, key, owner); err != nil {
+		if apierrors.IsNotFound(err) {
+			return fmt.Errorf("owning workload not found: %s %s", wk.OwnerKind, key)
+		}
+		return fmt.Errorf("getting owner %s %s: %w", wk.OwnerKind, key, err)
+	}
+	if err := controllerutil.SetControllerReference(owner, proposal, r.Scheme); err != nil {
+		return fmt.Errorf("setting controller reference on proposal %s: %w", client.ObjectKeyFromObject(proposal), err)
+	}
+	return nil
 }
 
 func (r *LearningReconciler) GetEnqueueFunc() func(types.LearningEvent) bool {

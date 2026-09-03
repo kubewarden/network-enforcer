@@ -42,7 +42,7 @@ func controllerRef(apiVersion, kind, name string) *metav1.OwnerReference {
 }
 
 // Cases adapted from runtime-enforcer getPodInfo tests:
-// https://github.com/rancher-sandbox/runtime-enforcer/pull/219/changes#diff-43908338b58fbcda0d302e74469efb9886c7f6846076de871715ef480b0b76efL13
+// https://github.com/kubewarden/runtime-enforcer/pull/219/changes#diff-43908338b58fbcda0d302e74469efb9886c7f6846076de871715ef480b0b76efL13
 func TestExtractWorkloadKey(t *testing.T) {
 	t.Parallel()
 

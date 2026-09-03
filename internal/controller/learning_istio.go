@@ -35,6 +35,10 @@ func (r *LearningReconciler) updateProposal(
 	}); err != nil {
 		return fmt.Errorf("create or update proposal %s/%s: %w", proposal.Namespace, proposal.Name, err)
 	}
+
+	if err := r.setOwnerReference(ctx, proposal, evt.Dest); err != nil {
+		return fmt.Errorf("setting owner reference on proposal %s/%s: %w", proposal.Namespace, proposal.Name, err)
+	}
 	return nil
 }
 

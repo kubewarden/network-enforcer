@@ -48,7 +48,7 @@ func Get(
 //
 // Heuristics for additional kinds (Job/CronJob, OpenShift DeploymentConfig)
 // live in runtime-enforcer's former getPodInfo and can be ported when needed:
-// https://github.com/rancher-sandbox/runtime-enforcer/pull/219/changes#diff-65f18bba13a51ac9c01c9f32f9c222070bb8f3dda11868f44c75889265381f5fL45
+// https://github.com/kubewarden/runtime-enforcer/pull/219/changes#diff-65f18bba13a51ac9c01c9f32f9c222070bb8f3dda11868f44c75889265381f5fL45
 func GetNameAndKind(pod *corev1.Pod) securityv1alpha1.WorkloadRef {
 	namespace := pod.Namespace
 	ref := metav1.GetControllerOf(pod)
@@ -183,5 +183,20 @@ func ResolveDenyingPolicy(
 			wk.OwnerName,
 			strings.Join(matches, ", "),
 		)
+	}
+}
+
+// OwnerObjectFor returns an empty typed client.Object for Deployment, StatefulSet,
+// or DaemonSet. It returns nil for unsupported kinds.
+func OwnerObjectFor(kind securityv1alpha1.WorkloadKind) client.Object {
+	switch kind { //nolint:exhaustive // we don't support all workload kinds
+	case securityv1alpha1.WorkloadKindDeployment:
+		return &appsv1.Deployment{}
+	case securityv1alpha1.WorkloadKindStatefulSet:
+		return &appsv1.StatefulSet{}
+	case securityv1alpha1.WorkloadKindDaemonSet:
+		return &appsv1.DaemonSet{}
+	default:
+		return nil
 	}
 }
