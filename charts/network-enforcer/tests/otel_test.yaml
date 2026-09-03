@@ -184,3 +184,82 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+# ---------------------------------------------------------------------------
+# count connector: keys must match the emitter schema in
+# internal/violation/otel.go, otherwise no datapoint is ever produced and
+# :9090/metrics stays empty (see issue #377).
+# ---------------------------------------------------------------------------
+---
+suite: "Verify the collector count connector matches the violation attributes"
+templates:
+  - templates/otel-collector/configmap.yaml
+chart:
+  version: 1.0.0
+  appVersion: 2.0.0
+release:
+  name: my-release
+  namespace: my-namespace
+set:
+  telemetry:
+    collectorStrategy: default
+tests:
+  - it: "filters violation logs on the emitted enforcement.provider attribute"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'conditions:\n\s+- ''attributes\["enforcement\.provider"\] != nil'''
+  - it: "counts by every emitted attribute the metric is dimensioned on"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: enforcement\.provider'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: action'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: network\.transport'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: source\.workload\.namespace'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: source\.workload\.name'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: destination\.workload\.namespace'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: destination\.workload\.name'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: destination\.port'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: policy\.ref\.namespace'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: policy\.ref\.name'
+  - it: "drops the removed cniwatcher-era attributes"
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: 'cni\.type'
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: 'egress\.enforced_by'
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: node\.name'
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: network\.protocol'
+  - it: "keeps optional attributes countable with a default value"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: policy\.ref\.name\n\s+default_value: ""'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: '- key: source\.workload\.name\n\s+default_value: ""'
