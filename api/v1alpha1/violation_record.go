@@ -326,7 +326,7 @@ func (s *WorkloadNetworkPolicyStatus) mergeScrapedViolations(scraped []Violation
 	}
 }
 
-// acknowledgeViolationsFromAnnotations processes security.rancher.io/acknowledge-<id>
+// acknowledgeViolationsFromAnnotations processes security.kubewarden.io/acknowledge-<id>
 // annotations and moves matching violations into AcknowledgedViolations.
 func (wnp *WorkloadNetworkPolicy) acknowledgeViolationsFromAnnotations(now metav1.Time) []AcknowledgedViolationRecord {
 	annotations := wnp.GetAnnotations()

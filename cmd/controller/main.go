@@ -192,7 +192,7 @@ func newControllerManager(conf *config) (manager.Manager, error) {
 		Metrics:                metricsServerOptions,
 		HealthProbeBindAddress: conf.probeAddr,
 		LeaderElection:         conf.enableLeaderElection,
-		LeaderElectionID:       "6163c1ee.security.rancher.io",
+		LeaderElectionID:       "6163c1ee.security.kubewarden.io",
 	}
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), controllerOptions)
 	if err != nil {

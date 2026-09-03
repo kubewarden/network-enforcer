@@ -54,7 +54,7 @@ NOTE: Monitor evaluation is best-effort. The Istio backend relies on ztunnel dry
 === How to enter and leave the phase
 
 * *Enter*
-** Promote a `WorkloadNetworkPolicyProposal` with `security.rancher.io/promote=monitor` (see <<transitions>>), or create a `WorkloadNetworkPolicy` whose `.spec.mode` is `monitor`.
+** Promote a `WorkloadNetworkPolicyProposal` with `security.kubewarden.io/promote=monitor` (see <<transitions>>), or create a `WorkloadNetworkPolicy` whose `.spec.mode` is `monitor`.
 ** Ensure `.spec.mode: monitor` and that the backend-specific rules are populated (`spec.istio` or `spec.kubernetes`).
 * *Leave*
 ** *Monitor → Protect*: patch the `WorkloadNetworkPolicy` and set `.spec.mode: protect`.
@@ -94,7 +94,7 @@ WARNING: The Istio backend learns and enforces only on the destination (ingress)
 === How to enter and leave the phase
 
 * *Enter*
-** Promote a proposal with `security.rancher.io/promote=protect`, or patch an existing `WorkloadNetworkPolicy` and set `.spec.mode: protect`.
+** Promote a proposal with `security.kubewarden.io/promote=protect`, or patch an existing `WorkloadNetworkPolicy` and set `.spec.mode: protect`.
 * *Leave*
 ** *Protect → Monitor*: update the `WorkloadNetworkPolicy` and set `.spec.mode: monitor`.
 ** *Protect → Learn*: delete the `WorkloadNetworkPolicy`. Learning resumes on the next observed flow. See <<transitions>>.
@@ -112,16 +112,16 @@ WARNING: The Istio backend learns and enforces only on the destination (ingress)
 Promotion is explicit. Network-enforcer does not turn a proposal into a policy until you ask.
 
 * *Promote a proposal*
-** Set the label `security.rancher.io/promote=monitor` or `security.rancher.io/promote=protect` on the `WorkloadNetworkPolicyProposal`.
-** The proposal reconciler copies the backend spec onto a new `WorkloadNetworkPolicy` in the same name and namespace, sets `.spec.mode` from the label value, and adds `security.rancher.io/promoted-from: <proposal-name>` so the promotion relationship is explicit.
+** Set the label `security.kubewarden.io/promote=monitor` or `security.kubewarden.io/promote=protect` on the `WorkloadNetworkPolicyProposal`.
+** The proposal reconciler copies the backend spec onto a new `WorkloadNetworkPolicy` in the same name and namespace, sets `.spec.mode` from the label value, and adds `security.kubewarden.io/promoted-from: <proposal-name>` so the promotion relationship is explicit.
 ** The proposal is then deleted.
 * *Leftover proposals*
-** After promotion, a scraper can recreate a proposal at the same name before caches catch up. If a `WorkloadNetworkPolicy` already exists with `security.rancher.io/promoted-from=<proposal-name>`, the leftover proposal is deleted. That usually happens as soon as the recreate is watched; if both objects sit idle, it is picked up on the next controller-runtime resync (defaulted to 10h).
+** After promotion, a scraper can recreate a proposal at the same name before caches catch up. If a `WorkloadNetworkPolicy` already exists with `security.kubewarden.io/promoted-from=<proposal-name>`, the leftover proposal is deleted. That usually happens as soon as the recreate is watched; if both objects sit idle, it is picked up on the next controller-runtime resync (defaulted to 10h).
 * *Return to learning*
 ** Delete the `WorkloadNetworkPolicy`. The next observed flow creates or updates a `WorkloadNetworkPolicyProposal` again. If a leftover proposal is still around after you delete the policy, learning resumes by updating that object; delete it first if you want a clean slate.
-** Creating a `WorkloadNetworkPolicy` by hand *without* `security.rancher.io/promoted-from` does *not* remove a same-named proposal. Delete the proposal yourself in that case.
+** Creating a `WorkloadNetworkPolicy` by hand *without* `security.kubewarden.io/promoted-from` does *not* remove a same-named proposal. Delete the proposal yourself in that case.
 * *ValidatingAdmissionPolicy*
-** The Helm chart installs a cluster-scoped `ValidatingAdmissionPolicy` (and binding) that rejects `WorkloadNetworkPolicyProposal` CREATE/UPDATE when `security.rancher.io/promote` is present and is set to anything other than `monitor` or `protect`. The check runs only when the label is set; proposals without the label are admitted as usual.
+** The Helm chart installs a cluster-scoped `ValidatingAdmissionPolicy` (and binding) that rejects `WorkloadNetworkPolicyProposal` CREATE/UPDATE when `security.kubewarden.io/promote` is present and is set to anything other than `monitor` or `protect`. The check runs only when the label is set; proposals without the label are admitted as usual.
 
 [#backend-selection]
 == Backend selection
@@ -163,7 +163,7 @@ When telemetry is enabled, the controller also exports OpenTelemetry logs:
 Event names:
 
 * `policy_violation_observed` — emitted for each monitor or protect violation, with `action=monitor` or `action=protect`.
-* `policy_violation_acknowledged` — emitted after a `security.rancher.io/acknowledge-<id>` annotation is applied and the status patch succeeds.
+* `policy_violation_acknowledged` — emitted after a `security.kubewarden.io/acknowledge-<id>` annotation is applied and the status patch succeeds.
 
 == Quick mapping to CRDs
 

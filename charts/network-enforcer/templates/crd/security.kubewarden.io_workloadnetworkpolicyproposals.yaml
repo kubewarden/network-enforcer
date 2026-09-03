@@ -4,37 +4,25 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: workloadnetworkpolicies.security.rancher.io
+  name: workloadnetworkpolicyproposals.security.kubewarden.io
 spec:
-  group: security.rancher.io
+  group: security.kubewarden.io
   names:
-    kind: WorkloadNetworkPolicy
-    listKind: WorkloadNetworkPolicyList
-    plural: workloadnetworkpolicies
+    kind: WorkloadNetworkPolicyProposal
+    listKind: WorkloadNetworkPolicyProposalList
+    plural: workloadnetworkpolicyproposals
     shortNames:
-    - wnp
-    singular: workloadnetworkpolicy
+    - wnpp
+    singular: workloadnetworkpolicyproposal
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.mode
-      name: Mode
-      type: string
-    - jsonPath: .status.activeViolationCount
-      name: Active Violations
-      type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: |-
-          WorkloadNetworkPolicy is the schema for the runtime network policy API.
-          Spec carries a backend-specific policy payload (Kubernetes or Istio) and a
-          mode (monitor or protect). The resource is intentionally namespaced and uses
-          the `security.rancher.io` group to avoid colliding with the upstream
-          `networking.k8s.io/NetworkPolicy` kind.
         properties:
           apiVersion:
             description: |-
@@ -54,8 +42,6 @@ spec:
           metadata:
             type: object
           spec:
-            description: WorkloadNetworkPolicySpec defines the desired state of a
-              WorkloadNetworkPolicy.
             properties:
               backend:
                 description: Backend selects which backend policy model this object
@@ -634,15 +620,6 @@ spec:
                     type: array
                     x-kubernetes-list-type: atomic
                 type: object
-              mode:
-                default: monitor
-                description: |-
-                  Mode controls whether the policy is observed (monitor) or actively
-                  enforced (protect). Defaults to monitor.
-                enum:
-                - monitor
-                - protect
-                type: string
             required:
             - backend
             type: object
@@ -663,448 +640,67 @@ spec:
                 && size(self.istio.selector.matchLabels) > 0 || has(self.istio.selector.matchExpressions)
                 && size(self.istio.selector.matchExpressions) > 0)) : true'
           status:
-            description: |-
-              WorkloadNetworkPolicyStatus defines the observed state of a
-              WorkloadNetworkPolicy.
             properties:
-              acknowledgedViolations:
-                description: |-
-                  AcknowledgedViolations is the list of the most recent violation
-                  records that have been acknowledged by users (max maxViolationRecords).
-                  Oldest entries are dropped when the limit is reached.
+              conditions:
+                description: conditions represent the current state of the proposal.
                 items:
-                  description: |-
-                    AcknowledgedViolationRecord wraps a ViolationRecord together with the
-                    acknowledgement reason and timestamp.
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
                   properties:
-                    acknowledgedAt:
-                      description: AcknowledgedAt is the time when the violation was
-                        acknowledged.
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
-                    reason:
+                    message:
                       description: |-
-                        Reason is an optional field to indicate why this violation was
-                        acknowledged.
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
                       type: string
-                    violation:
-                      description: Violation is the violation record that was acknowledged.
-                      properties:
-                        action:
-                          description: Action is the enforcement action taken (monitor
-                            or protect).
-                          enum:
-                          - monitor
-                          - protect
-                          type: string
-                        denyingPolicyName:
-                          description: |-
-                            DenyingPolicyName is the name of the WorkloadNetworkPolicy this violation
-                            belongs to. For a DENY it is the policy that denied the flow; for an
-                            ALLOW-miss it is the owning WorkloadNetworkPolicy resolved by selector match
-                            (see DenyingPolicyNamespace). The controller keys the violation to its WNP
-                            by this name for both cases; Action (monitor vs protect) distinguishes them.
-                          type: string
-                        denyingPolicyNamespace:
-                          description: |-
-                            DenyingPolicyNamespace is the namespace of the WorkloadNetworkPolicy this
-                            violation belongs to. For a DENY it is the policy that denied the flow; for
-                            an ALLOW-miss (which carries no denying policy on the wire) the scraper
-                            resolves the owning WorkloadNetworkPolicy by matching the destination pod's
-                            labels against WNP selectors and records it here (see istio.Enricher).
-                          type: string
-                        dest:
-                          description: Dest is the workload that received the traffic.
-                          properties:
-                            identity:
-                              description: |-
-                                Identity is the istio-specific workload identity.
-                                This field is not populated for other providers.
-                              type: string
-                            namespace:
-                              description: Namespace is the Kubernetes namespace of
-                                the workload.
-                              type: string
-                            ownerKind:
-                              description: OwnerKind is the kind of the owner resource.
-                              type: string
-                            ownerName:
-                              description: OwnerName is the name of the owner resource.
-                              type: string
-                            selector:
-                              description: Selector is the label selector for the
-                                workload.
-                              properties:
-                                matchExpressions:
-                                  description: matchExpressions is a list of label
-                                    selector requirements. The requirements are ANDed.
-                                  items:
-                                    description: |-
-                                      A label selector requirement is a selector that contains values, a key, and an operator that
-                                      relates the key and values.
-                                    properties:
-                                      key:
-                                        description: key is the label key that the
-                                          selector applies to.
-                                        type: string
-                                      operator:
-                                        description: |-
-                                          operator represents a key's relationship to a set of values.
-                                          Valid operators are In, NotIn, Exists and DoesNotExist.
-                                        type: string
-                                      values:
-                                        description: |-
-                                          values is an array of string values. If the operator is In or NotIn,
-                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                          the values array must be empty. This array is replaced during a strategic
-                                          merge patch.
-                                        items:
-                                          type: string
-                                        type: array
-                                        x-kubernetes-list-type: atomic
-                                    required:
-                                    - key
-                                    - operator
-                                    type: object
-                                  type: array
-                                  x-kubernetes-list-type: atomic
-                                matchLabels:
-                                  additionalProperties:
-                                    type: string
-                                  description: |-
-                                    matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                                    map is equivalent to an element of matchExpressions, whose key field is "key", the
-                                    operator is "In", and the values array contains only "value". The requirements are ANDed.
-                                  type: object
-                              type: object
-                              x-kubernetes-map-type: atomic
-                          type: object
-                        dstPort:
-                          description: DstPort is the destination port. 0 when unavailable.
-                          format: int32
-                          maximum: 65535
-                          minimum: 0
-                          type: integer
-                        id:
-                          description: |-
-                            ID is a per-policy unique identifier allocated by the controller
-                            when the record is first observed. It is stable across re-scrapes
-                            of the same logical violation, so consumers can refer to a single
-                            record by ID (for example when correlating with external events).
-
-                            Stored as int64 (not uint64) for compatibility with the Kubernetes
-                            field-management machinery used by controller-runtime's test
-                            fixtures; the counter is monotonically increasing and never goes
-                            negative, so the sign bit is never set in practice.
-                          format: int64
-                          type: integer
-                        protocol:
-                          description: Protocol is the L4 protocol (TCP, UDP).
-                          type: string
-                        source:
-                          description: Source is the workload that initiated the traffic.
-                          properties:
-                            identity:
-                              description: |-
-                                Identity is the istio-specific workload identity.
-                                This field is not populated for other providers.
-                              type: string
-                            namespace:
-                              description: Namespace is the Kubernetes namespace of
-                                the workload.
-                              type: string
-                            ownerKind:
-                              description: OwnerKind is the kind of the owner resource.
-                              type: string
-                            ownerName:
-                              description: OwnerName is the name of the owner resource.
-                              type: string
-                            selector:
-                              description: Selector is the label selector for the
-                                workload.
-                              properties:
-                                matchExpressions:
-                                  description: matchExpressions is a list of label
-                                    selector requirements. The requirements are ANDed.
-                                  items:
-                                    description: |-
-                                      A label selector requirement is a selector that contains values, a key, and an operator that
-                                      relates the key and values.
-                                    properties:
-                                      key:
-                                        description: key is the label key that the
-                                          selector applies to.
-                                        type: string
-                                      operator:
-                                        description: |-
-                                          operator represents a key's relationship to a set of values.
-                                          Valid operators are In, NotIn, Exists and DoesNotExist.
-                                        type: string
-                                      values:
-                                        description: |-
-                                          values is an array of string values. If the operator is In or NotIn,
-                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                          the values array must be empty. This array is replaced during a strategic
-                                          merge patch.
-                                        items:
-                                          type: string
-                                        type: array
-                                        x-kubernetes-list-type: atomic
-                                    required:
-                                    - key
-                                    - operator
-                                    type: object
-                                  type: array
-                                  x-kubernetes-list-type: atomic
-                                matchLabels:
-                                  additionalProperties:
-                                    type: string
-                                  description: |-
-                                    matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                                    map is equivalent to an element of matchExpressions, whose key field is "key", the
-                                    operator is "In", and the values array contains only "value". The requirements are ANDed.
-                                  type: object
-                              type: object
-                              x-kubernetes-map-type: atomic
-                          type: object
-                        timestamp:
-                          description: Timestamp is when the violation last occurred.
-                          format: date-time
-                          type: string
-                      required:
-                      - action
-                      - id
-                      - protocol
-                      - timestamp
-                      type: object
-                  required:
-                  - violation
-                  type: object
-                type: array
-              activeViolationCount:
-                default: 0
-                description: |-
-                  ActiveViolationCount is the number of currently active (non-cleared)
-                  violation records. It is always equal to len(Violations) and is
-                  updated in the same status write.
-                format: int64
-                type: integer
-              observedGeneration:
-                description: |-
-                  ObservedGeneration is the most recent generation observed for this
-                  WorkloadNetworkPolicy. It corresponds to the resource's
-                  metadata.generation, which is updated by the API server when the
-                  spec changes.
-                format: int64
-                type: integer
-              violationCount:
-                default: 0
-                description: |-
-                  ViolationCount is the total number of violation records ever
-                  observed for this policy, including those that have already been
-                  trimmed out of Violations or cleared because the flow is now
-                  permitted by the policy template. It is not guaranteed to be strongly
-                  consistent and may be temporarily outdated.
-                format: int64
-                type: integer
-              violations:
-                description: |-
-                  Violations is the list of the most recent violation records
-                  (max maxViolationRecords). Oldest entries are dropped when the
-                  limit is reached.
-                items:
-                  description: |-
-                    ViolationRecord holds the details of a single network policy violation.
-                    It embeds ViolationInfo (the violation without the ID) so that the two
-                    types cannot drift apart: every violation field is defined once, in
-                    ViolationInfo.
-                  properties:
-                    action:
-                      description: Action is the enforcement action taken (monitor
-                        or protect).
-                      enum:
-                      - monitor
-                      - protect
-                      type: string
-                    denyingPolicyName:
+                    observedGeneration:
                       description: |-
-                        DenyingPolicyName is the name of the WorkloadNetworkPolicy this violation
-                        belongs to. For a DENY it is the policy that denied the flow; for an
-                        ALLOW-miss it is the owning WorkloadNetworkPolicy resolved by selector match
-                        (see DenyingPolicyNamespace). The controller keys the violation to its WNP
-                        by this name for both cases; Action (monitor vs protect) distinguishes them.
-                      type: string
-                    denyingPolicyNamespace:
-                      description: |-
-                        DenyingPolicyNamespace is the namespace of the WorkloadNetworkPolicy this
-                        violation belongs to. For a DENY it is the policy that denied the flow; for
-                        an ALLOW-miss (which carries no denying policy on the wire) the scraper
-                        resolves the owning WorkloadNetworkPolicy by matching the destination pod's
-                        labels against WNP selectors and records it here (see istio.Enricher).
-                      type: string
-                    dest:
-                      description: Dest is the workload that received the traffic.
-                      properties:
-                        identity:
-                          description: |-
-                            Identity is the istio-specific workload identity.
-                            This field is not populated for other providers.
-                          type: string
-                        namespace:
-                          description: Namespace is the Kubernetes namespace of the
-                            workload.
-                          type: string
-                        ownerKind:
-                          description: OwnerKind is the kind of the owner resource.
-                          type: string
-                        ownerName:
-                          description: OwnerName is the name of the owner resource.
-                          type: string
-                        selector:
-                          description: Selector is the label selector for the workload.
-                          properties:
-                            matchExpressions:
-                              description: matchExpressions is a list of label selector
-                                requirements. The requirements are ANDed.
-                              items:
-                                description: |-
-                                  A label selector requirement is a selector that contains values, a key, and an operator that
-                                  relates the key and values.
-                                properties:
-                                  key:
-                                    description: key is the label key that the selector
-                                      applies to.
-                                    type: string
-                                  operator:
-                                    description: |-
-                                      operator represents a key's relationship to a set of values.
-                                      Valid operators are In, NotIn, Exists and DoesNotExist.
-                                    type: string
-                                  values:
-                                    description: |-
-                                      values is an array of string values. If the operator is In or NotIn,
-                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                      the values array must be empty. This array is replaced during a strategic
-                                      merge patch.
-                                    items:
-                                      type: string
-                                    type: array
-                                    x-kubernetes-list-type: atomic
-                                required:
-                                - key
-                                - operator
-                                type: object
-                              type: array
-                              x-kubernetes-list-type: atomic
-                            matchLabels:
-                              additionalProperties:
-                                type: string
-                              description: |-
-                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                                map is equivalent to an element of matchExpressions, whose key field is "key", the
-                                operator is "In", and the values array contains only "value". The requirements are ANDed.
-                              type: object
-                          type: object
-                          x-kubernetes-map-type: atomic
-                      type: object
-                    dstPort:
-                      description: DstPort is the destination port. 0 when unavailable.
-                      format: int32
-                      maximum: 65535
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
                       minimum: 0
                       type: integer
-                    id:
+                    reason:
                       description: |-
-                        ID is a per-policy unique identifier allocated by the controller
-                        when the record is first observed. It is stable across re-scrapes
-                        of the same logical violation, so consumers can refer to a single
-                        record by ID (for example when correlating with external events).
-
-                        Stored as int64 (not uint64) for compatibility with the Kubernetes
-                        field-management machinery used by controller-runtime's test
-                        fixtures; the counter is monotonically increasing and never goes
-                        negative, so the sign bit is never set in practice.
-                      format: int64
-                      type: integer
-                    protocol:
-                      description: Protocol is the L4 protocol (TCP, UDP).
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
                       type: string
-                    source:
-                      description: Source is the workload that initiated the traffic.
-                      properties:
-                        identity:
-                          description: |-
-                            Identity is the istio-specific workload identity.
-                            This field is not populated for other providers.
-                          type: string
-                        namespace:
-                          description: Namespace is the Kubernetes namespace of the
-                            workload.
-                          type: string
-                        ownerKind:
-                          description: OwnerKind is the kind of the owner resource.
-                          type: string
-                        ownerName:
-                          description: OwnerName is the name of the owner resource.
-                          type: string
-                        selector:
-                          description: Selector is the label selector for the workload.
-                          properties:
-                            matchExpressions:
-                              description: matchExpressions is a list of label selector
-                                requirements. The requirements are ANDed.
-                              items:
-                                description: |-
-                                  A label selector requirement is a selector that contains values, a key, and an operator that
-                                  relates the key and values.
-                                properties:
-                                  key:
-                                    description: key is the label key that the selector
-                                      applies to.
-                                    type: string
-                                  operator:
-                                    description: |-
-                                      operator represents a key's relationship to a set of values.
-                                      Valid operators are In, NotIn, Exists and DoesNotExist.
-                                    type: string
-                                  values:
-                                    description: |-
-                                      values is an array of string values. If the operator is In or NotIn,
-                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                      the values array must be empty. This array is replaced during a strategic
-                                      merge patch.
-                                    items:
-                                      type: string
-                                    type: array
-                                    x-kubernetes-list-type: atomic
-                                required:
-                                - key
-                                - operator
-                                type: object
-                              type: array
-                              x-kubernetes-list-type: atomic
-                            matchLabels:
-                              additionalProperties:
-                                type: string
-                              description: |-
-                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                                map is equivalent to an element of matchExpressions, whose key field is "key", the
-                                operator is "In", and the values array contains only "value". The requirements are ANDed.
-                              type: object
-                          type: object
-                          x-kubernetes-map-type: atomic
-                      type: object
-                    timestamp:
-                      description: Timestamp is when the violation last occurred.
-                      format: date-time
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
                   required:
-                  - action
-                  - id
-                  - protocol
-                  - timestamp
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
             type: object
         required:
         - spec

@@ -1,4 +1,4 @@
-apiVersion: security.rancher.io/v1alpha1
+apiVersion: security.kubewarden.io/v1alpha1
 kind: WorkloadNetworkPolicy
 metadata:
   name: networkpolicy-sample

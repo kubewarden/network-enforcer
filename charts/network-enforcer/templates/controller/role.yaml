@@ -49,7 +49,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - security.rancher.io
+  - security.kubewarden.io
   resources:
   - workloadnetworkpolicies
   - workloadnetworkpolicyproposals
@@ -62,7 +62,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - security.rancher.io
+  - security.kubewarden.io
   resources:
   - workloadnetworkpolicies/status
   verbs:

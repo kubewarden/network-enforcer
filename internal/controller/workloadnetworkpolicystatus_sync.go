@@ -24,7 +24,7 @@ import (
 
 const eventNamePolicyViolationAcknowledged = "policy_violation_acknowledged"
 
-// +kubebuilder:rbac:groups=security.rancher.io,resources=workloadnetworkpolicies/status,verbs=get;patch;update
+// +kubebuilder:rbac:groups=security.kubewarden.io,resources=workloadnetworkpolicies/status,verbs=get;patch;update
 
 // WorkloadNetworkPolicyStatusSync drains buffered violation observations, correlates denies
 // to the owning WNP, and writes status/annotations via two-phase patch.
