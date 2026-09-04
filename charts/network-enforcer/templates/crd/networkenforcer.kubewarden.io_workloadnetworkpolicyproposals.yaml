@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: workloadnetworkpolicyproposals.security.kubewarden.io
+  name: workloadnetworkpolicyproposals.networkenforcer.kubewarden.io
 spec:
-  group: security.kubewarden.io
+  group: networkenforcer.kubewarden.io
   names:
     kind: WorkloadNetworkPolicyProposal
     listKind: WorkloadNetworkPolicyProposalList

@@ -25,6 +25,27 @@ rules:
   - list
   - watch
 - apiGroups:
+  - networkenforcer.kubewarden.io
+  resources:
+  - workloadnetworkpolicies
+  - workloadnetworkpolicyproposals
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networkenforcer.kubewarden.io
+  resources:
+  - workloadnetworkpolicies/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - networking.k8s.io
   resources:
   - networkpolicies
@@ -48,24 +69,3 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - security.kubewarden.io
-  resources:
-  - workloadnetworkpolicies
-  - workloadnetworkpolicyproposals
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - security.kubewarden.io
-  resources:
-  - workloadnetworkpolicies/status
-  verbs:
-  - get
-  - patch
-  - update

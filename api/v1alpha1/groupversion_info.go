@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package v1alpha1 contains API Schema definitions for the security v1alpha1 API group.
 // +kubebuilder:object:generate=true
-// +groupName=security.kubewarden.io
+// +groupName=networkenforcer.kubewarden.io
 package v1alpha1
 
 import (
@@ -27,7 +27,7 @@ import (
 
 var (
 	//nolint:gochecknoglobals // Kubebuilder API registration requires package-level variables
-	GroupVersion = schema.GroupVersion{Group: "security.kubewarden.io", Version: "v1alpha1"}
+	GroupVersion = schema.GroupVersion{Group: "networkenforcer.kubewarden.io", Version: "v1alpha1"}
 	//nolint:gochecknoglobals // Kubebuilder API registration requires package-level variables
 	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
 	//nolint:gochecknoglobals // Kubebuilder API registration requires package-level variables

@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: workloadnetworkpolicies.security.kubewarden.io
+  name: workloadnetworkpolicies.networkenforcer.kubewarden.io
 spec:
-  group: security.kubewarden.io
+  group: networkenforcer.kubewarden.io
   names:
     kind: WorkloadNetworkPolicy
     listKind: WorkloadNetworkPolicyList
@@ -33,7 +33,7 @@ spec:
           WorkloadNetworkPolicy is the schema for the runtime network policy API.
           Spec carries a backend-specific policy payload (Kubernetes or Istio) and a
           mode (monitor or protect). The resource is intentionally namespaced and uses
-          the `security.kubewarden.io` group to avoid colliding with the upstream
+          the `networkenforcer.kubewarden.io` group to avoid colliding with the upstream
           `networking.k8s.io/NetworkPolicy` kind.
         properties:
           apiVersion:
