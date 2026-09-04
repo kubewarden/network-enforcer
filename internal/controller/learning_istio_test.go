@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,6 +80,9 @@ func TestProcessIstioLearningEvent(t *testing.T) {
 	}{
 		{
 			name: "stable_proposal_per_deployment_across_replicas",
+			objs: []client.Object{
+				&appsv1.Deployment{Name: "http-server", Namespace: "default"},
+			},
 			events: []netypes.LearningEvent{
 				// we simulate the same connection seen by different replicas
 				newEvent(18080, clientPrincipal),
@@ -99,6 +103,9 @@ func TestProcessIstioLearningEvent(t *testing.T) {
 		},
 		{
 			name: "merges_ports_and_principals",
+			objs: []client.Object{
+				&appsv1.Deployment{Name: "http-server", Namespace: "default"},
+			},
 			events: []netypes.LearningEvent{
 				newEvent(18080, clientPrincipal),
 				newEvent(18081, clientPrincipal),
