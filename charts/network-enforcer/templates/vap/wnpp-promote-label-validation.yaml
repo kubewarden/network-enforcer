@@ -7,13 +7,13 @@ metadata:
   annotations:
     description: >-
       Rejects WorkloadNetworkPolicyProposal CREATE/UPDATE when
-      security.kubewarden.io/promote is set to a value other than monitor or protect.
+      networkenforcer.kubewarden.io/promote is set to a value other than monitor or protect.
 spec:
   failurePolicy: Fail
   matchConstraints:
     resourceRules:
     - apiGroups:
-      - security.kubewarden.io
+      - networkenforcer.kubewarden.io
       apiVersions:
       - v1alpha1
       operations:
@@ -23,10 +23,10 @@ spec:
       - workloadnetworkpolicyproposals
   matchConditions:
   - name: promote-label-present
-    expression: 'has(object.metadata.labels) && "security.kubewarden.io/promote" in object.metadata.labels'
+    expression: 'has(object.metadata.labels) && "networkenforcer.kubewarden.io/promote" in object.metadata.labels'
   validations:
-  - expression: 'object.metadata.labels["security.kubewarden.io/promote"] in ["monitor", "protect"]'
-    message: 'security.kubewarden.io/promote must be "monitor" or "protect"'
+  - expression: 'object.metadata.labels["networkenforcer.kubewarden.io/promote"] in ["monitor", "protect"]'
+    message: 'networkenforcer.kubewarden.io/promote must be "monitor" or "protect"'
     reason: Invalid
 ---
 apiVersion: admissionregistration.k8s.io/v1
@@ -44,7 +44,7 @@ spec:
   matchResources:
     resourceRules:
     - apiGroups:
-      - security.kubewarden.io
+      - networkenforcer.kubewarden.io
       apiVersions:
       - v1alpha1
       operations:

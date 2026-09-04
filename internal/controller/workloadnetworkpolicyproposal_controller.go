@@ -20,8 +20,8 @@ type WorkloadNetworkPolicyProposalReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=security.kubewarden.io,resources=workloadnetworkpolicyproposals,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=security.kubewarden.io,resources=workloadnetworkpolicies,verbs=get;list;watch;create;patch
+// +kubebuilder:rbac:groups=networkenforcer.kubewarden.io,resources=workloadnetworkpolicyproposals,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networkenforcer.kubewarden.io,resources=workloadnetworkpolicies,verbs=get;list;watch;create;patch
 
 func (r *WorkloadNetworkPolicyProposalReconciler) Reconcile(
 	ctx context.Context,

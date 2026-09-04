@@ -349,7 +349,7 @@ kubectl get wnpp deployment-http-server-ingress -o yaml
 
 [source,yaml]
 ----
-apiVersion: security.kubewarden.io/v1alpha1
+apiVersion: networkenforcer.kubewarden.io/v1alpha1
 kind: WorkloadNetworkPolicyProposal
 metadata:
   creationTimestamp: "2026-09-01T09:19:12Z"
@@ -413,7 +413,7 @@ kubectl get wnpp deployment-http-client-egress deployment-http-server-ingress -o
 ----
 apiVersion: v1
 items:
-- apiVersion: security.kubewarden.io/v1alpha1
+- apiVersion: networkenforcer.kubewarden.io/v1alpha1
   kind: WorkloadNetworkPolicyProposal
   metadata:
     creationTimestamp: "2026-09-01T09:25:45Z"
@@ -451,7 +451,7 @@ items:
           app: http-client
       policyTypes:
       - Egress
-- apiVersion: security.kubewarden.io/v1alpha1
+- apiVersion: networkenforcer.kubewarden.io/v1alpha1
   kind: WorkloadNetworkPolicyProposal
   metadata:
     creationTimestamp: "2026-09-01T09:25:45Z"
@@ -490,21 +490,21 @@ from the client on TCP `18080`.
 
 == Monitor: promote proposals into WorkloadNetworkPolicy resources
 
-To turn a proposal into a policy, label it with `security.kubewarden.io/promote`.
+To turn a proposal into a policy, label it with `networkenforcer.kubewarden.io/promote`.
 Use `monitor` for a passive policy, or `protect` to enforce it straight away.
 
 On the Istio provider:
 
 [source,bash]
 ----
-kubectl label wnpp deployment-http-server-ingress security.kubewarden.io/promote=monitor
+kubectl label wnpp deployment-http-server-ingress networkenforcer.kubewarden.io/promote=monitor
 ----
 
 On the Calico and Cilium providers:
 
 [source,bash]
 ----
-kubectl label wnpp deployment-http-client-egress deployment-http-server-ingress security.kubewarden.io/promote=monitor
+kubectl label wnpp deployment-http-client-egress deployment-http-server-ingress networkenforcer.kubewarden.io/promote=monitor
 ----
 
 [NOTE]
@@ -513,8 +513,8 @@ The chart installs a `ValidatingAdmissionPolicy` that rejects any other value:
 
 [source,bash]
 ----
-$ kubectl label wnpp deployment-http-server-ingress security.kubewarden.io/promote=audit
-The workloadnetworkpolicyproposals "deployment-http-server-ingress" is invalid: : ValidatingAdmissionPolicy 'network-enforcer-wnpp-promote-label' with binding 'network-enforcer-wnpp-promote-label-binding' denied request: security.kubewarden.io/promote must be "monitor" or "protect"
+$ kubectl label wnpp deployment-http-server-ingress networkenforcer.kubewarden.io/promote=audit
+The workloadnetworkpolicyproposals "deployment-http-server-ingress" is invalid: : ValidatingAdmissionPolicy 'network-enforcer-wnpp-promote-label' with binding 'network-enforcer-wnpp-promote-label-binding' denied request: networkenforcer.kubewarden.io/promote must be "monitor" or "protect"
 ----
 ====
 
@@ -549,13 +549,13 @@ kubectl get wnp deployment-http-server-ingress -o yaml
 
 [source,yaml]
 ----
-apiVersion: security.kubewarden.io/v1alpha1
+apiVersion: networkenforcer.kubewarden.io/v1alpha1
 kind: WorkloadNetworkPolicy
 metadata:
   creationTimestamp: "2026-09-01T09:19:38Z"
   generation: 1
   labels:
-    security.kubewarden.io/promoted-from: deployment-http-server-ingress
+    networkenforcer.kubewarden.io/promoted-from: deployment-http-server-ingress
   name: deployment-http-server-ingress
   namespace: default
   resourceVersion: "1549"
@@ -606,7 +606,7 @@ metadata:
   name: deployment-http-server-ingress
   namespace: default
   ownerReferences:
-  - apiVersion: security.kubewarden.io/v1alpha1
+  - apiVersion: networkenforcer.kubewarden.io/v1alpha1
     blockOwnerDeletion: true
     controller: true
     kind: WorkloadNetworkPolicy
@@ -794,7 +794,7 @@ metadata:
   name: deployment-http-server-ingress
   namespace: default
   ownerReferences:
-  - apiVersion: security.kubewarden.io/v1alpha1
+  - apiVersion: networkenforcer.kubewarden.io/v1alpha1
     blockOwnerDeletion: true
     controller: true
     kind: WorkloadNetworkPolicy
@@ -851,7 +851,7 @@ metadata:
   name: deployment-http-client-egress
   namespace: default
   ownerReferences:
-  - apiVersion: security.kubewarden.io/v1alpha1
+  - apiVersion: networkenforcer.kubewarden.io/v1alpha1
     blockOwnerDeletion: true
     controller: true
     kind: WorkloadNetworkPolicy
@@ -969,13 +969,13 @@ never violated again.
 == Acknowledge a violation
 
 A violation you consider expected can be acknowledged by annotating the policy with
-`security.kubewarden.io/acknowledge-<id>`, where `<id>` is the `id` of the violation record and the value is
+`networkenforcer.kubewarden.io/acknowledge-<id>`, where `<id>` is the `id` of the violation record and the value is
 the reason:
 
 [source,bash]
 ----
 kubectl annotate wnp deployment-http-server-ingress \
-  'security.kubewarden.io/acknowledge-0=known scanner probe'
+  'networkenforcer.kubewarden.io/acknowledge-0=known scanner probe'
 ----
 
 The record moves from `status.violations` to `status.acknowledgedViolations`, `activeViolationCount`

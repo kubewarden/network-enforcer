@@ -34,8 +34,8 @@ type LearningReconciler struct {
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets;daemonsets,verbs=get;list;watch
-// +kubebuilder:rbac:groups=security.kubewarden.io,resources=workloadnetworkpolicyproposals,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups=security.kubewarden.io,resources=workloadnetworkpolicies,verbs=get;list;watch
+// +kubebuilder:rbac:groups=networkenforcer.kubewarden.io,resources=workloadnetworkpolicyproposals,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=networkenforcer.kubewarden.io,resources=workloadnetworkpolicies,verbs=get;list;watch
 
 func NewLearningReconciler(
 	client client.Client,

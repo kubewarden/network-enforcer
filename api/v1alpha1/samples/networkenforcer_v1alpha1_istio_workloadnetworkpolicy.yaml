@@ -1,4 +1,4 @@
-apiVersion: security.kubewarden.io/v1alpha1
+apiVersion: networkenforcer.kubewarden.io/v1alpha1
 kind: WorkloadNetworkPolicy
 metadata:
   name: istio-networkpolicy-sample

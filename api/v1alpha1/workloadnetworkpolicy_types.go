@@ -87,7 +87,7 @@ type WorkloadNetworkPolicyStatus struct {
 // WorkloadNetworkPolicy is the schema for the runtime network policy API.
 // Spec carries a backend-specific policy payload (Kubernetes or Istio) and a
 // mode (monitor or protect). The resource is intentionally namespaced and uses
-// the `security.kubewarden.io` group to avoid colliding with the upstream
+// the `networkenforcer.kubewarden.io` group to avoid colliding with the upstream
 // `networking.k8s.io/NetworkPolicy` kind.
 //
 // +kubebuilder:object:root=true

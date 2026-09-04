@@ -62,7 +62,7 @@ Purpose:
 
 Approval label:
 
-- `security.kubewarden.io/policy-ready=true`, the same used in the runtime-enforcer.
+- `networkenforcer.kubewarden.io/policy-ready=true`, mirroring the label used in the runtime-enforcer.
 
 ### `WorkloadNetworkPolicy`
 
@@ -74,13 +74,13 @@ New runtime policy CR.
 Example:
 
 ```yaml
-apiVersion: security.kubewarden.io/v1alpha1
+apiVersion: networkenforcer.kubewarden.io/v1alpha1
 kind: WorkloadNetworkPolicy
 metadata:
   name: deployment-nginx-egress
   namespace: default
   labels:
-    workloadnetworkpolicy.security.kubewarden.io/promoted-from: deployment-nginx-egress
+    networkenforcer.kubewarden.io/promoted-from: deployment-nginx-egress
 spec:
   mode: monitor # monitor|protect
   policy:
@@ -114,8 +114,8 @@ Flow:
 
 1. Watch `WorkloadNetworkPolicyProposal`
 2. If object is deleting: no-op
-3. If a `WorkloadNetworkPolicy` already exists with `workloadnetworkpolicy.security.kubewarden.io/promoted-from=<proposal-name>`, treat the proposal as leftover and delete it.
-4. If `security.kubewarden.io/policy-ready=true` is not present: no-op.
+3. If a `WorkloadNetworkPolicy` already exists with `networkenforcer.kubewarden.io/promoted-from=<proposal-name>`, treat the proposal as leftover and delete it.
+4. If `networkenforcer.kubewarden.io/policy-ready=true` is not present: no-op.
 5. Create `WorkloadNetworkPolicy` with:
    - same name/namespace
    - `spec.mode=monitor`
