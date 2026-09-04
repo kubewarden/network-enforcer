@@ -3,7 +3,7 @@
 | Feature Name | Monitor/Protect policy lifecycle                                |
 | Start Date   | 2026-06-26                                                      |
 | Category     | Architecture                                                    |
-| RFC PR       | https://github.com/rancher-sandbox/network-enforcer/pull/40     |
+| RFC PR       | https://github.com/kubewarden/network-enforcer/pull/40     |
 | State        | **ACCEPTED**                                                    |
 
 # Summary
@@ -21,7 +21,7 @@ Promotion from proposal to policy is explicit. The monitor phase is implemented 
 
 The current implementation can only create enforceable Kubernetes `NetworkPolicy` resources from proposals and cannot represent a first-class "monitor-only" policy.
 
-Issue [#32](https://github.com/rancher-sandbox/network-enforcer/issues/32) and team discussions highlighted two points:
+Issue [#32](https://github.com/kubewarden/network-enforcer/issues/32) and team discussions highlighted two points:
 
 - We want monitor mode in the MVP.
 - CNI-native monitor/audit capabilities are not consistently available across all CNIs and environments.
@@ -62,7 +62,7 @@ Purpose:
 
 Approval label:
 
-- `security.rancher.io/policy-ready=true`, the same used in the runtime-enforcer.
+- `security.kubewarden.io/policy-ready=true`, the same used in the runtime-enforcer.
 
 ### `WorkloadNetworkPolicy`
 
@@ -74,13 +74,13 @@ New runtime policy CR.
 Example:
 
 ```yaml
-apiVersion: security.rancher.io/v1alpha1
+apiVersion: security.kubewarden.io/v1alpha1
 kind: WorkloadNetworkPolicy
 metadata:
   name: deployment-nginx-egress
   namespace: default
   labels:
-    workloadnetworkpolicy.security.rancher.io/promoted-from: deployment-nginx-egress
+    workloadnetworkpolicy.security.kubewarden.io/promoted-from: deployment-nginx-egress
 spec:
   mode: monitor # monitor|protect
   policy:
@@ -114,8 +114,8 @@ Flow:
 
 1. Watch `WorkloadNetworkPolicyProposal`
 2. If object is deleting: no-op
-3. If a `WorkloadNetworkPolicy` already exists with `workloadnetworkpolicy.security.rancher.io/promoted-from=<proposal-name>`, treat the proposal as leftover and delete it.
-4. If `security.rancher.io/policy-ready=true` is not present: no-op.
+3. If a `WorkloadNetworkPolicy` already exists with `workloadnetworkpolicy.security.kubewarden.io/promoted-from=<proposal-name>`, treat the proposal as leftover and delete it.
+4. If `security.kubewarden.io/policy-ready=true` is not present: no-op.
 5. Create `WorkloadNetworkPolicy` with:
    - same name/namespace
    - `spec.mode=monitor`

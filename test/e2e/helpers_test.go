@@ -7,7 +7,6 @@ import (
 	"os"
 	"testing"
 
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
 	"github.com/stretchr/testify/require"
 	istiosecurityv1 "istio.io/client-go/pkg/apis/security/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -18,6 +17,8 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/env"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/third_party/helm"
+
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
 )
 
 type key string

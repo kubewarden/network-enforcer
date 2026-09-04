@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
+	"github.com/kubewarden/network-enforcer/internal/ringbuf"
 )
 
 type Dumper struct {

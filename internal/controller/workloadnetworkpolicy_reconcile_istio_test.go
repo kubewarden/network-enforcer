@@ -3,7 +3,6 @@ package controller
 import (
 	"testing"
 
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	istiosecurityv1beta1 "istio.io/api/security/v1beta1"
@@ -12,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
 )
 
 func createIstioWorkloadNetworkPolicy(

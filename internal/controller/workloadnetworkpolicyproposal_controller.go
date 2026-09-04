@@ -10,7 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
 )
 
 // WorkloadNetworkPolicyProposalReconciler reconciles WorkloadNetworkPolicyProposal objects.
@@ -20,8 +20,8 @@ type WorkloadNetworkPolicyProposalReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=security.rancher.io,resources=workloadnetworkpolicyproposals,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=security.rancher.io,resources=workloadnetworkpolicies,verbs=get;list;watch;create;patch
+// +kubebuilder:rbac:groups=security.kubewarden.io,resources=workloadnetworkpolicyproposals,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=security.kubewarden.io,resources=workloadnetworkpolicies,verbs=get;list;watch;create;patch
 
 func (r *WorkloadNetworkPolicyProposalReconciler) Reconcile(
 	ctx context.Context,

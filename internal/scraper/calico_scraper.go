@@ -7,12 +7,13 @@ import (
 	"log/slog"
 	"net"
 
-	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
-	pb "github.com/rancher-sandbox/network-enforcer/internal/scraper/goldmane"
-	"github.com/rancher-sandbox/network-enforcer/internal/tlsutil"
-	"github.com/rancher-sandbox/network-enforcer/internal/violation"
 	"google.golang.org/grpc"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/kubewarden/network-enforcer/internal/ringbuf"
+	pb "github.com/kubewarden/network-enforcer/internal/scraper/goldmane"
+	"github.com/kubewarden/network-enforcer/internal/tlsutil"
+	"github.com/kubewarden/network-enforcer/internal/violation"
 )
 
 const (

@@ -1,4 +1,4 @@
-module github.com/rancher-sandbox/network-enforcer
+module github.com/kubewarden/network-enforcer
 
 go 1.27.0
 

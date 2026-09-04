@@ -125,7 +125,7 @@ Calico is the cluster CNI, so create a kind cluster with the default CNI disable
 
 [source,bash]
 ----
-curl -sSL https://raw.githubusercontent.com/rancher-sandbox/network-enforcer/main/docs/yaml/kind_cluster.yaml \
+curl -sSL https://raw.githubusercontent.com/kubewarden/network-enforcer/main/docs/yaml/kind_cluster.yaml \
   | kind create cluster --name network-enforcer --config=-
 ----
 
@@ -140,7 +140,7 @@ Otherwise, run it straight from the repository:
 
 [source,bash]
 ----
-curl -sSL https://raw.githubusercontent.com/rancher-sandbox/network-enforcer/main/hack/setup-calico.sh | bash
+curl -sSL https://raw.githubusercontent.com/kubewarden/network-enforcer/main/hack/setup-calico.sh | bash
 ----
 
 The script installs the Calico CRDs and the Tigera operator with `goldmane.enabled=true`, waits for the
@@ -162,7 +162,7 @@ Cilium is the cluster CNI, so create a kind cluster with the default CNI disable
 
 [source,bash]
 ----
-curl -sSL https://raw.githubusercontent.com/rancher-sandbox/network-enforcer/main/docs/yaml/kind_cluster.yaml \
+curl -sSL https://raw.githubusercontent.com/kubewarden/network-enforcer/main/docs/yaml/kind_cluster.yaml \
   | kind create cluster --name network-enforcer --config=-
 ----
 
@@ -177,7 +177,7 @@ Otherwise, run it straight from the repository:
 
 [source,bash]
 ----
-curl -sSL https://raw.githubusercontent.com/rancher-sandbox/network-enforcer/main/hack/setup-cilium.sh | bash
+curl -sSL https://raw.githubusercontent.com/kubewarden/network-enforcer/main/hack/setup-cilium.sh | bash
 ----
 
 The script installs Cilium with the settings Network-Enforcer needs, and waits for the agent, the
@@ -229,7 +229,7 @@ no longer exported as OpenTelemetry logs.
 
 [source,bash]
 ----
-helm repo add network-enforcer https://rancher-sandbox.github.io/network-enforcer/
+helm repo add network-enforcer https://kubewarden.github.io/network-enforcer/
 helm repo update
 ----
 
@@ -304,7 +304,7 @@ Only the traffic you actually generate is learned, which is what lets you produc
 
 [source,bash]
 ----
-kubectl apply -f https://raw.githubusercontent.com/rancher-sandbox/network-enforcer/main/docs/yaml/simple_application.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubewarden/network-enforcer/main/docs/yaml/simple_application.yaml
 kubectl wait --for=condition=Ready pod -l app=http-server --timeout=300s
 kubectl wait --for=condition=Ready pod -l app=http-client --timeout=300s
 ----
@@ -349,7 +349,7 @@ kubectl get wnpp deployment-http-server-ingress -o yaml
 
 [source,yaml]
 ----
-apiVersion: security.rancher.io/v1alpha1
+apiVersion: security.kubewarden.io/v1alpha1
 kind: WorkloadNetworkPolicyProposal
 metadata:
   creationTimestamp: "2026-09-01T09:19:12Z"
@@ -413,7 +413,7 @@ kubectl get wnpp deployment-http-client-egress deployment-http-server-ingress -o
 ----
 apiVersion: v1
 items:
-- apiVersion: security.rancher.io/v1alpha1
+- apiVersion: security.kubewarden.io/v1alpha1
   kind: WorkloadNetworkPolicyProposal
   metadata:
     creationTimestamp: "2026-09-01T09:25:45Z"
@@ -451,7 +451,7 @@ items:
           app: http-client
       policyTypes:
       - Egress
-- apiVersion: security.rancher.io/v1alpha1
+- apiVersion: security.kubewarden.io/v1alpha1
   kind: WorkloadNetworkPolicyProposal
   metadata:
     creationTimestamp: "2026-09-01T09:25:45Z"
@@ -490,21 +490,21 @@ from the client on TCP `18080`.
 
 == Monitor: promote proposals into WorkloadNetworkPolicy resources
 
-To turn a proposal into a policy, label it with `security.rancher.io/promote`.
+To turn a proposal into a policy, label it with `security.kubewarden.io/promote`.
 Use `monitor` for a passive policy, or `protect` to enforce it straight away.
 
 On the Istio provider:
 
 [source,bash]
 ----
-kubectl label wnpp deployment-http-server-ingress security.rancher.io/promote=monitor
+kubectl label wnpp deployment-http-server-ingress security.kubewarden.io/promote=monitor
 ----
 
 On the Calico and Cilium providers:
 
 [source,bash]
 ----
-kubectl label wnpp deployment-http-client-egress deployment-http-server-ingress security.rancher.io/promote=monitor
+kubectl label wnpp deployment-http-client-egress deployment-http-server-ingress security.kubewarden.io/promote=monitor
 ----
 
 [NOTE]
@@ -513,8 +513,8 @@ The chart installs a `ValidatingAdmissionPolicy` that rejects any other value:
 
 [source,bash]
 ----
-$ kubectl label wnpp deployment-http-server-ingress security.rancher.io/promote=audit
-The workloadnetworkpolicyproposals "deployment-http-server-ingress" is invalid: : ValidatingAdmissionPolicy 'network-enforcer-wnpp-promote-label' with binding 'network-enforcer-wnpp-promote-label-binding' denied request: security.rancher.io/promote must be "monitor" or "protect"
+$ kubectl label wnpp deployment-http-server-ingress security.kubewarden.io/promote=audit
+The workloadnetworkpolicyproposals "deployment-http-server-ingress" is invalid: : ValidatingAdmissionPolicy 'network-enforcer-wnpp-promote-label' with binding 'network-enforcer-wnpp-promote-label-binding' denied request: security.kubewarden.io/promote must be "monitor" or "protect"
 ----
 ====
 
@@ -549,13 +549,13 @@ kubectl get wnp deployment-http-server-ingress -o yaml
 
 [source,yaml]
 ----
-apiVersion: security.rancher.io/v1alpha1
+apiVersion: security.kubewarden.io/v1alpha1
 kind: WorkloadNetworkPolicy
 metadata:
   creationTimestamp: "2026-09-01T09:19:38Z"
   generation: 1
   labels:
-    security.rancher.io/promoted-from: deployment-http-server-ingress
+    security.kubewarden.io/promoted-from: deployment-http-server-ingress
   name: deployment-http-server-ingress
   namespace: default
   resourceVersion: "1549"
@@ -606,7 +606,7 @@ metadata:
   name: deployment-http-server-ingress
   namespace: default
   ownerReferences:
-  - apiVersion: security.rancher.io/v1alpha1
+  - apiVersion: security.kubewarden.io/v1alpha1
     blockOwnerDeletion: true
     controller: true
     kind: WorkloadNetworkPolicy
@@ -794,7 +794,7 @@ metadata:
   name: deployment-http-server-ingress
   namespace: default
   ownerReferences:
-  - apiVersion: security.rancher.io/v1alpha1
+  - apiVersion: security.kubewarden.io/v1alpha1
     blockOwnerDeletion: true
     controller: true
     kind: WorkloadNetworkPolicy
@@ -851,7 +851,7 @@ metadata:
   name: deployment-http-client-egress
   namespace: default
   ownerReferences:
-  - apiVersion: security.rancher.io/v1alpha1
+  - apiVersion: security.kubewarden.io/v1alpha1
     blockOwnerDeletion: true
     controller: true
     kind: WorkloadNetworkPolicy
@@ -969,13 +969,13 @@ never violated again.
 == Acknowledge a violation
 
 A violation you consider expected can be acknowledged by annotating the policy with
-`security.rancher.io/acknowledge-<id>`, where `<id>` is the `id` of the violation record and the value is
+`security.kubewarden.io/acknowledge-<id>`, where `<id>` is the `id` of the violation record and the value is
 the reason:
 
 [source,bash]
 ----
 kubectl annotate wnp deployment-http-server-ingress \
-  'security.rancher.io/acknowledge-0=known scanner probe'
+  'security.kubewarden.io/acknowledge-0=known scanner probe'
 ----
 
 The record moves from `status.violations` to `status.acknowledgedViolations`, `activeViolationCount`

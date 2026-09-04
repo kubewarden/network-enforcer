@@ -41,7 +41,7 @@ help: ## Display this help.
 
 ##@ Development
 
-REPO ?= ghcr.io/rancher-sandbox/network-enforcer
+REPO ?= ghcr.io/kubewarden/network-enforcer
 TAG ?= latest
 
 define BUILD_template =

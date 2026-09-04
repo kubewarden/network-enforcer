@@ -16,15 +16,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
-	"github.com/rancher-sandbox/network-enforcer/internal/ringbuf"
-	"github.com/rancher-sandbox/network-enforcer/internal/types/loglevel"
-	"github.com/rancher-sandbox/network-enforcer/internal/violation"
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
+	"github.com/kubewarden/network-enforcer/internal/ringbuf"
+	"github.com/kubewarden/network-enforcer/internal/types/loglevel"
+	"github.com/kubewarden/network-enforcer/internal/violation"
 )
 
 const eventNamePolicyViolationAcknowledged = "policy_violation_acknowledged"
 
-// +kubebuilder:rbac:groups=security.rancher.io,resources=workloadnetworkpolicies/status,verbs=get;patch;update
+// +kubebuilder:rbac:groups=security.kubewarden.io,resources=workloadnetworkpolicies/status,verbs=get;patch;update
 
 // WorkloadNetworkPolicyStatusSync drains buffered violation observations, correlates denies
 // to the owning WNP, and writes status/annotations via two-phase patch.

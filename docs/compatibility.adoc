@@ -120,4 +120,4 @@ The chart mounts the Secret net-enf-goldmane-client-certs when controller.provid
 
 == Support
 
-Hit a compatibility issue not covered here? Open an https://github.com/rancher-sandbox/network-enforcer/issues[issue] with your provider, versions, and cluster details.
+Hit a compatibility issue not covered here? Open an https://github.com/kubewarden/network-enforcer/issues[issue] with your provider, versions, and cluster details.

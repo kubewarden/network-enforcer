@@ -12,7 +12,7 @@ annotations:
   catalog.cattle.io/ui-component: network-enforcer
   catalog.cattle.io/display-name: NetworkEnforcer
   catalog.cattle.io/os: linux
-  catalog.cattle.io/provides-gvr: "security.rancher.io/v1alpha1"
+  catalog.cattle.io/provides-gvr: "security.kubewarden.io/v1alpha1"
   catalog.cattle.io/requests-cpu: "500m"
   catalog.cattle.io/requests-memory: "128Mi"
   catalog.cattle.io/rancher-version: ">= 2.6.0-0 <= 2.12.100-0"

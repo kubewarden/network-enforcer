@@ -8,8 +8,9 @@
 package violation
 
 import (
-	securityv1alpha1 "github.com/rancher-sandbox/network-enforcer/api/v1alpha1"
 	networkingv1 "k8s.io/api/networking/v1"
+
+	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
 )
 
 // Observation is the common in-flight representation produced by the backend

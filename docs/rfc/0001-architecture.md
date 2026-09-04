@@ -3,7 +3,7 @@
 | Feature Name | Network enforcer architecture |
 | Start Date   | 2026-05-29                 |
 | Category     | Architecture               |
-| RFC PR       | https://github.com/rancher-sandbox/network-enforcer/pull/9 |
+| RFC PR       | https://github.com/kubewarden/network-enforcer/pull/9 |
 | State        | **ACCEPTED**               |
 
 # Summary
@@ -47,7 +47,7 @@ label flip on a specific CR.
   `NetworkPolicyProposal` in its namespace, populated with observed ingress
   and egress rules.
 - A namespace owner runs `kubectl get npp`, reviews a proposal, then runs
-  `kubectl label npp/<name> security.rancher.io/enforce=true`. The operator
+  `kubectl label npp/<name> security.kubewarden.io/enforce=true`. The operator
   creates a `NetworkPolicy` (or the Calico/Cilium equivalent) owned by the
   proposal. Removing the label deletes the policy.
 - A security auditor diffs the proposal spec against the generated policy and
@@ -119,7 +119,7 @@ label flip on a specific CR.
                                        +--------+-------------------------+----------+
                                                                           |
                                                   label                   |  Watch (filtered
-                                                  security.rancher.io/    |  on enforce label)
+                                                  security.kubewarden.io/    |  on enforce label)
                                                   enforce=true            v
                                                               +-----------+--------------+
                                                               |  EnforcementReconciler   |
@@ -168,7 +168,7 @@ From a packet to an enforced rule:
    `spec.{ingress,egress}` and stamps `status.{firstObserved,lastObserved}`.
    It self-requeues every 30s so the spec converges as new flows arrive.
 6. `EnforcementReconciler` watches NPPs with a predicate that fires on create
-   and on `security.rancher.io/enforce` label changes. When `enforce=true`,
+   and on `security.kubewarden.io/enforce` label changes. When `enforce=true`,
    it looks up the workload's pod selector from the live
    `Deployment`/`StatefulSet`/`DaemonSet`, asks the configured
    `PolicyBackend` to `Build` the backend-specific policy object, sets the
@@ -251,16 +251,16 @@ The enforcement boundary. See the next section.
 ## CRD surface
 
 One CRD: `NetworkPolicyProposal` (`npp`), namespaced, group
-`security.rancher.io`, version `v1alpha1`.
+`security.kubewarden.io`, version `v1alpha1`.
 
 ```yaml
-apiVersion: security.rancher.io/v1alpha1
+apiVersion: security.kubewarden.io/v1alpha1
 kind: NetworkPolicyProposal
 metadata:
   name: deployment-checkout
   namespace: shop
   labels:
-    security.rancher.io/enforce: "true"   # opt-in switch
+    security.kubewarden.io/enforce: "true"   # opt-in switch
 spec:
   workloadRef:
     kind: Deployment                       # Deployment | StatefulSet | DaemonSet
@@ -393,7 +393,7 @@ type PolicyBackend interface {
   - Kubernetes API server: `NetworkPolicyProposal` CRs and backend policy
     CRs. The only durable state.
 - **Leader election.** Off by default (`--leader-elect=false`). The lease ID
-  is `6163c1ee.security.rancher.io` so multiple replicas can be enabled
+  is `6163c1ee.security.kubewarden.io` so multiple replicas can be enabled
   later without churning the lease. When leader election is on, only the
   leader runs controllers, but the OTLP receiver and the scanner are plain
   `manager.Runnable`s and will run on every replica regardless of leadership

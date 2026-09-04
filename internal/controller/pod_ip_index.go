@@ -7,7 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/rancher-sandbox/network-enforcer/internal/istio"
+	"github.com/kubewarden/network-enforcer/internal/istio"
 )
 
 // SetupPodIPIndexer registers the status.podIP field index on the manager's
