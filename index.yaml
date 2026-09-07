@@ -6,6 +6,28 @@ entries:
       catalog.cattle.io/display-name: NetworkEnforcer
       catalog.cattle.io/namespace: network-enforcer
       catalog.cattle.io/os: linux
+      catalog.cattle.io/provides-gvr: networkenforcer.kubewarden.io/v1alpha1
+      catalog.cattle.io/rancher-version: '>= 2.6.0-0 <= 2.12.100-0'
+      catalog.cattle.io/release-name: rancher-network-enforcer
+      catalog.cattle.io/requests-cpu: 500m
+      catalog.cattle.io/requests-memory: 128Mi
+      catalog.cattle.io/type: cluster-tool
+      catalog.cattle.io/ui-component: network-enforcer
+    apiVersion: v2
+    appVersion: v0.2.0
+    created: "2026-09-07T15:33:35.564141275Z"
+    description: SUSE Security Network Enforcer helm chart
+    digest: 0626daa6e75c6cdef20b9aabb654de5dddb11cd5a0eb3f8b7ba24c7c3fbf57a0
+    name: network-enforcer
+    type: application
+    urls:
+    - https://github.com/kubewarden/network-enforcer/releases/download/network-enforcer-chart-0.1.2/network-enforcer-0.1.2.tgz
+    version: 0.1.2
+  - annotations:
+      catalog.cattle.io/certified: rancher
+      catalog.cattle.io/display-name: NetworkEnforcer
+      catalog.cattle.io/namespace: network-enforcer
+      catalog.cattle.io/os: linux
       catalog.cattle.io/provides-gvr: security.rancher.io/v1alpha1
       catalog.cattle.io/rancher-version: '>= 2.6.0-0 <= 2.12.100-0'
       catalog.cattle.io/release-name: rancher-network-enforcer
@@ -57,4 +79,4 @@ entries:
     urls:
     - https://github.com/rancher-sandbox/network-enforcer/releases/download/network-enforcer-chart-0.1.0/network-enforcer-0.1.0.tgz
     version: 0.1.0
-generated: "2026-07-31T10:08:17.563901547Z"
+generated: "2026-09-07T15:33:35.564150458Z"
