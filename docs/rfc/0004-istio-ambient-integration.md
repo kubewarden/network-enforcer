@@ -4,7 +4,7 @@
 | Start Date   | 2026-08-06                                                       |
 | Category     | Architecture                                                     |
 | RFC PR       | <https://github.com/kubewarden/network-enforcer/pull/204>   |
-| State        |                                                                  |
+| State        | **ACCEPTED**                                                     |
 
 ## Summary
 

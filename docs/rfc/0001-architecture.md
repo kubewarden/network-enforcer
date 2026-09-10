@@ -1,10 +1,16 @@
+> **Superseded.** This RFC described an OBI-based architecture with a single
+> `NetworkPolicyProposal` CR and a `networkenforcer.kubewarden.io/enforce=true`
+> label. That design was not shipped. Current architecture is documented in
+> `docs/architecture.adoc`. Read this RFC as historical design, not current
+> behaviour.
+
 |              |                            |
 | :----------- | :------------------------- |
 | Feature Name | Network enforcer architecture |
 | Start Date   | 2026-05-29                 |
 | Category     | Architecture               |
 | RFC PR       | https://github.com/kubewarden/network-enforcer/pull/9 |
-| State        | **ACCEPTED**               |
+| State        | **SUPERSEDED**             |
 
 # Summary
 
