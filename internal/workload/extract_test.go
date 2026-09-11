@@ -63,28 +63,28 @@ func TestExtractWorkloadKey(t *testing.T) {
 		{
 			name: "replicaset without pod-template-hash stays replicaset",
 			pod: ownedPod(
-				"runtime-enforcer-controller-manager-6f4b9855c6-5zwq7",
+				"network-enforcer-controller-manager-6f4b9855c6-5zwq7",
 				controllerRef(
 					"apps/v1",
 					string(securityv1alpha1.WorkloadKindReplicaSet),
-					"runtime-enforcer-controller-manager-6f4b9855c6",
+					"network-enforcer-controller-manager-6f4b9855c6",
 				),
 				map[string]string{},
 			),
 			want: securityv1alpha1.WorkloadRef{
 				Namespace: testNamespace,
 				OwnerKind: securityv1alpha1.WorkloadKindReplicaSet,
-				OwnerName: "runtime-enforcer-controller-manager-6f4b9855c6",
+				OwnerName: "network-enforcer-controller-manager-6f4b9855c6",
 			},
 		},
 		{
 			name: "replicaset with pod-template-hash becomes deployment",
 			pod: ownedPod(
-				"runtime-enforcer-controller-manager-6f4b9855c6-5zwq7",
+				"network-enforcer-controller-manager-6f4b9855c6-5zwq7",
 				controllerRef(
 					"apps/v1",
 					string(securityv1alpha1.WorkloadKindReplicaSet),
-					"runtime-enforcer-controller-manager-6f4b9855c6",
+					"network-enforcer-controller-manager-6f4b9855c6",
 				),
 				map[string]string{
 					appsv1.DefaultDeploymentUniqueLabelKey: "6f4b9855c6",
@@ -93,7 +93,7 @@ func TestExtractWorkloadKey(t *testing.T) {
 			want: securityv1alpha1.WorkloadRef{
 				Namespace: testNamespace,
 				OwnerKind: securityv1alpha1.WorkloadKindDeployment,
-				OwnerName: "runtime-enforcer-controller-manager",
+				OwnerName: "network-enforcer-controller-manager",
 			},
 		},
 		{
