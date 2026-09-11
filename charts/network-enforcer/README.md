@@ -8,7 +8,7 @@ Network Enforcer is a Kubernetes-focused project that helps teams move from perm
 
 It observes real network flows from running workloads, correlates traffic patterns, and produces `WorkloadNetworkPolicyProposal` resources that describe suggested ingress/egress rules. These proposals can be reviewed and validated before they are enforced, so teams keep control while reducing trial-and-error.
 
-The project is built around two core components: a Kubernetes controller that manages policy proposal lifecycle and reconciliation, and a CNI watcher that gathers network telemetry from the cluster data plane.
+The project is built around a Kubernetes controller that manages the proposal and policy lifecycle. The controller scrapes flow telemetry from the configured data-plane provider (Istio ambient via ztunnel and fluent-bit, Calico Goldmane, or Cilium Hubble Relay).
 
 The goal is to reduce manual NetworkPolicy authoring effort while improving visibility, consistency, and confidence in workload-to-workload communication boundaries.
 
@@ -16,6 +16,7 @@ The goal is to reduce manual NetworkPolicy authoring effort while improving visi
 
 ### Getting Started
 
+- [Architecture](https://github.com/kubewarden/network-enforcer/blob/main/docs/architecture.adoc)
 - [Quick Start](https://github.com/kubewarden/network-enforcer/blob/main/docs/installation/quickstart.adoc)
 - [Compatibility](https://github.com/kubewarden/network-enforcer/blob/main/docs/compatibility.adoc)
 - [Uninstall](https://github.com/kubewarden/network-enforcer/blob/main/docs/installation/uninstall.adoc)

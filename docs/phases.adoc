@@ -156,7 +156,7 @@ Violations always land on `WorkloadNetworkPolicy` status (`status.violations`).
 
 When telemetry is enabled, the controller also exports OpenTelemetry logs:
 
-* *Default Helm chart* (`telemetry.collectorStrategy=default`): an in-cluster OTEL collector. The controller sends OTLP/gRPC to `https://<release>-otel-collector.<namespace>.svc.cluster.local:4317`. The collector's logs pipeline dumps records with the debug exporter.
+* *Default Helm chart* (`telemetry.collectorStrategy=default`): an in-cluster OTEL collector. The controller sends OTLP/gRPC to `https://<fullname>-otel-collector.<namespace>.svc.cluster.local:4317`. The collector's logs pipeline dumps records with the debug exporter.
 * *External collector* (`telemetry.collectorStrategy=external`): the same exporter points at `telemetry.externalCollector.endpoint`.
 * *Disabled* (`telemetry.collectorStrategy=none`): no OTLP export; status still records violations.
 
