@@ -24,6 +24,10 @@ The goal is to reduce manual NetworkPolicy authoring effort while improving visi
 
 - [Phases: Learn, Monitor, Protect](https://github.com/kubewarden/network-enforcer/blob/main/docs/phases.adoc)
 
+### Development
+
+- [Development Environment](https://github.com/kubewarden/network-enforcer/blob/main/docs/development.adoc)
+
 ## License
 
 Copyright 2026.

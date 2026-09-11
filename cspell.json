@@ -21,6 +21,8 @@
         "backendkubernetes",
         "ciliumnetworkpolicies",
         "clientgoscheme",
+        "commitlint",
+        "tiltfile",
         "clientset",
         "Clusterwide",
         "colmetricspb",
