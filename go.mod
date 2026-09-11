@@ -3,7 +3,7 @@ module github.com/kubewarden/network-enforcer
 go 1.27.1
 
 require (
-	github.com/avast/retry-go/v4 v4.7.0
+	github.com/avast/retry-go/v5 v5.0.0
 	github.com/cilium/cilium v1.20.1
 	github.com/go-logr/logr v1.4.4
 	github.com/stretchr/testify v1.12.1

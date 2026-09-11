@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	retry "github.com/avast/retry-go/v4"
+	retry "github.com/avast/retry-go/v5"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -33,10 +33,7 @@ func runStreamWithReconnect(
 	)
 	for {
 		successfulConnection := false
-		err := retry.Do(
-			func() error {
-				return stream(ctx, &successfulConnection)
-			},
+		err := retry.New(
 			retry.Context(ctx),
 			retry.Attempts(maxConsecutiveFailures),
 			retry.Delay(reconnectMinBackoff),
@@ -57,7 +54,9 @@ func runStreamWithReconnect(
 					"error", retryErr,
 				)
 			}),
-		)
+		).Do(func() error {
+			return stream(ctx, &successfulConnection)
+		})
 		if isContextCancellation(err) || ctx.Err() != nil {
 			break
 		}

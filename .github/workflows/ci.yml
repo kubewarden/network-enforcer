@@ -89,10 +89,11 @@ jobs:
           persist-credentials: false
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
-          version: v3.21.4
+          version: v4.3.0
       - name: Install Helm-unittest
-        # Pin version to 1.0.2 due to https://github.com/helm-unittest/helm-unittest/issues/790
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.0.2
+        run: |
+          curl -SsL https://github.com/helm-unittest/helm-unittest/raw/refs/heads/main/public-key.asc | gpg --import
+          helm plugin install oci://ghcr.io/helm-unittest/helm-unittest/unittest:1.1.2
       - run: make helm-unit-test
   commitlint:
     runs-on: ubuntu-latest
