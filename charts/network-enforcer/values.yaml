@@ -42,6 +42,19 @@ controller:
     #
     # @schema type: [integer, string]
     endpoint: ""
+    # TODO: default mode to issuer once the Istio and Cilium hops support TLS.
+    tls:
+      # @schema enum: [issuer, existingSecret, insecure]
+      mode: insecure
+      issuerRef:
+        name: ""
+        kind: Issuer
+        group: cert-manager.io
+      existingSecret:
+        name: ""
+        namespace: ""
+        # Optional ConfigMap in existingSecret.namespace holding the CA bundle.
+        caBundleConfigMap: ""
   wnpStatusUpdateInterval: 30s
   flowDumper:
     enabled: false

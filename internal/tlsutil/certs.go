@@ -20,6 +20,16 @@ const (
 	CAFile = "ca.crt"
 )
 
+// LoadCACertPoolFromPEM parses PEM-encoded CA certificates and returns an
+// [x509.CertPool] containing them.
+func LoadCACertPoolFromPEM(caPEM []byte) (*x509.CertPool, error) {
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return nil, errors.New("failed to parse CA certificate from PEM")
+	}
+	return pool, nil
+}
+
 // LoadCACertPool reads PEM-encoded CA certificates from the given path and
 // returns an [x509.CertPool] containing it.
 // It supports certificate rotation when called on each handshake.
@@ -28,11 +38,20 @@ func LoadCACertPool(path string) (*x509.CertPool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA certificate %s: %w", path, err)
 	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(caPem) {
-		return nil, fmt.Errorf("failed to parse CA certificate from %s", path)
+	pool, err := LoadCACertPoolFromPEM(caPem)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CA certificate from %s: %w", path, err)
 	}
 	return pool, nil
+}
+
+// LoadKeyPairFromPEM parses a TLS certificate and private key from PEM bytes.
+func LoadKeyPairFromPEM(certPEM, keyPEM []byte) (tls.Certificate, error) {
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to load key pair from PEM: %w", err)
+	}
+	return cert, nil
 }
 
 // LoadKeyPair loads a TLS certificate and private key from the given paths.
@@ -61,24 +80,15 @@ func ValidateCertDir(dirPath string) error {
 	return err
 }
 
-// ServerCredentials creates gRPC transport credentials for server-side mTLS.
-// It loads the server certificate and key, and configures client certificate
-// verification against the CA pool from the given certDir.
-func ServerCredentials(certDir string) (credentials.TransportCredentials, error) {
-	if err := ValidateCertDir(certDir); err != nil {
-		return nil, fmt.Errorf("invalid cert dir: %w", err)
-	}
-
-	certPath := filepath.Join(certDir, CertFile)
-	keyPath := filepath.Join(certDir, KeyFile)
-	caPath := filepath.Join(certDir, CAFile)
-
-	serverCert, err := LoadKeyPair(certPath, keyPath)
+// ServerCredentialsFromPEM creates gRPC transport credentials for server-side
+// mTLS from PEM-encoded material.
+func ServerCredentialsFromPEM(caPEM, certPEM, keyPEM []byte) (credentials.TransportCredentials, error) {
+	serverCert, err := LoadKeyPairFromPEM(certPEM, keyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load server key pair: %w", err)
 	}
 
-	caPool, err := LoadCACertPool(caPath)
+	caPool, err := LoadCACertPoolFromPEM(caPEM)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load CA certificate pool: %w", err)
 	}
@@ -90,6 +100,17 @@ func ServerCredentials(certDir string) (credentials.TransportCredentials, error)
 		MinVersion:   tls.VersionTLS13,
 	}
 	return credentials.NewTLS(tlsConfig), nil
+}
+
+// ServerCredentials creates gRPC transport credentials for server-side mTLS.
+// It loads the server certificate and key, and configures client certificate
+// verification against the CA pool from the given certDir.
+func ServerCredentials(certDir string) (credentials.TransportCredentials, error) {
+	caPEM, certPEM, keyPEM, err := readCertDirPEMs(certDir)
+	if err != nil {
+		return nil, err
+	}
+	return ServerCredentialsFromPEM(caPEM, certPEM, keyPEM)
 }
 
 // ClientTLSConfig builds a *[tls.Config] for an OTLP exporter client that
@@ -143,25 +164,19 @@ func ClientTLSConfig(caCertPath, clientCertPath, clientKeyPath string) (*tls.Con
 	return cfg, nil
 }
 
-// ClientCredentials creates gRPC transport credentials for client-side mTLS.
-// It loads the client certificate and key, and configures server certificate
-// verification against the CA pool. The serverName is used for TLS SNI and
+// ClientCredentialsFromPEM creates gRPC transport credentials for client-side
+// mTLS from PEM-encoded material. serverName is used for TLS SNI and
 // certificate hostname verification.
-func ClientCredentials(certDir, serverName string) (credentials.TransportCredentials, error) {
-	if err := ValidateCertDir(certDir); err != nil {
-		return nil, fmt.Errorf("invalid cert dir: %w", err)
-	}
-
-	certPath := filepath.Join(certDir, CertFile)
-	keyPath := filepath.Join(certDir, KeyFile)
-	caPath := filepath.Join(certDir, CAFile)
-
-	pool, err := LoadCACertPool(caPath)
+func ClientCredentialsFromPEM(
+	caPEM, certPEM, keyPEM []byte,
+	serverName string,
+) (credentials.TransportCredentials, error) {
+	pool, err := LoadCACertPoolFromPEM(caPEM)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load CA certificate pool: %w", err)
 	}
 
-	clientCert, err := LoadKeyPair(certPath, keyPath)
+	clientCert, err := LoadKeyPairFromPEM(certPEM, keyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load client key pair: %w", err)
 	}
@@ -173,4 +188,40 @@ func ClientCredentials(certDir, serverName string) (credentials.TransportCredent
 		ServerName:   serverName,
 	}
 	return credentials.NewTLS(tlsConfig), nil
+}
+
+// ClientCredentials creates gRPC transport credentials for client-side mTLS.
+// It loads the client certificate and key, and configures server certificate
+// verification against the CA pool. The serverName is used for TLS SNI and
+// certificate hostname verification.
+func ClientCredentials(certDir, serverName string) (credentials.TransportCredentials, error) {
+	caPEM, certPEM, keyPEM, err := readCertDirPEMs(certDir)
+	if err != nil {
+		return nil, err
+	}
+	return ClientCredentialsFromPEM(caPEM, certPEM, keyPEM, serverName)
+}
+
+func readCertDirPEMs(certDir string) ([]byte, []byte, []byte, error) {
+	if err := ValidateCertDir(certDir); err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid cert dir: %w", err)
+	}
+
+	certPath := filepath.Join(certDir, CertFile)
+	keyPath := filepath.Join(certDir, KeyFile)
+	caPath := filepath.Join(certDir, CAFile)
+
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to read certificate %s: %w", certPath, err)
+	}
+	keyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to read key %s: %w", keyPath, err)
+	}
+	caPEM, err := os.ReadFile(caPath)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to read CA certificate %s: %w", caPath, err)
+	}
+	return caPEM, certPEM, keyPEM, nil
 }

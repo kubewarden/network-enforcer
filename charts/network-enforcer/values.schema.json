@@ -124,6 +124,50 @@
                                 "cilium",
                                 "calico"
                             ]
+                        },
+                        "tls": {
+                            "type": "object",
+                            "properties": {
+                                "existingSecret": {
+                                    "type": "object",
+                                    "properties": {
+                                        "caBundleConfigMap": {
+                                            "type": "string"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "namespace": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "issuerRef": {
+                                    "type": "object",
+                                    "properties": {
+                                        "group": {
+                                            "type": "string"
+                                        },
+                                        "kind": {
+                                            "type": "string"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "mode": {
+                                    "type": "string",
+                                    "enum": [
+                                        "issuer",
+                                        "existingSecret",
+                                        "insecure"
+                                    ]
+                                }
+                            },
+                            "additionalProperties": false
                         }
                     },
                     "additionalProperties": false

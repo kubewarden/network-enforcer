@@ -114,6 +114,153 @@ Directory where Goldmane mTLS material is mounted in the controller.
 {{- end -}}
 
 {{/*
+Secret name of the Goldmane client certs mounted for the default Calico path.
+*/}}
+{{- define "network-enforcer.goldmane.secretName" -}}
+net-enf-goldmane-client-certs
+{{- end -}}
+
+{{/*
+Directory where generic provider TLS material is mounted (CSI or a local Secret).
+*/}}
+{{- define "network-enforcer.provider.tls.certDir" -}}
+/etc/provider/certs
+{{- end -}}
+
+{{/*
+Resolved provider TLS mode. Defaults to insecure.
+TODO: default to issuer once the Istio and Cilium hops support TLS.
+*/}}
+{{- define "network-enforcer.provider.tls.mode" -}}
+{{- $tls := default dict .Values.controller.provider.tls -}}
+{{- default "insecure" $tls.mode -}}
+{{- end -}}
+
+{{/*
+True when the Calico Goldmane Secret should be mounted in the pod.
+TODO: drop this once Calico reads TLS material via existingSecret.
+Until then, insecure Calico still mounts the release-namespace client Secret.
+*/}}
+{{- define "network-enforcer.provider.tls.mountGoldmaneSecret" -}}
+{{- $mode := include "network-enforcer.provider.tls.mode" . | trim -}}
+{{- $tls := default dict .Values.controller.provider.tls -}}
+{{- $secret := default dict $tls.existingSecret -}}
+{{- $remote := and $secret.name $secret.namespace -}}
+{{- if and (eq (default "istio" .Values.controller.provider.name) "calico") (eq $mode "insecure") (not $remote) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+True when provider TLS material is read from the API server (cross-namespace Secret).
+*/}}
+{{- define "network-enforcer.provider.tls.apiSecret" -}}
+{{- $mode := include "network-enforcer.provider.tls.mode" . | trim -}}
+{{- $tls := default dict .Values.controller.provider.tls -}}
+{{- $secret := default dict $tls.existingSecret -}}
+{{- if and (eq $mode "existingSecret") $secret.name $secret.namespace -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+Validate provider TLS values and fail at template time.
+*/}}
+{{- define "network-enforcer.provider.tls.validate" -}}
+{{- $mode := include "network-enforcer.provider.tls.mode" . | trim -}}
+{{- $tls := default dict .Values.controller.provider.tls -}}
+{{- $issuer := default dict $tls.issuerRef -}}
+{{- $secret := default dict $tls.existingSecret -}}
+{{- if not (has $mode (list "issuer" "existingSecret" "insecure")) -}}
+{{- fail (printf "controller.provider.tls.mode must be issuer, existingSecret, or insecure (got %q)" $mode) -}}
+{{- end -}}
+{{- if and (eq $mode "issuer") (not $issuer.name) -}}
+{{- fail "controller.provider.tls.issuerRef.name is required when controller.provider.tls.mode=issuer" -}}
+{{- end -}}
+{{- if and (eq $mode "existingSecret") $secret.namespace (not $secret.name) -}}
+{{- fail "controller.provider.tls.existingSecret.name is required when existingSecret.namespace is set" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Controller flags for the provider TLS hop.
+*/}}
+{{- define "network-enforcer.provider.tls.args" -}}
+{{- include "network-enforcer.provider.tls.validate" . -}}
+{{- $mode := include "network-enforcer.provider.tls.mode" . | trim }}
+- --provider-tls-mode={{ $mode }}
+{{- if eq $mode "issuer" }}
+- --provider-tls-cert-dir={{ include "network-enforcer.provider.tls.certDir" . }}
+{{- else if and (eq $mode "existingSecret") (eq (include "network-enforcer.provider.tls.apiSecret" . | trim) "true") }}
+{{- $tls := default dict .Values.controller.provider.tls -}}
+{{- $secret := default dict $tls.existingSecret }}
+- --provider-tls-cert-secret={{ $secret.namespace }}/{{ $secret.name }}
+{{- if $secret.caBundleConfigMap }}
+- --provider-tls-ca-configmap={{ $secret.namespace }}/{{ $secret.caBundleConfigMap }}
+{{- end }}
+{{- else if eq $mode "existingSecret" }}
+- --provider-tls-cert-dir={{ include "network-enforcer.provider.tls.certDir" . }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Volume mounts for provider TLS material.
+*/}}
+{{- define "network-enforcer.provider.tls.volumeMounts" -}}
+{{- include "network-enforcer.provider.tls.validate" . -}}
+{{- $mode := include "network-enforcer.provider.tls.mode" . | trim -}}
+{{- if eq (include "network-enforcer.provider.tls.mountGoldmaneSecret" . | trim) "true" }}
+- name: goldmane-certs
+  mountPath: {{ include "network-enforcer.goldmane.certDir" . }}
+  readOnly: true
+{{- else if eq $mode "issuer" }}
+- name: provider-tls
+  mountPath: {{ include "network-enforcer.provider.tls.certDir" . }}
+  readOnly: true
+{{- else if and (eq $mode "existingSecret") (ne (include "network-enforcer.provider.tls.apiSecret" . | trim) "true") }}
+{{- $tls := default dict .Values.controller.provider.tls -}}
+{{- $secret := default dict $tls.existingSecret -}}
+{{- if and $secret.name (not $secret.namespace) }}
+- name: provider-tls
+  mountPath: {{ include "network-enforcer.provider.tls.certDir" . }}
+  readOnly: true
+{{- end }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Volumes for provider TLS material.
+*/}}
+{{- define "network-enforcer.provider.tls.volumes" -}}
+{{- include "network-enforcer.provider.tls.validate" . -}}
+{{- $mode := include "network-enforcer.provider.tls.mode" . | trim -}}
+{{- $tls := default dict .Values.controller.provider.tls -}}
+{{- $issuer := default dict $tls.issuerRef -}}
+{{- $secret := default dict $tls.existingSecret -}}
+{{- if eq (include "network-enforcer.provider.tls.mountGoldmaneSecret" . | trim) "true" }}
+- name: goldmane-certs
+  secret:
+    secretName: {{ include "network-enforcer.goldmane.secretName" . }}
+{{- else if eq $mode "issuer" }}
+- name: provider-tls
+  csi:
+    driver: "csi.cert-manager.io"
+    readOnly: true
+    volumeAttributes:
+      csi.cert-manager.io/issuer-name: {{ $issuer.name }}
+      csi.cert-manager.io/issuer-kind: {{ default "Issuer" $issuer.kind }}
+      {{- if $issuer.group }}
+      csi.cert-manager.io/issuer-group: {{ $issuer.group }}
+      {{- end }}
+      csi.cert-manager.io/dns-names: {{ include "network-enforcer.fullname" . }}-controller-manager
+{{- else if and (eq $mode "existingSecret") $secret.name (not $secret.namespace) }}
+- name: provider-tls
+  secret:
+    secretName: {{ $secret.name }}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Certificate directory for the shipped OTel collector's own (server-side) mTLS
 keys, mounted via cert-manager CSI.
 */}}

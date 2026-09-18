@@ -1,0 +1,78 @@
+suite: "Provider TLS in controller deployment"
+templates:
+  - templates/controller/deployment.yaml
+chart:
+  version: 1.0.0
+  appVersion: 2.0.0
+release:
+  name: my-release
+  namespace: my-namespace
+tests:
+  - it: "defaults to insecure"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-mode=insecure
+
+  - it: "mounts CSI certs for issuer mode"
+    set:
+      controller:
+        provider:
+          tls:
+            mode: issuer
+            issuerRef:
+              name: my-issuer
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-cert-dir=/etc/provider/certs
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: provider-tls
+            csi:
+              driver: csi.cert-manager.io
+              readOnly: true
+              volumeAttributes:
+                csi.cert-manager.io/issuer-name: my-issuer
+                csi.cert-manager.io/issuer-kind: Issuer
+                csi.cert-manager.io/issuer-group: cert-manager.io
+                csi.cert-manager.io/dns-names: my-release-network-enforcer-controller-manager
+
+  - it: "mounts a same-namespace existingSecret"
+    set:
+      controller:
+        provider:
+          tls:
+            mode: existingSecret
+            existingSecret:
+              name: my-provider-certs
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: provider-tls
+            secret:
+              secretName: my-provider-certs
+
+  - it: "passes a cross-namespace existingSecret as flags"
+    set:
+      controller:
+        provider:
+          tls:
+            mode: existingSecret
+            existingSecret:
+              name: goldmane-key-pair
+              namespace: calico-system
+              caBundleConfigMap: goldmane-ca-bundle
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-cert-secret=calico-system/goldmane-key-pair
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-ca-configmap=calico-system/goldmane-ca-bundle
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: provider-tls

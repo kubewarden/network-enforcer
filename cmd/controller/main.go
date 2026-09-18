@@ -43,6 +43,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	securityv1alpha1 "github.com/kubewarden/network-enforcer/api/v1alpha1"
+	"github.com/kubewarden/network-enforcer/internal/certsource"
 	"github.com/kubewarden/network-enforcer/internal/controller"
 	"github.com/kubewarden/network-enforcer/internal/events"
 	"github.com/kubewarden/network-enforcer/internal/flowdumper"
@@ -78,8 +79,12 @@ type metricsConf struct {
 }
 
 type providerConfig struct {
-	name     string
-	endpoint string
+	name           string
+	endpoint       string
+	tlsMode        string
+	tlsCertDir     string
+	tlsCertSecret  string
+	tlsCAConfigMap string
 }
 
 type config struct {
@@ -250,6 +255,15 @@ func setupFlowDumper(
 }
 
 func run(logger *slog.Logger, conf *config) error {
+	if err := certsource.Validate(certsource.Config{
+		Mode:        certsource.Mode(conf.provider.tlsMode),
+		CertDir:     conf.provider.tlsCertDir,
+		CertSecret:  conf.provider.tlsCertSecret,
+		CAConfigMap: conf.provider.tlsCAConfigMap,
+	}); err != nil {
+		return fmt.Errorf("invalid provider TLS flags: %w", err)
+	}
+
 	ctx := ctrl.SetupSignalHandler()
 
 	// Mitigate HTTP/2 Stream Cancellation / Rapid Reset CVEs.
@@ -417,6 +431,17 @@ func main() {
 		"",
 		"Provider endpoint",
 	)
+	flag.StringVar(&conf.provider.tlsMode, "provider-tls-mode", string(certsource.ModeInsecure),
+		"TLS mode for the provider hop: issuer, existingSecret, or insecure.")
+	flag.StringVar(&conf.provider.tlsCertDir, "provider-tls-cert-dir", "",
+		"Directory containing tls.crt, tls.key, and ca.crt for the provider hop. "+
+			"Used with --provider-tls-mode=issuer or a mounted existingSecret.")
+	flag.StringVar(&conf.provider.tlsCertSecret, "provider-tls-cert-secret", "",
+		"Secret holding provider TLS material, as namespace/name. "+
+			"Used with --provider-tls-mode=existingSecret.")
+	flag.StringVar(&conf.provider.tlsCAConfigMap, "provider-tls-ca-configmap", "",
+		"Optional ConfigMap holding the provider CA bundle, as namespace/name. "+
+			"Used with --provider-tls-cert-secret.")
 	flag.StringVar(&conf.otel.Endpoint, "otlp-log-endpoint",
 		os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 		"OTLP endpoint for the violation-lifecycle log exporter "+

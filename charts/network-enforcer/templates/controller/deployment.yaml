@@ -39,6 +39,10 @@ spec:
         - --health-probe-bind-address=:{{ include "network-enforcer.controller.probePort" . }}
         - --provider-name={{ .Values.controller.provider.name }}
         - --provider-endpoint={{ include "network-enforcer.controller.providerEndpoint" . }}
+        {{- $tlsArgs := include "network-enforcer.provider.tls.args" . | trim }}
+        {{- if $tlsArgs }}
+        {{- $tlsArgs | nindent 8 }}
+        {{- end }}
         - --wnp-status-reconciler-update-interval={{ .Values.controller.wnpStatusUpdateInterval }}
         command:
         - /controller
@@ -83,17 +87,15 @@ spec:
           | nindent 10 }}
         volumeMounts:
         {{- include "network-enforcer.otel.config.volumeMounts" . | indent 8 }}
-        {{- if eq .Values.controller.provider.name "calico" }}
-        - name: goldmane-certs
-          mountPath: {{ include "network-enforcer.goldmane.certDir" . }}
-          readOnly: true
+        {{- $tlsMounts := include "network-enforcer.provider.tls.volumeMounts" . | trim }}
+        {{- if $tlsMounts }}
+        {{- $tlsMounts | nindent 8 }}
         {{- end }}
       volumes:
       {{- include "network-enforcer.otel.config.volumes" . | indent 6 }}
-      {{- if eq .Values.controller.provider.name "calico" }}
-      - name: goldmane-certs
-        secret:
-          secretName: net-enf-goldmane-client-certs
+      {{- $tlsVolumes := include "network-enforcer.provider.tls.volumes" . | trim }}
+      {{- if $tlsVolumes }}
+      {{- $tlsVolumes | nindent 6 }}
       {{- end }}
       securityContext: {{- toYaml .Values.controller.podSecurityContext | nindent
         8 }}
