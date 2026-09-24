@@ -18,7 +18,6 @@ import (
 
 const (
 	calicoSystemNamespace = "calico-system"
-	goldmaneClientSecret  = "net-enf-goldmane-client-certs"
 	goldmaneWaitTimeout   = 5 * time.Minute
 	calicoHelmTimeout     = 10 * time.Minute
 )
@@ -46,7 +45,7 @@ func waitGoldmaneDeployment(ctx context.Context, calicoNamespace string) error {
 	)
 }
 
-func waitGoldmaneConfigMap(ctx context.Context, calicoNamespace string) (*corev1.ConfigMap, error) {
+func waitGoldmaneConfigMap(ctx context.Context, calicoNamespace string) error {
 	const goldmaneConfigMapName = "goldmane-ca-bundle"
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	r := getSecurityV1Alpha1Client(ctx)
@@ -60,12 +59,12 @@ func waitGoldmaneConfigMap(ctx context.Context, calicoNamespace string) (*corev1
 		conditions.New(r).ResourceMatch(caBundleCM, func(_ k8s.Object) bool { return true }),
 		wait.WithTimeout(defaultOperationTimeout),
 	); err != nil {
-		return nil, fmt.Errorf("wait goldmane CA bundle configmap: %w", err)
+		return fmt.Errorf("wait goldmane CA bundle configmap: %w", err)
 	}
-	return caBundleCM, nil
+	return nil
 }
 
-func waitGoldmaneSecret(ctx context.Context, calicoNamespace string) (*corev1.Secret, error) {
+func waitGoldmaneSecret(ctx context.Context, calicoNamespace string) error {
 	const goldmaneSecretName = "goldmane-key-pair"
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	r := getSecurityV1Alpha1Client(ctx)
@@ -79,46 +78,7 @@ func waitGoldmaneSecret(ctx context.Context, calicoNamespace string) (*corev1.Se
 		conditions.New(r).ResourceMatch(goldmaneSecret, func(_ k8s.Object) bool { return true }),
 		wait.WithTimeout(defaultOperationTimeout),
 	); err != nil {
-		return nil, fmt.Errorf("wait goldmane key pair secret: %w", err)
-	}
-
-	return goldmaneSecret, nil
-}
-
-func generateGoldmaneClientSecret(ctx context.Context, configMap *corev1.ConfigMap, secret *corev1.Secret) error {
-	const (
-		tigeraCABundleKey = "tigera-ca-bundle.crt"
-		tlsCrtKey         = "tls.crt"
-		tlsKey            = "tls.key"
-		caBundleKey       = "ca.crt"
-	)
-
-	caBundle, ok := configMap.Data[tigeraCABundleKey]
-	if !ok {
-		return fmt.Errorf("missing key %q in configmap %q", tigeraCABundleKey, configMap.Name)
-	}
-	crt, ok := secret.Data[tlsCrtKey]
-	if !ok {
-		return fmt.Errorf("missing key %q in secret %q", tlsCrtKey, secret.Name)
-	}
-	key, ok := secret.Data[tlsKey]
-	if !ok {
-		return fmt.Errorf("missing key %q in secret %q", tlsKey, secret.Name)
-	}
-
-	clientSecret := &corev1.Secret{
-		Name:      goldmaneClientSecret,
-		Namespace: getSuiteConfig(ctx).releaseNS,
-		Type:      corev1.SecretTypeOpaque,
-		Data: map[string][]byte{
-			caBundleKey: []byte(caBundle),
-			tlsCrtKey:   crt,
-			tlsKey:      key,
-		},
-	}
-
-	if err := getSecurityV1Alpha1Client(ctx).Create(ctx, clientSecret); err != nil {
-		return fmt.Errorf("cannot create Goldmane client secret: %w", err)
+		return fmt.Errorf("wait goldmane key pair secret: %w", err)
 	}
 	return nil
 }
@@ -209,23 +169,13 @@ func installCalico(ctx context.Context, cfg *envconf.Config) (context.Context, e
 		return ctx, err
 	}
 
-	goldmaneConfigMap, err := waitGoldmaneConfigMap(ctx, calicoSystemNamespace)
-	if err != nil {
+	// Wait for operator-managed TLS material the chart reads over the API.
+	if err := waitGoldmaneConfigMap(ctx, calicoSystemNamespace); err != nil {
+		return ctx, err
+	}
+	if err := waitGoldmaneSecret(ctx, calicoSystemNamespace); err != nil {
 		return ctx, err
 	}
 
-	goldmaneSecret, err := waitGoldmaneSecret(ctx, calicoSystemNamespace)
-	if err != nil {
-		return ctx, err
-	}
-
-	r := getSecurityV1Alpha1Client(ctx)
-	netEnforcerReleaseNs := getSuiteConfig(ctx).releaseNS
-	logger.InfoContext(ctx, "🛠️ create", "namespace", netEnforcerReleaseNs)
-	if err = r.Create(ctx, &corev1.Namespace{
-		Name: netEnforcerReleaseNs}); err != nil {
-		return ctx, fmt.Errorf("create %s namespace: %w", netEnforcerReleaseNs, err)
-	}
-
-	return ctx, generateGoldmaneClientSecret(ctx, goldmaneConfigMap, goldmaneSecret)
+	return ctx, nil
 }

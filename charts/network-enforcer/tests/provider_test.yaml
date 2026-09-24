@@ -86,17 +86,14 @@ tests:
       - notExists:
           path: spec.template.spec.containers[0].ports
       - contains:
-          path: spec.template.spec.containers[0].volumeMounts
-          content:
-            name: goldmane-certs
-            mountPath: /etc/goldmane/certs
-            readOnly: true
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-mode=existingSecret
       - contains:
-          path: spec.template.spec.volumes
-          content:
-            name: goldmane-certs
-            secret:
-              secretName: net-enf-goldmane-client-certs
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-cert-secret=calico-system/goldmane-key-pair
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-ca-configmap=calico-system/goldmane-ca-bundle
 
   - it: "uses calico custom endpoint override"
     set:

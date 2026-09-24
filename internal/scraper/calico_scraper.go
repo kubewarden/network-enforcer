@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/kubewarden/network-enforcer/internal/certsource"
 	"github.com/kubewarden/network-enforcer/internal/ringbuf"
 	pb "github.com/kubewarden/network-enforcer/internal/scraper/goldmane"
 	"github.com/kubewarden/network-enforcer/internal/tlsutil"
@@ -19,7 +21,6 @@ import (
 
 const (
 	calicoAggregationInterval = 15
-	goldmaneCertDir           = "/etc/goldmane/certs"
 )
 
 type CalicoScraperConfig struct {
@@ -31,6 +32,10 @@ type CalicoScraperConfig struct {
 	ViolationOtelLogger  otellog.Logger
 	ViolationBuffer      *ringbuf.Buffer[violation.Observation]
 	FlowDumperBuffer     *ringbuf.Buffer[json.RawMessage]
+	// CertSource supplies Goldmane mTLS material.
+	// Required; Goldmane rejects plaintext connections.
+	// Material is re-read on every dial so CA rotation is picked up on reconnect.
+	CertSource certsource.Source
 }
 
 type CalicoScraper struct {
@@ -48,13 +53,20 @@ func (s *CalicoScraper) Start(ctx context.Context) error {
 }
 
 func (s *CalicoScraper) newGoldmaneClient(ctx context.Context) (*grpc.ClientConn, error) {
+	if s.CertSource == nil {
+		return nil, errors.New("goldmane requires TLS credentials; set --provider-tls-mode=existingSecret or issuer")
+	}
 	serverName, _, err := net.SplitHostPort(s.Endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid Goldmane endpoint %q: %w", s.Endpoint, err)
 	}
-	creds, err := tlsutil.ClientCredentials(goldmaneCertDir, serverName)
+	caPEM, certPEM, keyPEM, err := s.CertSource.Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load TLS credentials for Goldmane: %w", err)
+	}
+	creds, err := tlsutil.ClientCredentialsFromPEM(caPEM, certPEM, keyPEM, serverName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build TLS credentials for Goldmane: %w", err)
 	}
 	s.Logger.InfoContext(ctx, "Using TLS credentials for Goldmane connection")
 

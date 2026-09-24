@@ -8,7 +8,7 @@ release:
   name: my-release
   namespace: my-namespace
 tests:
-  - it: "defaults to insecure for istio"
+  - it: "defaults to issuer for istio"
     set:
       controller:
         provider:
@@ -16,12 +16,15 @@ tests:
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
-          content: --provider-tls-mode=insecure
+          content: --provider-tls-mode=issuer
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-cert-dir=/etc/provider/certs
       - notContains:
           path: spec.template.spec.containers[0].args
           content: --provider-tls-server-name=ui.hubble-relay.cilium.io
 
-  - it: "defaults to insecure for calico"
+  - it: "defaults calico to Goldmane's own key pair in calico-system"
     set:
       controller:
         provider:
@@ -29,7 +32,17 @@ tests:
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
-          content: --provider-tls-mode=insecure
+          content: --provider-tls-mode=existingSecret
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-cert-secret=calico-system/goldmane-key-pair
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-ca-configmap=calico-system/goldmane-ca-bundle
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: provider-tls
 
   - it: "defaults cilium to Cilium's own client Secret in kube-system"
     set:
@@ -69,7 +82,7 @@ tests:
           path: spec.template.spec.containers[0].args
           content: --provider-tls-cert-secret=kube-system/hubble-relay-client-certs
 
-  - it: "resolves auto to insecure for istio"
+  - it: "resolves auto to issuer for istio"
     set:
       controller:
         provider:
@@ -79,7 +92,7 @@ tests:
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
-          content: --provider-tls-mode=insecure
+          content: --provider-tls-mode=issuer
 
   - it: "keeps cilium on plaintext port 80 in insecure mode"
     set:
@@ -312,6 +325,17 @@ tests:
           content:
             name: provider-tls
 
+  - it: "fails insecure mode for Calico"
+    set:
+      controller:
+        provider:
+          name: calico
+          tls:
+            mode: insecure
+    asserts:
+      - failedTemplate:
+          errorMessage: controller.provider.tls.mode=insecure is not supported when controller.provider.name=calico; Goldmane requires mTLS (use existingSecret or issuer)
+
 ---
 suite: "Provider TLS in istio fluent-bit"
 templates:
@@ -420,6 +444,11 @@ tests:
     set:
       telemetry:
         collectorStrategy: none
+      controller:
+        provider:
+          name: cilium
+          tls:
+            mode: insecure
     asserts:
       - hasDocuments:
           count: 0
