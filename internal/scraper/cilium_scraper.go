@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net"
 
 	flowpb "github.com/cilium/cilium/api/v1/flow"
 	hubbleObserver "github.com/cilium/cilium/api/v1/observer"
@@ -45,17 +44,6 @@ func NewCiliumScraper(conf CiliumScraperConfig) *CiliumScraper {
 }
 
 // Relay's certificate is always issued for *.hubble-relay.cilium.io, so the endpoint host is only a fallback.
-func (s *CiliumScraper) tlsServerName() (string, error) {
-	if s.TLSServerName != "" {
-		return s.TLSServerName, nil
-	}
-	host, _, err := net.SplitHostPort(s.Endpoint)
-	if err != nil {
-		return "", fmt.Errorf("invalid Hubble Relay endpoint %q: %w", s.Endpoint, err)
-	}
-	return host, nil
-}
-
 // Material is re-read on every call, so rotation is picked up on the next reconnect.
 func (s *CiliumScraper) transportCredentials(ctx context.Context) (credentials.TransportCredentials, error) {
 	if s.CertSource == nil {
@@ -63,7 +51,7 @@ func (s *CiliumScraper) transportCredentials(ctx context.Context) (credentials.T
 		return insecure.NewCredentials(), nil
 	}
 
-	serverName, err := s.tlsServerName()
+	serverName, err := resolveTLSServerName(s.Endpoint, s.TLSServerName, "Hubble Relay")
 	if err != nil {
 		return nil, err
 	}

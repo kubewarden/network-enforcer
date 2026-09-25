@@ -231,6 +231,7 @@ func setupProviderScraper(
 			ViolationBuffer:      violationBuffer,
 			FlowDumperBuffer:     flowDumperBuffer,
 			CertSource:           certSource,
+			TLSServerName:        conf.provider.tlsServerName,
 		})
 		if err = mgr.Add(calicoScraper); err != nil {
 			return fmt.Errorf("unable to add calico scraper to manager: %w", err)

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 
 	otellog "go.opentelemetry.io/otel/log"
 	"google.golang.org/grpc"
@@ -35,7 +34,8 @@ type CalicoScraperConfig struct {
 	// CertSource supplies Goldmane mTLS material.
 	// Required; Goldmane rejects plaintext connections.
 	// Material is re-read on every dial so CA rotation is picked up on reconnect.
-	CertSource certsource.Source
+	CertSource    certsource.Source
+	TLSServerName string
 }
 
 type CalicoScraper struct {
@@ -52,13 +52,15 @@ func (s *CalicoScraper) Start(ctx context.Context) error {
 	return runStreamWithReconnect(ctx, s.Logger, "Calico", s.stream)
 }
 
-func (s *CalicoScraper) newGoldmaneClient(ctx context.Context) (*grpc.ClientConn, error) {
+// TLSServerName overrides the endpoint host for SNI/authority when set.
+// Material is re-read on every call, so rotation is picked up on the next reconnect.
+func (s *CalicoScraper) dialOptions(ctx context.Context) ([]grpc.DialOption, error) {
 	if s.CertSource == nil {
 		return nil, errors.New("goldmane requires TLS credentials; set --provider-tls-mode=existingSecret or issuer")
 	}
-	serverName, _, err := net.SplitHostPort(s.Endpoint)
+	serverName, err := resolveTLSServerName(s.Endpoint, s.TLSServerName, "Goldmane")
 	if err != nil {
-		return nil, fmt.Errorf("invalid Goldmane endpoint %q: %w", s.Endpoint, err)
+		return nil, err
 	}
 	caPEM, certPEM, keyPEM, err := s.CertSource.Get(ctx)
 	if err != nil {
@@ -68,9 +70,22 @@ func (s *CalicoScraper) newGoldmaneClient(ctx context.Context) (*grpc.ClientConn
 	if err != nil {
 		return nil, fmt.Errorf("failed to build TLS credentials for Goldmane: %w", err)
 	}
-	s.Logger.InfoContext(ctx, "Using TLS credentials for Goldmane connection")
+	s.Logger.InfoContext(ctx, "Using TLS credentials for Goldmane connection", "serverName", serverName)
 
-	conn, connErr := grpc.NewClient(s.Endpoint, grpc.WithTransportCredentials(creds))
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(creds)}
+	// gRPC overwrites tls.Config.ServerName with the channel authority, so the override must be the authority.
+	if s.TLSServerName != "" {
+		opts = append(opts, grpc.WithAuthority(s.TLSServerName))
+	}
+	return opts, nil
+}
+
+func (s *CalicoScraper) newGoldmaneClient(ctx context.Context) (*grpc.ClientConn, error) {
+	opts, err := s.dialOptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	conn, connErr := grpc.NewClient(s.Endpoint, opts...)
 	if connErr != nil {
 		return nil, fmt.Errorf("failed to connect to Goldmane: %w", connErr)
 	}

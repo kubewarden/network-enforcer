@@ -555,6 +555,57 @@ tests:
               name: my-release-network-enforcer-controller-manager
               namespace: my-namespace
 
+  - it: "scopes the Role to Goldmane's key pair and CA bundle in calico-system by default"
+    set:
+      controller:
+        provider:
+          name: calico
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: calico-system
+      - equal:
+          path: rules
+          value:
+            - apiGroups:
+                - ""
+              resources:
+                - secrets
+              resourceNames:
+                - goldmane-key-pair
+              verbs:
+                - get
+            - apiGroups:
+                - ""
+              resources:
+                - configmaps
+              resourceNames:
+                - goldmane-ca-bundle
+              verbs:
+                - get
+
+  - it: "binds the controller ServiceAccount into calico-system for Goldmane"
+    set:
+      controller:
+        provider:
+          name: calico
+    documentSelector:
+      path: kind
+      value: RoleBinding
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: calico-system
+      - equal:
+          path: subjects
+          value:
+            - kind: ServiceAccount
+              name: my-release-network-enforcer-controller-manager
+              namespace: my-namespace
+
   - it: "grants the CA bundle ConfigMap when one is configured"
     set:
       controller:
