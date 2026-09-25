@@ -1,0 +1,67 @@
+name: Update fluent-bit image
+
+pipelineid: fluent-bit/version
+
+sources:
+  fluentBit:
+    name: Get latest fluent-bit version
+    kind: dockerimage
+    spec:
+      image: fluent/fluent-bit
+      versionfilter:
+        kind: semver
+        prerelease: false
+
+targets:
+  fluentBitValues:
+    name: 'deps(fluent-bit): update fluent-bit to {{ source "fluentBit" }}'
+    kind: yaml
+    sourceid: fluentBit
+    scmid: default
+    spec:
+      file: charts/network-enforcer/values.yaml
+      key: $.controller.provider.istio.fluentBit.image.tag
+  # Keep the artifacthub.io/images annotation in Chart.yaml in sync with
+  # the fluent-bit image tag in values.yaml.
+  fluentBitArtifactHubAnnotation:
+    name: 'deps(fluent-bit): update fluent-bit in artifacthub.io/images annotation'
+    kind: file
+    sourceid: fluentBit
+    scmid: default
+    spec:
+      file: charts/network-enforcer/Chart.yaml
+      matchpattern: 'image: fluent/fluent-bit:(\S+)'
+      replacepattern: 'image: fluent/fluent-bit:{{ source "fluentBit" }}'
+
+actions:
+  default:
+    title: 'deps(fluent-bit): update fluent-bit to {{ source "fluentBit" }}'
+    kind: github/pullrequest
+    scmid: default
+    spec:
+      automerge: false
+      mergemethod: squash
+      description: |
+        Automatic fluent/fluent-bit image {{ source "fluentBit" }} update.
+        This PR has been created by automation to keep the fluent-bit image in the network-enforcer Helm chart up to date.
+      draft: false
+      labels:
+        - "chore"
+        - "dependencies"
+
+scms:
+  default:
+    kind: github
+    spec:
+      user: "{{ .github.author }}"
+      email: "{{ .github.email }}"
+      owner: "{{ .github.owner }}"
+      repository: "network-enforcer"
+      branch: "{{ .github.branch }}"
+      commitusingapi: true
+      commitmessage:
+        type: "chore"
+        scope: deps
+        title: "update fluent-bit image"
+        hidecredit: true
+        footers: "Signed-off-by: NetworkEnforcer bot <network-enforcer-bot@users.noreply.github.com>"

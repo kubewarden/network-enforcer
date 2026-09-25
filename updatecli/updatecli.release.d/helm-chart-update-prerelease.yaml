@@ -101,3 +101,28 @@ targets:
     spec:
       file: charts/network-enforcer/README.md
       forcecreate: true
+  # The following target keeps the artifacthub.io/images annotation, in
+  # charts/network-enforcer/Chart.yaml, in sync with the controller image tag
+  # in values.yaml.
+  update_controller_artifacthub_annotation:
+    scmid: default
+    name: update controller image in artifacthub.io/images annotation
+    kind: file
+    sourceid: releaseVersion
+    spec:
+      file: charts/network-enforcer/Chart.yaml
+      matchpattern: 'image: ghcr\.io/kubewarden/network-enforcer/controller:(v?\S+)'
+      replacepattern: 'image: ghcr.io/kubewarden/network-enforcer/controller:{{ source "releaseVersion" }}'
+  generate_values_schema:
+    kind: shell
+    disablesourceinput: true
+    scmid: default
+    name: Generate values.schema.json file
+    spec:
+      changedif:
+        kind: file/checksum
+        spec:
+          files:
+            - charts/network-enforcer/values.schema.json
+      command: |
+        make generate-chart-values

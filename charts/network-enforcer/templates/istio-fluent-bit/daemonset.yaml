@@ -20,6 +20,10 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/istio-fluent-bit/configmap.yaml") . | sha256sum }}
     spec:
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+      {{- include "network-enforcer.imagePullSecrets" .Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
       serviceAccountName: {{ include "network-enforcer.fullname" . }}-istio-fluent-bit
       securityContext:
         runAsNonRoot: false
@@ -27,8 +31,10 @@ spec:
           type: RuntimeDefault
       containers:
         - name: fluent-bit
-          image: "fluent/fluent-bit:5.1.2"
-          imagePullPolicy: IfNotPresent
+          {{- with .Values.controller.provider.istio.fluentBit.image }}
+          image: {{ .repository }}:{{ .tag }}
+          imagePullPolicy: {{ .pullPolicy }}
+          {{- end }}
           securityContext:
             runAsUser: 0
             runAsGroup: 0

@@ -7,7 +7,7 @@
             "properties": {
                 "affinity": {
                     "type": "object",
-                    "additionalProperties": false
+                    "additionalProperties": true
                 },
                 "containerSecurityContext": {
                     "type": "object",
@@ -31,7 +31,7 @@
                             "type": "integer"
                         }
                     },
-                    "additionalProperties": false
+                    "additionalProperties": true
                 },
                 "env": {
                     "type": "array"
@@ -53,6 +53,10 @@
                 },
                 "image": {
                     "type": "object",
+                    "required": [
+                        "repository",
+                        "tag"
+                    ],
                     "properties": {
                         "pullPolicy": {
                             "type": "string"
@@ -77,15 +81,15 @@
                 },
                 "nodeSelector": {
                     "type": "object",
-                    "additionalProperties": false
+                    "additionalProperties": true
                 },
                 "podAnnotations": {
                     "type": "object",
-                    "additionalProperties": false
+                    "additionalProperties": true
                 },
                 "podLabels": {
                     "type": "object",
-                    "additionalProperties": false
+                    "additionalProperties": true
                 },
                 "podSecurityContext": {
                     "type": "object",
@@ -103,7 +107,7 @@
                             "additionalProperties": false
                         }
                     },
-                    "additionalProperties": false
+                    "additionalProperties": true
                 },
                 "provider": {
                     "type": "object",
@@ -116,6 +120,37 @@
                                 "integer",
                                 "string"
                             ]
+                        },
+                        "istio": {
+                            "type": "object",
+                            "properties": {
+                                "fluentBit": {
+                                    "type": "object",
+                                    "properties": {
+                                        "image": {
+                                            "type": "object",
+                                            "required": [
+                                                "repository",
+                                                "tag"
+                                            ],
+                                            "properties": {
+                                                "pullPolicy": {
+                                                    "type": "string"
+                                                },
+                                                "repository": {
+                                                    "type": "string"
+                                                },
+                                                "tag": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "additionalProperties": false
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                }
+                            },
+                            "additionalProperties": false
                         },
                         "name": {
                             "type": "string",
@@ -214,7 +249,7 @@
                     "properties": {
                         "annotations": {
                             "type": "object",
-                            "additionalProperties": false
+                            "additionalProperties": true
                         }
                     },
                     "additionalProperties": false
@@ -228,6 +263,9 @@
             },
             "additionalProperties": false
         },
+        "fullnameOverride": {
+            "type": "string"
+        },
         "global": {
             "description": "Global values shared between all subcharts",
             "$comment": "Added automatically by 'helm schema' to allow this chart to be used as a Helm dependency, as the `additionalProperties` setting would otherwise collide with Helm's special 'global' values key.",
@@ -240,6 +278,9 @@
             "type": "array"
         },
         "kubernetesClusterDomain": {
+            "type": "string"
+        },
+        "nameOverride": {
             "type": "string"
         },
         "telemetry": {

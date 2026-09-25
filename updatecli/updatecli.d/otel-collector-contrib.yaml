@@ -21,6 +21,17 @@ targets:
     spec:
       file: charts/network-enforcer/values.yaml
       key: $.telemetry.defaultCollector.image.tag
+  # Keep the artifacthub.io/images annotation in Chart.yaml in sync with
+  # the otel-collector-contrib image tag in values.yaml.
+  otelCollectorArtifactHubAnnotation:
+    name: 'deps(otel): update otel-collector-contrib in artifacthub.io/images annotation'
+    kind: file
+    sourceid: otelCollectorContrib
+    scmid: default
+    spec:
+      file: charts/network-enforcer/Chart.yaml
+      matchpattern: 'image: otel/opentelemetry-collector-contrib:(\S+)'
+      replacepattern: 'image: otel/opentelemetry-collector-contrib:{{ source "otelCollectorContrib" }}'
 
 actions:
   default:
