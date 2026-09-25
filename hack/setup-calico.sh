@@ -3,8 +3,6 @@
 set -eu
 
 CALICO_VERSION="v3.32.1"
-NETWORK_ENFORCER_NAMESPACE="${NETWORK_ENFORCER_NAMESPACE:-network-enforcer}"
-GOLDMANE_CLIENT_SECRET="net-enf-goldmane-client-certs"
 
 helm repo add projectcalico https://docs.tigera.io/calico/charts
 helm repo update
@@ -42,13 +40,3 @@ kubectl wait --for=create -n calico-system secret/goldmane-key-pair --timeout=12
 
 # Wait for goldmane deployment to be ready, this is needed by the controller to scrape flows
 kubectl wait --for=condition=Available deployment/goldmane -n calico-system --timeout=300s
-
-# Create the secret for the controller's Goldmane scraper
-printf "\n- 🚀 Creating Goldmane client secret:\n"
-kubectl create namespace "$NETWORK_ENFORCER_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-kubectl create secret generic "$GOLDMANE_CLIENT_SECRET" \
-  --from-file=ca.crt=<(kubectl -n calico-system get configmap goldmane-ca-bundle -o jsonpath='{.data.tigera-ca-bundle\.crt}') \
-  --from-file=tls.crt=<(kubectl -n calico-system get secret goldmane-key-pair -o jsonpath='{.data.tls\.crt}' | base64 -d) \
-  --from-file=tls.key=<(kubectl -n calico-system get secret goldmane-key-pair -o jsonpath='{.data.tls\.key}' | base64 -d) \
-  -n "$NETWORK_ENFORCER_NAMESPACE" \
-  --dry-run=client -o yaml | kubectl apply -f -

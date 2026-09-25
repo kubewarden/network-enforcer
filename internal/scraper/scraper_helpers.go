@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"time"
 
@@ -18,6 +19,19 @@ import (
 
 func isContextCancellation(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// resolveTLSServerName returns override when set, otherwise the host from endpoint (host:port).
+// peer names the remote in error messages (e.g. "Hubble Relay", "Goldmane").
+func resolveTLSServerName(endpoint, override, peer string) (string, error) {
+	if override != "" {
+		return override, nil
+	}
+	host, _, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("invalid %s endpoint %q: %w", peer, endpoint, err)
+	}
+	return host, nil
 }
 
 func runStreamWithReconnect(

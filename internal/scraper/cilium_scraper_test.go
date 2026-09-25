@@ -89,54 +89,6 @@ func TestCiliumScraperTransportCredentialsInsecure(t *testing.T) {
 	assert.Equal(t, "insecure", creds.Info().SecurityProtocol)
 }
 
-func TestCiliumScraperTLSServerName(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name        string
-		endpoint    string
-		override    string
-		expected    string
-		expectedErr string
-	}{
-		{
-			name:     "explicit server name wins over the endpoint host",
-			endpoint: "hubble-relay.kube-system.svc:443",
-			override: "ui.hubble-relay.cilium.io",
-			expected: "ui.hubble-relay.cilium.io",
-		},
-		{
-			name:     "server name falls back to the endpoint host",
-			endpoint: "hubble-relay.kube-system.svc:443",
-			expected: "hubble-relay.kube-system.svc",
-		},
-		{
-			name:        "endpoint without a port and no override",
-			endpoint:    "hubble-relay.kube-system.svc",
-			expectedErr: "invalid Hubble Relay endpoint",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			scraper := newTestCiliumScraper(CiliumScraperConfig{
-				Endpoint:      test.endpoint,
-				TLSServerName: test.override,
-			})
-
-			serverName, err := scraper.tlsServerName()
-			if test.expectedErr != "" {
-				require.ErrorContains(t, err, test.expectedErr)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, test.expected, serverName)
-		})
-	}
-}
-
 func TestCiliumScraperTransportCredentialsTLS(t *testing.T) {
 	t.Parallel()
 

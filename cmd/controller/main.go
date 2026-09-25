@@ -147,6 +147,17 @@ func newProviderCertSource(mgr manager.Manager, conf *config) (certsource.Source
 	return source, nil
 }
 
+// validateCalicoTLSMode rejects plaintext; Goldmane requires mTLS.
+func validateCalicoTLSMode(tlsMode string) error {
+	if certsource.Mode(tlsMode) == certsource.ModeInsecure {
+		return fmt.Errorf(
+			"calico provider does not support TLS mode %q; use existingSecret or issuer",
+			tlsMode,
+		)
+	}
+	return nil
+}
+
 func setupProviderScraper(
 	ctx context.Context,
 	logger *slog.Logger,
@@ -199,21 +210,30 @@ func setupProviderScraper(
 			CertSource:           certSource,
 			TLSServerName:        conf.provider.tlsServerName,
 		})
-		if addErr := mgr.Add(ciliumScraper); addErr != nil {
-			return fmt.Errorf("unable to add cilium scraper to manager: %w", addErr)
+		if err = mgr.Add(ciliumScraper); err != nil {
+			return fmt.Errorf("unable to add cilium scraper to manager: %w", err)
 		}
 		return nil
 	case types.ProviderCalico:
+		if err := validateCalicoTLSMode(conf.provider.tlsMode); err != nil {
+			return err
+		}
+		certSource, err := newProviderCertSource(mgr, conf)
+		if err != nil {
+			return err
+		}
 		calicoScraper := scraper.NewCalicoScraper(scraper.CalicoScraperConfig{
+			Client:               mgr.GetClient(),
 			Endpoint:             conf.provider.endpoint,
 			EnqueueLearningEvent: learningEnqueueFunc,
 			Logger:               logger.With("component", "calico-scraper"),
-			Client:               mgr.GetClient(),
 			ViolationOtelLogger:  eventLogger,
 			ViolationBuffer:      violationBuffer,
 			FlowDumperBuffer:     flowDumperBuffer,
+			CertSource:           certSource,
+			TLSServerName:        conf.provider.tlsServerName,
 		})
-		if err := mgr.Add(calicoScraper); err != nil {
+		if err = mgr.Add(calicoScraper); err != nil {
 			return fmt.Errorf("unable to add calico scraper to manager: %w", err)
 		}
 		return nil

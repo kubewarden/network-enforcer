@@ -115,20 +115,6 @@ and the liveness/readiness probes cannot drift. Not user configurable.
 {{- end -}}
 
 {{/*
-Directory where Goldmane mTLS material is mounted in the controller.
-*/}}
-{{- define "network-enforcer.goldmane.certDir" -}}
-/etc/goldmane/certs
-{{- end -}}
-
-{{/*
-Secret name of the Goldmane client certs mounted for the default Calico path.
-*/}}
-{{- define "network-enforcer.goldmane.secretName" -}}
-net-enf-goldmane-client-certs
-{{- end -}}
-
-{{/*
 Directory where generic provider TLS material is mounted (CSI or a local Secret).
 */}}
 {{- define "network-enforcer.provider.tls.certDir" -}}
@@ -136,15 +122,17 @@ Directory where generic provider TLS material is mounted (CSI or a local Secret)
 {{- end -}}
 
 {{/*
-auto resolves to existingSecret for cilium, insecure otherwise.
-TODO: default istio to issuer once that can be the shipped default.
+auto resolves to issuer for istio, existingSecret for cilium and calico,
+insecure otherwise.
 */}}
 {{- define "network-enforcer.provider.tls.mode" -}}
 {{- $tls := default dict .Values.controller.provider.tls -}}
 {{- $mode := default "auto" $tls.mode -}}
 {{- if ne $mode "auto" -}}
 {{- $mode -}}
-{{- else if eq (include "network-enforcer.provider.name" .) "cilium" -}}
+{{- else if eq (include "network-enforcer.provider.name" .) "istio" -}}
+issuer
+{{- else if has (include "network-enforcer.provider.name" .) (list "cilium" "calico") -}}
 existingSecret
 {{- else -}}
 insecure
@@ -195,6 +183,7 @@ true
 
 {{/*
 Cilium publishes a client key pair and the relay CA in kube-system/hubble-relay-client-certs.
+Calico publishes goldmane-key-pair and goldmane-ca-bundle in calico-system.
 */}}
 {{- define "network-enforcer.provider.tls.existingSecret" -}}
 {{- $tls := default dict .Values.controller.provider.tls -}}
@@ -202,9 +191,14 @@ Cilium publishes a client key pair and the relay CA in kube-system/hubble-relay-
 {{- $name := default "" $secret.name -}}
 {{- $namespace := default "" $secret.namespace -}}
 {{- $caBundleConfigMap := default "" $secret.caBundleConfigMap -}}
-{{- if and (not $name) (eq (include "network-enforcer.provider.name" .) "cilium") -}}
+{{- $provider := include "network-enforcer.provider.name" . -}}
+{{- if and (not $name) (eq $provider "cilium") -}}
 {{- $name = "hubble-relay-client-certs" -}}
 {{- $namespace = default "kube-system" $namespace -}}
+{{- else if and (not $name) (eq $provider "calico") -}}
+{{- $name = "goldmane-key-pair" -}}
+{{- $namespace = default "calico-system" $namespace -}}
+{{- $caBundleConfigMap = default "goldmane-ca-bundle" $caBundleConfigMap -}}
 {{- end -}}
 {{- dict "name" $name "namespace" $namespace "caBundleConfigMap" $caBundleConfigMap | toJson -}}
 {{- end -}}
@@ -220,20 +214,6 @@ Resolved TLS server name; empty defers to the endpoint host. Relay certs are alw
 {{- $tls.serverName -}}
 {{- else if eq (include "network-enforcer.provider.name" .) "cilium" -}}
 ui.hubble-relay.cilium.io
-{{- end -}}
-{{- end -}}
-
-{{/*
-True when the Calico Goldmane Secret should be mounted in the pod.
-TODO: drop this once Calico reads TLS material via existingSecret.
-Until then, insecure Calico still mounts the release-namespace client Secret.
-*/}}
-{{- define "network-enforcer.provider.tls.mountGoldmaneSecret" -}}
-{{- $mode := include "network-enforcer.provider.tls.mode" . | trim -}}
-{{- $secret := include "network-enforcer.provider.tls.existingSecret" . | fromJson -}}
-{{- $remote := and $secret.name $secret.namespace -}}
-{{- if and (eq (include "network-enforcer.provider.name" .) "calico") (eq $mode "insecure") (not $remote) -}}
-true
 {{- end -}}
 {{- end -}}
 
@@ -270,6 +250,9 @@ Istio is a TLS server, so it needs tls.crt/tls.key mounted: only a same-namespac
 {{- if and (eq (include "network-enforcer.provider.name" .) "istio") (eq (include "network-enforcer.provider.tls.apiSecret" . | trim) "true") -}}
 {{- fail "controller.provider.tls.existingSecret.namespace cannot be set when controller.provider.name=istio; the Istio scraper is a TLS server and needs tls.crt/tls.key mounted in the pod" -}}
 {{- end -}}
+{{- if and (eq (include "network-enforcer.provider.name" .) "calico") (eq $mode "insecure") -}}
+{{- fail "controller.provider.tls.mode=insecure is not supported when controller.provider.name=calico; Goldmane requires mTLS (use existingSecret or issuer)" -}}
+{{- end -}}
 {{- if and (eq $mode "insecure") $tls.serverName -}}
 {{- fail "controller.provider.tls.serverName is not accepted when controller.provider.tls.mode=insecure" -}}
 {{- end -}}
@@ -305,11 +288,7 @@ Volume mounts for provider TLS material.
 {{- define "network-enforcer.provider.tls.volumeMounts" -}}
 {{- include "network-enforcer.provider.tls.validate" . -}}
 {{- $mode := include "network-enforcer.provider.tls.mode" . | trim -}}
-{{- if eq (include "network-enforcer.provider.tls.mountGoldmaneSecret" . | trim) "true" }}
-- name: goldmane-certs
-  mountPath: {{ include "network-enforcer.goldmane.certDir" . }}
-  readOnly: true
-{{- else if eq $mode "issuer" }}
+{{- if eq $mode "issuer" }}
 - name: provider-tls
   mountPath: {{ include "network-enforcer.provider.tls.certDir" . }}
   readOnly: true
@@ -332,11 +311,7 @@ Volumes for provider TLS material.
 {{- $tls := default dict .Values.controller.provider.tls -}}
 {{- $issuer := default dict $tls.issuerRef -}}
 {{- $secret := include "network-enforcer.provider.tls.existingSecret" . | fromJson -}}
-{{- if eq (include "network-enforcer.provider.tls.mountGoldmaneSecret" . | trim) "true" }}
-- name: goldmane-certs
-  secret:
-    secretName: {{ include "network-enforcer.goldmane.secretName" . }}
-{{- else if eq $mode "issuer" }}
+{{- if eq $mode "issuer" }}
 - name: provider-tls
   csi:
     driver: "csi.cert-manager.io"

@@ -61,9 +61,13 @@ type SecretSource struct {
 	caConfigMap types.NamespacedName
 }
 
+// tigeraCABundleKey is the CA key used by Calico's goldmane-ca-bundle ConfigMap.
+const tigeraCABundleKey = "tigera-ca-bundle.crt"
+
 // NewSecretSource returns a Source that reads PEM material from the API server.
 // secret must be "namespace/name". caConfigMap is an optional "namespace/name"
-// ConfigMap whose ca.crt key is used as the CA bundle.
+// ConfigMap. The CA is read from [tlsutil.CAFile] ("ca.crt"), falling back to
+// tigera-ca-bundle.crt for Calico Goldmane.
 func NewSecretSource(reader client.Reader, secret, caConfigMap string) (*SecretSource, error) {
 	if reader == nil {
 		return nil, errors.New("API reader is required")
@@ -119,13 +123,20 @@ func (s *SecretSource) caFromConfigMap(ctx context.Context) ([]byte, error) {
 	if err := s.reader.Get(ctx, s.caConfigMap, cm); err != nil {
 		return nil, fmt.Errorf("failed to get ConfigMap %s: %w", s.caConfigMap.String(), err)
 	}
-	if value, ok := cm.Data[tlsutil.CAFile]; ok && value != "" {
-		return []byte(value), nil
+	for _, key := range []string{tlsutil.CAFile, tigeraCABundleKey} {
+		if value, ok := cm.Data[key]; ok && value != "" {
+			return []byte(value), nil
+		}
+		if value, ok := cm.BinaryData[key]; ok && len(value) > 0 {
+			return bytes.Clone(value), nil
+		}
 	}
-	if value, ok := cm.BinaryData[tlsutil.CAFile]; ok && len(value) > 0 {
-		return bytes.Clone(value), nil
-	}
-	return nil, fmt.Errorf("configmap %s is missing key %q", s.caConfigMap.String(), tlsutil.CAFile)
+	return nil, fmt.Errorf(
+		"configmap %s is missing keys %q and %q",
+		s.caConfigMap.String(),
+		tlsutil.CAFile,
+		tigeraCABundleKey,
+	)
 }
 
 func secretKey(secret *corev1.Secret, key string) ([]byte, error) {

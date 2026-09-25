@@ -43,7 +43,8 @@ controller:
     # @schema type: [integer, string]
     endpoint: ""
     tls:
-      # auto resolves to existingSecret for cilium and insecure for istio and calico.
+      # auto resolves to issuer for istio, existingSecret for cilium and calico,
+      # insecure otherwise.
       # @schema enum: [issuer, existingSecret, insecure, auto]
       mode: auto
       issuerRef:
@@ -51,11 +52,13 @@ controller:
         kind: Issuer
         group: cert-manager.io
       existingSecret:
-        # Defaults to hubble-relay-client-certs in kube-system for cilium.
+        # Defaults: cilium -> hubble-relay-client-certs in kube-system;
+        # calico -> goldmane-key-pair in calico-system.
         name: ""
         # Empty means the release namespace, and the Secret is mounted instead of read via the API.
         namespace: ""
         # Optional ConfigMap in existingSecret.namespace holding the CA bundle.
+        # Calico defaults to goldmane-ca-bundle (CA key ca.crt or tigera-ca-bundle.crt).
         caBundleConfigMap: ""
       # Empty means the endpoint host, except cilium, which uses ui.hubble-relay.cilium.io.
       serverName: ""

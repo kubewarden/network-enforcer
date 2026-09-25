@@ -86,11 +86,11 @@ func tlsSecret(namespace, name string, data map[string][]byte) *corev1.Secret {
 	}
 }
 
-func tlsConfigMap(namespace, name, ca string) *corev1.ConfigMap {
+func tlsConfigMap(namespace, name, key, ca string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		Namespace: namespace,
 		Name:      name,
-		Data:      map[string]string{tlsutil.CAFile: ca},
+		Data:      map[string]string{key: ca},
 	}
 }
 
@@ -204,19 +204,47 @@ func TestSecretSource(t *testing.T) {
 			wantKey: key,
 		},
 		{
-			name: "reads CA from configmap",
+			name: "reads CA from configmap with ca.crt",
 			objects: []client.Object{
 				tlsSecret("calico-system", "goldmane-key-pair", map[string][]byte{
 					tlsutil.CertFile: cert,
 					tlsutil.KeyFile:  key,
 				}),
-				tlsConfigMap("calico-system", "goldmane-ca-bundle", string(ca)),
+				tlsConfigMap("calico-system", "goldmane-ca-bundle", tlsutil.CAFile, string(ca)),
 			},
 			secret:      "calico-system/goldmane-key-pair",
 			caConfigMap: "calico-system/goldmane-ca-bundle",
 			wantCA:      ca,
 			wantCrt:     cert,
 			wantKey:     key,
+		},
+		{
+			name: "reads CA from configmap with tigera-ca-bundle.crt fallback",
+			objects: []client.Object{
+				tlsSecret("calico-system", "goldmane-key-pair", map[string][]byte{
+					tlsutil.CertFile: cert,
+					tlsutil.KeyFile:  key,
+				}),
+				tlsConfigMap("calico-system", "goldmane-ca-bundle", tigeraCABundleKey, string(ca)),
+			},
+			secret:      "calico-system/goldmane-key-pair",
+			caConfigMap: "calico-system/goldmane-ca-bundle",
+			wantCA:      ca,
+			wantCrt:     cert,
+			wantKey:     key,
+		},
+		{
+			name: "missing CA keys in configmap",
+			objects: []client.Object{
+				tlsSecret("calico-system", "goldmane-key-pair", map[string][]byte{
+					tlsutil.CertFile: cert,
+					tlsutil.KeyFile:  key,
+				}),
+				tlsConfigMap("calico-system", "goldmane-ca-bundle", "other.crt", string(ca)),
+			},
+			secret:      "calico-system/goldmane-key-pair",
+			caConfigMap: "calico-system/goldmane-ca-bundle",
+			wantErr:     true,
 		},
 		{
 			name:    "missing secret",
