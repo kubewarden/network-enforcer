@@ -115,15 +115,132 @@
                         "name"
                     ],
                     "properties": {
-                        "endpoint": {
-                            "type": [
-                                "integer",
-                                "string"
-                            ]
+                        "calico": {
+                            "type": "object",
+                            "properties": {
+                                "endpoint": {
+                                    "type": "string"
+                                },
+                                "tls": {
+                                    "type": "object",
+                                    "properties": {
+                                        "existingSecret": {
+                                            "type": "object",
+                                            "properties": {
+                                                "caBundleConfigMap": {
+                                                    "type": "string"
+                                                },
+                                                "caBundleKey": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "namespace": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "additionalProperties": false
+                                        },
+                                        "issuerRef": {
+                                            "type": "object",
+                                            "properties": {
+                                                "group": {
+                                                    "type": "string"
+                                                },
+                                                "kind": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "additionalProperties": false
+                                        },
+                                        "mode": {
+                                            "type": "string",
+                                            "enum": [
+                                                "issuer",
+                                                "existingSecret"
+                                            ]
+                                        },
+                                        "serverName": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "cilium": {
+                            "type": "object",
+                            "properties": {
+                                "endpoint": {
+                                    "type": "string"
+                                },
+                                "tls": {
+                                    "type": "object",
+                                    "properties": {
+                                        "existingSecret": {
+                                            "type": "object",
+                                            "properties": {
+                                                "caBundleConfigMap": {
+                                                    "type": "string"
+                                                },
+                                                "caBundleKey": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "namespace": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "additionalProperties": false
+                                        },
+                                        "issuerRef": {
+                                            "type": "object",
+                                            "properties": {
+                                                "group": {
+                                                    "type": "string"
+                                                },
+                                                "kind": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "additionalProperties": false
+                                        },
+                                        "mode": {
+                                            "type": "string",
+                                            "enum": [
+                                                "issuer",
+                                                "existingSecret",
+                                                "insecure"
+                                            ]
+                                        },
+                                        "serverName": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                }
+                            },
+                            "additionalProperties": false
                         },
                         "istio": {
                             "type": "object",
                             "properties": {
+                                "endpoint": {
+                                    "type": [
+                                        "integer",
+                                        "string"
+                                    ]
+                                },
                                 "fluentBit": {
                                     "type": "object",
                                     "properties": {
@@ -148,6 +265,56 @@
                                         }
                                     },
                                     "additionalProperties": false
+                                },
+                                "tls": {
+                                    "type": "object",
+                                    "properties": {
+                                        "existingSecret": {
+                                            "type": "object",
+                                            "properties": {
+                                                "caBundleConfigMap": {
+                                                    "type": "string"
+                                                },
+                                                "caBundleKey": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "namespace": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "additionalProperties": false
+                                        },
+                                        "issuerRef": {
+                                            "type": "object",
+                                            "properties": {
+                                                "group": {
+                                                    "type": "string"
+                                                },
+                                                "kind": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "additionalProperties": false
+                                        },
+                                        "mode": {
+                                            "type": "string",
+                                            "enum": [
+                                                "issuer",
+                                                "existingSecret",
+                                                "insecure"
+                                            ]
+                                        },
+                                        "serverName": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
                                 }
                             },
                             "additionalProperties": false
@@ -159,54 +326,6 @@
                                 "cilium",
                                 "calico"
                             ]
-                        },
-                        "tls": {
-                            "type": "object",
-                            "properties": {
-                                "existingSecret": {
-                                    "type": "object",
-                                    "properties": {
-                                        "caBundleConfigMap": {
-                                            "type": "string"
-                                        },
-                                        "name": {
-                                            "type": "string"
-                                        },
-                                        "namespace": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "additionalProperties": false
-                                },
-                                "issuerRef": {
-                                    "type": "object",
-                                    "properties": {
-                                        "group": {
-                                            "type": "string"
-                                        },
-                                        "kind": {
-                                            "type": "string"
-                                        },
-                                        "name": {
-                                            "type": "string"
-                                        }
-                                    },
-                                    "additionalProperties": false
-                                },
-                                "mode": {
-                                    "type": "string",
-                                    "enum": [
-                                        "issuer",
-                                        "existingSecret",
-                                        "insecure",
-                                        "auto"
-                                    ]
-                                },
-                                "serverName": {
-                                    "type": "string"
-                                }
-                            },
-                            "additionalProperties": false
                         }
                     },
                     "additionalProperties": false

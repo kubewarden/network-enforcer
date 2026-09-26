@@ -91,11 +91,43 @@ The top-level keys of
 | Key                   | Description                                                                                |
 | --------------------- | ------------------------------------------------------------------------------------------ |
 | `controller`          | The controller Deployment: image, resources, security context, scheduling, log level.      |
-| `controller.provider` | The data-plane provider (`istio`, `cilium`, `calico`), its endpoint, and the TLS settings. |
+| `controller.provider` | The data-plane provider (`istio`, `cilium`, `calico`), and per-provider endpoint/TLS settings. |
 | `telemetry`           | The OTEL collector strategy: `none`, `default` (bundled collector), or `external`.         |
 | `imagePullSecrets`    | Secrets with private registry credentials.                                                 |
 | `nameOverride`        | Replaces the chart name in the generated resource names.                                   |
 | `fullnameOverride`    | Replaces the whole `<release>-<chart>` prefix in the generated resource names.             |
+
+### Provider endpoint and TLS
+
+`controller.provider.name` selects which provider is active. Endpoint, TLS, and
+other provider-specific settings live under that provider's own tree
+(`controller.provider.istio`, `.cilium`, `.calico`). Only the active tree is
+applied; values under inactive providers are ignored.
+
+| Provider | Default endpoint | Default TLS mode | Default material |
+| -------- | ---------------- | ---------------- | ---------------- |
+| `istio` | `4317` | `issuer` | chart CA Issuer |
+| `cilium` | `hubble-relay.kube-system.svc:443` | `existingSecret` | `kube-system/hubble-relay-client-certs`, server name `ui.hubble-relay.cilium.io` |
+| `calico` | `goldmane.calico-system.svc:7443` | `existingSecret` | `calico-system/goldmane-key-pair` + `goldmane-ca-bundle` (CA key `tigera-ca-bundle.crt`) |
+
+Calico does not support `insecure`: Goldmane requires mTLS. Cilium `insecure` is
+plaintext to Relay port 80: set `tls.mode=insecure` and clear `tls.serverName`.
+If `endpoint` is still the default `:443`, the chart rewrites it to `:80`.
+
+Override examples:
+
+```yaml
+controller:
+  provider:
+    name: cilium
+    cilium:
+      tls:
+        mode: insecure
+        serverName: ""   # clear the Relay SAN override for plaintext
+```
+
+The controller binary stays provider-neutral: the chart renders `--provider-tls-*`
+flags (including `--provider-tls-ca-bundle-key` when a CA ConfigMap is used).
 
 See the comments in `values.yaml` for the full list of options.
 

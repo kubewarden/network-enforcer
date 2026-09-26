@@ -66,36 +66,31 @@ controller:
   provider:
     # @schema required
     # @schema enum: [istio, cilium, calico]
+    # Selects which provider tree below is active. Only that tree's endpoint/tls
+    # and other knobs are applied; values under inactive providers are ignored.
     name: istio
-    # Provider defaults when endpoint is empty:
-    # istio  -> 4317
-    # cilium -> hubble-relay.kube-system.svc:443, or :80 when tls.mode=insecure
-    # calico -> goldmane.calico-system.svc:7443
-    #
-    # @schema type: [integer, string]
-    endpoint: ""
-    tls:
-      # auto resolves to issuer for istio, existingSecret for cilium and calico,
-      # insecure otherwise.
-      # @schema enum: [issuer, existingSecret, insecure, auto]
-      mode: auto
-      issuerRef:
-        name: ""
-        kind: Issuer
-        group: cert-manager.io
-      existingSecret:
-        # Defaults: cilium -> hubble-relay-client-certs in kube-system;
-        # calico -> goldmane-key-pair in calico-system.
-        name: ""
-        # Empty means the release namespace, and the Secret is mounted instead of read via the API.
-        namespace: ""
-        # Optional ConfigMap in existingSecret.namespace holding the CA bundle.
-        # Calico defaults to goldmane-ca-bundle (CA key ca.crt or tigera-ca-bundle.crt).
-        caBundleConfigMap: ""
-      # Empty means the endpoint host, except cilium, which uses ui.hubble-relay.cilium.io.
-      serverName: ""
-    # Settings that apply only when controller.provider.name is istio.
     istio:
+      # OTLP listen port for the Istio scraper.
+      # @schema type: [integer, string]
+      endpoint: 4317
+      tls:
+        # Istio is a TLS server on the OTLP hop. Default issues a cert via CSI.
+        # @schema enum: [issuer, existingSecret, insecure]
+        mode: issuer
+        issuerRef:
+          name: ""
+          kind: Issuer
+          group: cert-manager.io
+        existingSecret:
+          # Same-namespace Secret only (Istio needs tls.crt/tls.key mounted).
+          name: ""
+          # Must stay empty for istio; cross-namespace API reads are rejected.
+          namespace: ""
+          caBundleConfigMap: ""
+          # Key inside caBundleConfigMap when one is set. Unused for the default path.
+          caBundleKey: ca.crt
+        # Empty means the endpoint host.
+        serverName: ""
       # The fluent-bit DaemonSet that ships ztunnel logs to the controller.
       fluentBit:
         image:
@@ -106,6 +101,46 @@ controller:
           # @schema required
           tag: 5.1.2
           pullPolicy: IfNotPresent
+    cilium:
+      # Hubble Relay address (host:port). Default is TLS on port 443.
+      # For plaintext Relay set tls.mode=insecure and tls.serverName to "".
+      # If endpoint is left as this default, the chart also switches the port to 80.
+      endpoint: hubble-relay.kube-system.svc:443
+      tls:
+        # Cilium is a TLS client to Hubble Relay.
+        # @schema enum: [issuer, existingSecret, insecure]
+        mode: existingSecret
+        issuerRef:
+          name: ""
+          kind: Issuer
+          group: cert-manager.io
+        existingSecret:
+          name: hubble-relay-client-certs
+          # Non-empty namespace => read via the API (and chart RBAC); empty => mount.
+          namespace: kube-system
+          caBundleConfigMap: ""
+          caBundleKey: ca.crt
+        # Relay certs are issued for *.hubble-relay.cilium.io.
+        serverName: ui.hubble-relay.cilium.io
+    calico:
+      endpoint: goldmane.calico-system.svc:7443
+      tls:
+        # Calico is a TLS client to Goldmane. Goldmane rejects plaintext, so
+        # insecure is not a valid mode.
+        # @schema enum: [issuer, existingSecret]
+        mode: existingSecret
+        issuerRef:
+          name: ""
+          kind: Issuer
+          group: cert-manager.io
+        existingSecret:
+          name: goldmane-key-pair
+          namespace: calico-system
+          caBundleConfigMap: goldmane-ca-bundle
+          # Goldmane's CA ConfigMap uses this key (not ca.crt).
+          caBundleKey: tigera-ca-bundle.crt
+        # Empty means the endpoint host.
+        serverName: ""
   wnpStatusUpdateInterval: 30s
   flowDumper:
     enabled: false
