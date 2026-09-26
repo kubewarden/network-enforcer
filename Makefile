@@ -154,13 +154,13 @@ HELM_VALUES_SCHEMA_JSON ?= $(LOCALBIN)/helm-values-schema-json
 
 ## Tool Versions
 # renovate: datasource=go depName=sigs.k8s.io/controller-tools
-CONTROLLER_TOOLS_VERSION ?= v0.20.1
+CONTROLLER_TOOLS_VERSION ?= v0.22.0
 # renovate: datasource=go depName=google.golang.org/protobuf
-PROTOC_GEN_GO_VERSION ?= v1.36.11
+PROTOC_GEN_GO_VERSION ?= v1.36.12
 # renovate: datasource=go depName=google.golang.org/grpc/cmd/protoc-gen-go-grpc
-PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.1
+PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.2
 # renovate: datasource=go depName=github.com/losisin/helm-values-schema-json/v2
-HELM_VALUES_SCHEMA_JSON_VERSION ?= v2.3.1
+HELM_VALUES_SCHEMA_JSON_VERSION ?= v2.6.0
 
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
