@@ -41,6 +41,9 @@ type Config struct {
 	CertSecret string
 	// CAConfigMap is an optional namespace/name reference to a CA bundle ConfigMap.
 	CAConfigMap string
+	// CABundleKey is the ConfigMap data key for the CA bundle when CAConfigMap is set.
+	// Empty defaults to [tlsutil.CAFile] ("ca.crt").
+	CABundleKey string
 	// ServerName overrides the TLS server name. Empty derives it from the endpoint host.
 	ServerName string
 }
@@ -62,7 +65,7 @@ func New(cfg Config, reader client.Reader) (Source, error) {
 		if cfg.CertDir != "" {
 			return NewDirSource(cfg.CertDir)
 		}
-		return NewSecretSource(reader, cfg.CertSecret, cfg.CAConfigMap)
+		return NewSecretSource(reader, cfg.CertSecret, cfg.CAConfigMap, cfg.CABundleKey)
 	case ModeInsecure:
 		return nil, fmt.Errorf("provider TLS mode %q has no certificate source", cfg.Mode)
 	default:

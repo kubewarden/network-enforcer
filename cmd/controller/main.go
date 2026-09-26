@@ -85,6 +85,7 @@ type providerConfig struct {
 	tlsCertDir     string
 	tlsCertSecret  string
 	tlsCAConfigMap string
+	tlsCABundleKey string
 	tlsServerName  string
 }
 
@@ -95,6 +96,7 @@ func (p *providerConfig) certSourceConfig() certsource.Config {
 		CertDir:     p.tlsCertDir,
 		CertSecret:  p.tlsCertSecret,
 		CAConfigMap: p.tlsCAConfigMap,
+		CABundleKey: p.tlsCABundleKey,
 		ServerName:  p.tlsServerName,
 	}
 }
@@ -506,6 +508,9 @@ func main() {
 	flag.StringVar(&conf.provider.tlsCAConfigMap, "provider-tls-ca-configmap", "",
 		"Optional ConfigMap holding the provider CA bundle, as namespace/name. "+
 			"Used with --provider-tls-cert-secret.")
+	flag.StringVar(&conf.provider.tlsCABundleKey, "provider-tls-ca-bundle-key", "",
+		"ConfigMap data key for the provider CA bundle when --provider-tls-ca-configmap is set. "+
+			"Defaults to ca.crt.")
 	flag.StringVar(&conf.provider.tlsServerName, "provider-tls-server-name", "",
 		"Optional TLS server name verified against the provider's server certificate. "+
 			"Defaults to the host part of --provider-endpoint.")
