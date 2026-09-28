@@ -25,8 +25,8 @@ tests:
     set:
       controller:
         provider:
-          name: istio
-          endpoint: 5555
+          istio:
+            endpoint: 5555
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -52,8 +52,10 @@ tests:
       controller:
         provider:
           name: cilium
-          tls:
-            mode: insecure
+          cilium:
+            tls:
+              mode: insecure
+              serverName: ""
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -66,7 +68,8 @@ tests:
       controller:
         provider:
           name: cilium
-          endpoint: example:9032
+          cilium:
+            endpoint: example:9032
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -94,13 +97,17 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].args
           content: --provider-tls-ca-configmap=calico-system/goldmane-ca-bundle
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-ca-bundle-key=tigera-ca-bundle.crt
 
   - it: "uses calico custom endpoint override"
     set:
       controller:
         provider:
           name: calico
-          endpoint: example:9032
+          calico:
+            endpoint: example:9032
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -134,8 +141,8 @@ tests:
     set:
       controller:
         provider:
-          name: istio
-          endpoint: 5555
+          istio:
+            endpoint: 5555
     asserts:
       - hasDocuments:
           count: 1

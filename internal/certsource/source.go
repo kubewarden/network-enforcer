@@ -59,16 +59,14 @@ type SecretSource struct {
 	reader      client.Reader
 	secret      types.NamespacedName
 	caConfigMap types.NamespacedName
+	caBundleKey string
 }
-
-// tigeraCABundleKey is the CA key used by Calico's goldmane-ca-bundle ConfigMap.
-const tigeraCABundleKey = "tigera-ca-bundle.crt"
 
 // NewSecretSource returns a Source that reads PEM material from the API server.
 // secret must be "namespace/name". caConfigMap is an optional "namespace/name"
-// ConfigMap. The CA is read from [tlsutil.CAFile] ("ca.crt"), falling back to
-// tigera-ca-bundle.crt for Calico Goldmane.
-func NewSecretSource(reader client.Reader, secret, caConfigMap string) (*SecretSource, error) {
+// ConfigMap. caBundleKey is the ConfigMap data key for the CA bundle; empty
+// defaults to [tlsutil.CAFile] ("ca.crt").
+func NewSecretSource(reader client.Reader, secret, caConfigMap, caBundleKey string) (*SecretSource, error) {
 	if reader == nil {
 		return nil, errors.New("API reader is required")
 	}
@@ -76,9 +74,13 @@ func NewSecretSource(reader client.Reader, secret, caConfigMap string) (*SecretS
 	if err != nil {
 		return nil, fmt.Errorf("certificate secret: %w", err)
 	}
+	if caBundleKey == "" {
+		caBundleKey = tlsutil.CAFile
+	}
 	src := &SecretSource{
-		reader: reader,
-		secret: secretName,
+		reader:      reader,
+		secret:      secretName,
+		caBundleKey: caBundleKey,
 	}
 	if caConfigMap != "" {
 		caName, caErr := ParseNamespacedName(caConfigMap)
@@ -123,19 +125,16 @@ func (s *SecretSource) caFromConfigMap(ctx context.Context) ([]byte, error) {
 	if err := s.reader.Get(ctx, s.caConfigMap, cm); err != nil {
 		return nil, fmt.Errorf("failed to get ConfigMap %s: %w", s.caConfigMap.String(), err)
 	}
-	for _, key := range []string{tlsutil.CAFile, tigeraCABundleKey} {
-		if value, ok := cm.Data[key]; ok && value != "" {
-			return []byte(value), nil
-		}
-		if value, ok := cm.BinaryData[key]; ok && len(value) > 0 {
-			return bytes.Clone(value), nil
-		}
+	if value, ok := cm.Data[s.caBundleKey]; ok && value != "" {
+		return []byte(value), nil
+	}
+	if value, ok := cm.BinaryData[s.caBundleKey]; ok && len(value) > 0 {
+		return bytes.Clone(value), nil
 	}
 	return nil, fmt.Errorf(
-		"configmap %s is missing keys %q and %q",
+		"configmap %s is missing key %q",
 		s.caConfigMap.String(),
-		tlsutil.CAFile,
-		tigeraCABundleKey,
+		s.caBundleKey,
 	)
 }
 

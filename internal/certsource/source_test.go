@@ -23,6 +23,17 @@ import (
 	"github.com/kubewarden/network-enforcer/internal/tlsutil"
 )
 
+const (
+	testCalicoNamespace     = "calico-system"
+	testGoldmaneSecretName  = "goldmane-key-pair"
+	testGoldmaneSecretRef   = testCalicoNamespace + "/" + testGoldmaneSecretName
+	testGoldmaneCABundle    = "goldmane-ca-bundle"
+	testGoldmaneCABundleRef = testCalicoNamespace + "/" + testGoldmaneCABundle
+	testTigeraCABundleKey   = "tigera-ca-bundle.crt"
+	testHubbleServerName    = "ui.hubble-relay.cilium.io"
+	testHubbleClientSecret  = "kube-system/hubble-relay-client-certs"
+)
+
 func generateCertPEMs(t *testing.T) ([]byte, []byte, []byte) {
 	t.Helper()
 
@@ -184,6 +195,7 @@ func TestSecretSource(t *testing.T) {
 		objects     []client.Object
 		secret      string
 		caConfigMap string
+		caBundleKey string
 		wantErr     bool
 		wantCA      []byte
 		wantCrt     []byte
@@ -192,13 +204,13 @@ func TestSecretSource(t *testing.T) {
 		{
 			name: "reads material from secret",
 			objects: []client.Object{
-				tlsSecret("calico-system", "goldmane-key-pair", map[string][]byte{
+				tlsSecret(testCalicoNamespace, testGoldmaneSecretName, map[string][]byte{
 					tlsutil.CAFile:   ca,
 					tlsutil.CertFile: cert,
 					tlsutil.KeyFile:  key,
 				}),
 			},
-			secret:  "calico-system/goldmane-key-pair",
+			secret:  testGoldmaneSecretRef,
 			wantCA:  ca,
 			wantCrt: cert,
 			wantKey: key,
@@ -206,49 +218,50 @@ func TestSecretSource(t *testing.T) {
 		{
 			name: "reads CA from configmap with ca.crt",
 			objects: []client.Object{
-				tlsSecret("calico-system", "goldmane-key-pair", map[string][]byte{
+				tlsSecret(testCalicoNamespace, testGoldmaneSecretName, map[string][]byte{
 					tlsutil.CertFile: cert,
 					tlsutil.KeyFile:  key,
 				}),
-				tlsConfigMap("calico-system", "goldmane-ca-bundle", tlsutil.CAFile, string(ca)),
+				tlsConfigMap(testCalicoNamespace, testGoldmaneCABundle, tlsutil.CAFile, string(ca)),
 			},
-			secret:      "calico-system/goldmane-key-pair",
-			caConfigMap: "calico-system/goldmane-ca-bundle",
+			secret:      testGoldmaneSecretRef,
+			caConfigMap: testGoldmaneCABundleRef,
 			wantCA:      ca,
 			wantCrt:     cert,
 			wantKey:     key,
 		},
 		{
-			name: "reads CA from configmap with tigera-ca-bundle.crt fallback",
+			name: "reads CA from configmap with configured key",
 			objects: []client.Object{
-				tlsSecret("calico-system", "goldmane-key-pair", map[string][]byte{
+				tlsSecret(testCalicoNamespace, testGoldmaneSecretName, map[string][]byte{
 					tlsutil.CertFile: cert,
 					tlsutil.KeyFile:  key,
 				}),
-				tlsConfigMap("calico-system", "goldmane-ca-bundle", tigeraCABundleKey, string(ca)),
+				tlsConfigMap(testCalicoNamespace, testGoldmaneCABundle, testTigeraCABundleKey, string(ca)),
 			},
-			secret:      "calico-system/goldmane-key-pair",
-			caConfigMap: "calico-system/goldmane-ca-bundle",
+			secret:      testGoldmaneSecretRef,
+			caConfigMap: testGoldmaneCABundleRef,
+			caBundleKey: testTigeraCABundleKey,
 			wantCA:      ca,
 			wantCrt:     cert,
 			wantKey:     key,
 		},
 		{
-			name: "missing CA keys in configmap",
+			name: "missing CA key in configmap",
 			objects: []client.Object{
-				tlsSecret("calico-system", "goldmane-key-pair", map[string][]byte{
+				tlsSecret(testCalicoNamespace, testGoldmaneSecretName, map[string][]byte{
 					tlsutil.CertFile: cert,
 					tlsutil.KeyFile:  key,
 				}),
-				tlsConfigMap("calico-system", "goldmane-ca-bundle", "other.crt", string(ca)),
+				tlsConfigMap(testCalicoNamespace, testGoldmaneCABundle, "other.crt", string(ca)),
 			},
-			secret:      "calico-system/goldmane-key-pair",
-			caConfigMap: "calico-system/goldmane-ca-bundle",
+			secret:      testGoldmaneSecretRef,
+			caConfigMap: testGoldmaneCABundleRef,
 			wantErr:     true,
 		},
 		{
 			name:    "missing secret",
-			secret:  "calico-system/goldmane-key-pair",
+			secret:  testGoldmaneSecretRef,
 			wantErr: true,
 		},
 		{
@@ -266,7 +279,7 @@ func TestSecretSource(t *testing.T) {
 			t.Parallel()
 
 			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.objects...).Build()
-			src, err := NewSecretSource(cl, tt.secret, tt.caConfigMap)
+			src, err := NewSecretSource(cl, tt.secret, tt.caConfigMap, tt.caBundleKey)
 			require.NoError(t, err)
 
 			gotCA, gotCert, gotKey, err := src.Get(t.Context())
@@ -289,18 +302,14 @@ func TestSecretSourceCARotation(t *testing.T) {
 	ca2, _, _ := generateCertPEMs(t)
 	require.NotEqual(t, ca1, ca2)
 
-	const (
-		namespace = "calico-system"
-		name      = "goldmane-key-pair"
-	)
 	cl := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(
-		tlsSecret(namespace, name, map[string][]byte{
+		tlsSecret(testCalicoNamespace, testGoldmaneSecretName, map[string][]byte{
 			tlsutil.CAFile:   ca1,
 			tlsutil.CertFile: cert,
 			tlsutil.KeyFile:  key,
 		}),
 	).Build()
-	src, err := NewSecretSource(cl, namespace+"/"+name, "")
+	src, err := NewSecretSource(cl, testGoldmaneSecretRef, "", "")
 	require.NoError(t, err)
 
 	gotCA, gotCert, gotKey, err := src.Get(t.Context())
@@ -310,7 +319,10 @@ func TestSecretSourceCARotation(t *testing.T) {
 	require.Equal(t, key, gotKey)
 
 	secret := &corev1.Secret{}
-	require.NoError(t, cl.Get(t.Context(), types.NamespacedName{Namespace: namespace, Name: name}, secret))
+	require.NoError(t, cl.Get(t.Context(), types.NamespacedName{
+		Namespace: testCalicoNamespace,
+		Name:      testGoldmaneSecretName,
+	}, secret))
 	secret.Data[tlsutil.CAFile] = ca2
 	require.NoError(t, cl.Update(t.Context(), secret))
 
@@ -340,22 +352,22 @@ func TestValidateServerName(t *testing.T) {
 			cfg: Config{
 				Mode:       ModeIssuer,
 				CertDir:    dir,
-				ServerName: "ui.hubble-relay.cilium.io",
+				ServerName: testHubbleServerName,
 			},
 		},
 		{
 			name: "existingSecret mode accepts a server name",
 			cfg: Config{
 				Mode:       ModeExistingSecret,
-				CertSecret: "kube-system/hubble-relay-client-certs",
-				ServerName: "ui.hubble-relay.cilium.io",
+				CertSecret: testHubbleClientSecret,
+				ServerName: testHubbleServerName,
 			},
 		},
 		{
 			name: "insecure mode rejects a server name",
 			cfg: Config{
 				Mode:       ModeInsecure,
-				ServerName: "ui.hubble-relay.cilium.io",
+				ServerName: testHubbleServerName,
 			},
 			expectedErr: "--provider-tls-server-name",
 		},

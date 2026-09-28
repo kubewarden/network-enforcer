@@ -149,7 +149,7 @@ func netEnforcerHelmOpts(testCfg suiteConfig) []helm.Option {
 		helm.WithTimeout(defaultHelmTimeout.String()),
 	}
 	if testCfg.HasE2EDependency("cert-manager") && testCfg.IsIstioProvider() {
-		helmOpts = append(helmOpts, helm.WithArgs("--set", "controller.provider.tls.mode=issuer"))
+		helmOpts = append(helmOpts, helm.WithArgs("--set", "controller.provider.istio.tls.mode=issuer"))
 	}
 	if !testCfg.HasE2EDependency("cert-manager") {
 		helmOpts = append(helmOpts, helm.WithArgs("--set", "telemetry.collectorStrategy=none"))

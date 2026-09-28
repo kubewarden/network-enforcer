@@ -43,6 +43,9 @@ tests:
           path: spec.template.spec.volumes
           content:
             name: provider-tls
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-ca-bundle-key=tigera-ca-bundle.crt
 
   - it: "defaults cilium to Cilium's own client Secret in kube-system"
     set:
@@ -66,41 +69,15 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].args
           content: --provider-endpoint=hubble-relay.kube-system.svc:443
-
-  - it: "resolves auto to existingSecret for cilium"
-    set:
-      controller:
-        provider:
-          name: cilium
-          tls:
-            mode: auto
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: --provider-tls-mode=existingSecret
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: --provider-tls-cert-secret=kube-system/hubble-relay-client-certs
-
-  - it: "resolves auto to issuer for istio"
-    set:
-      controller:
-        provider:
-          name: istio
-          tls:
-            mode: auto
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: --provider-tls-mode=issuer
-
   - it: "keeps cilium on plaintext port 80 in insecure mode"
     set:
       controller:
         provider:
           name: cilium
-          tls:
-            mode: insecure
+          cilium:
+            tls:
+              mode: insecure
+              serverName: ""
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -124,11 +101,12 @@ tests:
       controller:
         provider:
           name: cilium
-          tls:
-            mode: issuer
-            issuerRef:
-              name: hubble-ca
-              kind: ClusterIssuer
+          cilium:
+            tls:
+              mode: issuer
+              issuerRef:
+                name: hubble-ca
+                kind: ClusterIssuer
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -163,8 +141,9 @@ tests:
       controller:
         provider:
           name: cilium
-          tls:
-            serverName: relay.kube-system.svc.cluster.local
+          cilium:
+            tls:
+              serverName: relay.kube-system.svc.cluster.local
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -175,19 +154,21 @@ tests:
       controller:
         provider:
           name: cilium
-          tls:
-            mode: insecure
-            serverName: relay.kube-system.svc.cluster.local
+          cilium:
+            tls:
+              mode: insecure
+              serverName: relay.kube-system.svc.cluster.local
     asserts:
       - failedTemplate:
-          errorMessage: controller.provider.tls.serverName is not accepted when controller.provider.tls.mode=insecure
+          errorMessage: controller.provider.cilium.tls.serverName is not accepted when controller.provider.cilium.tls.mode=insecure
 
   - it: "mounts CSI certs for Istio issuer mode with the chart CA and istio-otlp DNS names"
     set:
       controller:
         provider:
-          tls:
-            mode: issuer
+          istio:
+            tls:
+              mode: issuer
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -218,10 +199,11 @@ tests:
     set:
       controller:
         provider:
-          tls:
-            mode: issuer
-            issuerRef:
-              name: my-issuer
+          istio:
+            tls:
+              mode: issuer
+              issuerRef:
+                name: my-issuer
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -244,10 +226,11 @@ tests:
       controller:
         provider:
           name: calico
-          tls:
-            mode: issuer
-            issuerRef:
-              name: my-issuer
+          calico:
+            tls:
+              mode: issuer
+              issuerRef:
+                name: my-issuer
     asserts:
       - contains:
           path: spec.template.spec.volumes
@@ -266,10 +249,11 @@ tests:
     set:
       controller:
         provider:
-          tls:
-            mode: existingSecret
-            existingSecret:
-              name: my-provider-certs
+          istio:
+            tls:
+              mode: existingSecret
+              existingSecret:
+                name: my-provider-certs
     asserts:
       - contains:
           path: spec.template.spec.volumes
@@ -282,37 +266,39 @@ tests:
     set:
       controller:
         provider:
-          name: istio
-          tls:
-            mode: existingSecret
+          istio:
+            tls:
+              mode: existingSecret
     asserts:
       - failedTemplate:
-          errorMessage: controller.provider.tls.existingSecret.name is required when controller.provider.tls.mode=existingSecret
+          errorMessage: controller.provider.istio.tls.existingSecret.name is required when controller.provider.istio.tls.mode=existingSecret
 
   - it: "fails a cross-namespace existingSecret for Istio"
     set:
       controller:
         provider:
-          tls:
-            mode: existingSecret
-            existingSecret:
-              name: provider-tls-certs
-              namespace: other-namespace
+          istio:
+            tls:
+              mode: existingSecret
+              existingSecret:
+                name: provider-tls-certs
+                namespace: other-namespace
     asserts:
       - failedTemplate:
-          errorMessage: controller.provider.tls.existingSecret.namespace cannot be set when controller.provider.name=istio; the Istio scraper is a TLS server and needs tls.crt/tls.key mounted in the pod
+          errorMessage: controller.provider.istio.tls.existingSecret.namespace cannot be set when controller.provider.name=istio; the Istio scraper is a TLS server and needs tls.crt/tls.key mounted in the pod
 
   - it: "passes a cross-namespace existingSecret as flags"
     set:
       controller:
         provider:
           name: calico
-          tls:
-            mode: existingSecret
-            existingSecret:
-              name: goldmane-key-pair
-              namespace: calico-system
-              caBundleConfigMap: goldmane-ca-bundle
+          calico:
+            tls:
+              mode: existingSecret
+              existingSecret:
+                name: goldmane-key-pair
+                namespace: calico-system
+                caBundleConfigMap: goldmane-ca-bundle
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -324,17 +310,9 @@ tests:
           path: spec.template.spec.volumes
           content:
             name: provider-tls
-
-  - it: "fails insecure mode for Calico"
-    set:
-      controller:
-        provider:
-          name: calico
-          tls:
-            mode: insecure
-    asserts:
-      - failedTemplate:
-          errorMessage: controller.provider.tls.mode=insecure is not supported when controller.provider.name=calico; Goldmane requires mTLS (use existingSecret or issuer)
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-ca-bundle-key=tigera-ca-bundle.crt
 
 ---
 suite: "Provider TLS in istio fluent-bit"
@@ -352,8 +330,9 @@ tests:
     set:
       controller:
         provider:
-          tls:
-            mode: issuer
+          istio:
+            tls:
+              mode: issuer
     documentSelector:
       path: kind
       value: ConfigMap
@@ -379,8 +358,9 @@ tests:
     set:
       controller:
         provider:
-          tls:
-            mode: issuer
+          istio:
+            tls:
+              mode: issuer
     documentSelector:
       path: kind
       value: DaemonSet
@@ -421,8 +401,9 @@ tests:
         collectorStrategy: none
       controller:
         provider:
-          tls:
-            mode: issuer
+          istio:
+            tls:
+              mode: issuer
     asserts:
       - hasDocuments:
           count: 3
@@ -434,8 +415,9 @@ tests:
       controller:
         provider:
           name: cilium
-          tls:
-            mode: issuer
+          cilium:
+            tls:
+              mode: issuer
     asserts:
       - hasDocuments:
           count: 3
@@ -447,8 +429,10 @@ tests:
       controller:
         provider:
           name: cilium
-          tls:
-            mode: insecure
+          cilium:
+            tls:
+              mode: insecure
+              serverName: ""
     asserts:
       - hasDocuments:
           count: 0
@@ -458,8 +442,10 @@ tests:
       controller:
         provider:
           name: cilium
-          tls:
-            mode: insecure
+          cilium:
+            tls:
+              mode: insecure
+              serverName: ""
     asserts:
       - hasDocuments:
           count: 3
@@ -480,8 +466,10 @@ tests:
       controller:
         provider:
           name: cilium
-          tls:
-            mode: insecure
+          cilium:
+            tls:
+              mode: insecure
+              serverName: ""
     asserts:
       - hasDocuments:
           count: 0
@@ -491,10 +479,11 @@ tests:
       controller:
         provider:
           name: cilium
-          tls:
-            mode: issuer
-            issuerRef:
-              name: hubble-ca
+          cilium:
+            tls:
+              mode: issuer
+              issuerRef:
+                name: hubble-ca
     asserts:
       - hasDocuments:
           count: 0
@@ -503,11 +492,11 @@ tests:
     set:
       controller:
         provider:
-          name: istio
-          tls:
-            mode: existingSecret
-            existingSecret:
-              name: my-provider-certs
+          istio:
+            tls:
+              mode: existingSecret
+              existingSecret:
+                name: my-provider-certs
     asserts:
       - hasDocuments:
           count: 0
@@ -611,11 +600,12 @@ tests:
       controller:
         provider:
           name: cilium
-          tls:
-            existingSecret:
-              name: hubble-relay-client-certs
-              namespace: kube-system
-              caBundleConfigMap: hubble-ca-bundle
+          cilium:
+            tls:
+              existingSecret:
+                name: hubble-relay-client-certs
+                namespace: kube-system
+                caBundleConfigMap: hubble-ca-bundle
     documentSelector:
       path: kind
       value: Role
