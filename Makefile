@@ -160,7 +160,7 @@ PROTOC_GEN_GO_VERSION ?= v1.36.11
 # renovate: datasource=go depName=google.golang.org/grpc/cmd/protoc-gen-go-grpc
 PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.1
 # renovate: datasource=go depName=github.com/losisin/helm-values-schema-json/v2
-HELM_VALUES_SCHEMA_JSON_VERSION ?= v2.3.1
+HELM_VALUES_SCHEMA_JSON_VERSION ?= v2.6.0
 
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
@@ -209,6 +209,8 @@ $(HELM_VALUES_SCHEMA_JSON): $(LOCALBIN)
 .PHONY: generate-chart-values
 generate-chart-values: $(HELM_VALUES_SCHEMA_JSON)
 	$(HELM_VALUES_SCHEMA_JSON) --no-additional-properties \
+		--k8s-schema-version v1.31.0 \
+		--bundle --bundle-without-id --bundle-cache-min 24h \
 		--values charts/network-enforcer/values.yaml \
 		--output charts/network-enforcer/values.schema.json
 

@@ -73,9 +73,12 @@ helm repo update
 helm install network-enforcer kubewarden/network-enforcer \
   --namespace network-enforcer \
   --create-namespace \
-  --set controller.provider.name=<istio|cilium|calico> \
+  --set controller.provider.name=istio \
   --wait
 ```
+
+Set `controller.provider.name` to `istio`, `cilium`, or `calico` to match the
+data-plane provider running in your cluster.
 
 After installation, ensure all pods are running:
 
