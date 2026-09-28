@@ -17,11 +17,22 @@ body:
           - **OS**: Ubuntu
           - **Architecture**: arm64
           - **Cluster**: RKE2
+          - **Network provider (CNI)**: Cilium
       value: |
         - OS:
         - Architecture:
         - Cluster:
+        - Network provider (CNI):
       render: markdown
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Installation details
+      description: |
+        How network-enforcer was installed, including the Helm command/values used
+        (e.g. `controller.provider.name`, chart version, etc.)
+      render: shell
     validations:
       required: false
   - type: textarea
@@ -32,5 +43,24 @@ body:
         - Expected behavior:
         - Current behavior:
         - Steps to reproduce:
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Relevant resource status
+      description: |
+        Output of the relevant `WorkloadNetworkPolicy`/`WorkloadNetworkPolicyProposal`
+        objects, e.g. `kubectl get wnp/<name> -o yaml` or `kubectl get wnpp/<name> -o yaml`
+      render: yaml
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Relevant logs
+      description: |
+        Logs from the controller and/or otel-collector, e.g.:
+          - `kubectl logs -n network-enforcer deploy/network-enforcer-controller-manager`
+          - `kubectl logs -n network-enforcer deploy/network-enforcer-otel-collector`
+      render: shell
     validations:
       required: false
