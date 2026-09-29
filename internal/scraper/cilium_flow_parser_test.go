@@ -635,3 +635,207 @@ func TestProcessFlowResolvesSelectorsWithFakeClient(t *testing.T) {
 		})
 	}
 }
+
+func TestParseCiliumFlowKeepsNewTraceReason(t *testing.T) {
+	t.Parallel()
+
+	endpoint := func(name, kind string) *hubbleObserver.Endpoint {
+		return &hubbleObserver.Endpoint{
+			Namespace: defaultCiliumTestNamespace,
+			Workloads: []*flowpb.Workload{{Name: name, Kind: kind}},
+		}
+	}
+	tcpFlow := func(reason flowpb.TraceReason, flags *flowpb.TCPFlags) *flowpb.Flow {
+		return &flowpb.Flow{
+			IsReply:               wrapperspb.Bool(false),
+			TraceReason:           reason,
+			TraceObservationPoint: flowpb.TraceObservationPoint_TO_ENDPOINT,
+			L4: &flowpb.Layer4{Protocol: &flowpb.Layer4_TCP{TCP: &flowpb.TCP{
+				SourcePort:      35876,
+				DestinationPort: 18080,
+				Flags:           flags,
+			}}},
+			Source:      endpoint("http-client", "Deployment"),
+			Destination: endpoint("http-server", "Deployment"),
+		}
+	}
+	wantedEvent := processFlowEnqueue(types.LearningEvent{
+		Source: &securityv1alpha1.WorkloadRef{
+			Namespace: defaultCiliumTestNamespace,
+			OwnerName: "http-client",
+			OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+		},
+		Dest: &securityv1alpha1.WorkloadRef{
+			Namespace: defaultCiliumTestNamespace,
+			OwnerName: "http-server",
+			OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+		},
+		DstPort:  18080,
+		Protocol: corev1.ProtocolTCP,
+		Backend:  securityv1alpha1.PolicyBackendKubernetes,
+	})
+
+	tests := []struct {
+		name   string
+		flow   *flowpb.Flow
+		result processFlowResult
+	}{
+		{
+			name:   "NEW SYN is kept",
+			flow:   tcpFlow(flowpb.TraceReason_NEW, &flowpb.TCPFlags{SYN: true}),
+			result: wantedEvent,
+		},
+		{
+			name:   "ESTABLISHED ACK is skipped",
+			flow:   tcpFlow(flowpb.TraceReason_ESTABLISHED, &flowpb.TCPFlags{ACK: true}),
+			result: processFlowSkip(),
+		},
+		{
+			name:   "ESTABLISHED PSH ACK is skipped",
+			flow:   tcpFlow(flowpb.TraceReason_ESTABLISHED, &flowpb.TCPFlags{ACK: true, PSH: true}),
+			result: processFlowSkip(),
+		},
+		{
+			name:   "ESTABLISHED FIN is skipped",
+			flow:   tcpFlow(flowpb.TraceReason_ESTABLISHED, &flowpb.TCPFlags{ACK: true, FIN: true}),
+			result: processFlowSkip(),
+		},
+		{
+			name: "reply SYN ACK is skipped",
+			flow: &flowpb.Flow{
+				IsReply:               wrapperspb.Bool(true),
+				TraceReason:           flowpb.TraceReason_REPLY,
+				TraceObservationPoint: flowpb.TraceObservationPoint_TO_ENDPOINT,
+				L4: &flowpb.Layer4{Protocol: &flowpb.Layer4_TCP{TCP: &flowpb.TCP{
+					SourcePort:      18080,
+					DestinationPort: 35876,
+					Flags:           &flowpb.TCPFlags{SYN: true, ACK: true},
+				}}},
+				Source:      endpoint("http-server", "Deployment"),
+				Destination: endpoint("http-client", "Deployment"),
+			},
+			result: processFlowSkip(),
+		},
+		{
+			name: "UDP without TraceReason is kept",
+			flow: &flowpb.Flow{
+				IsReply: wrapperspb.Bool(false),
+				L4: &flowpb.Layer4{Protocol: &flowpb.Layer4_UDP{UDP: &flowpb.UDP{
+					SourcePort:      40000,
+					DestinationPort: 18083,
+				}}},
+				Source:      endpoint("http-client", "Deployment"),
+				Destination: endpoint("http-server", "Deployment"),
+			},
+			result: processFlowEnqueue(types.LearningEvent{
+				Source: &securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "http-client",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+				},
+				Dest: &securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "http-server",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+				},
+				DstPort:  18083,
+				Protocol: corev1.ProtocolUDP,
+				Backend:  securityv1alpha1.PolicyBackendKubernetes,
+			}),
+		},
+		{
+			name: "UDP ESTABLISHED is skipped",
+			flow: &flowpb.Flow{
+				IsReply:     wrapperspb.Bool(false),
+				TraceReason: flowpb.TraceReason_ESTABLISHED,
+				L4: &flowpb.Layer4{Protocol: &flowpb.Layer4_UDP{UDP: &flowpb.UDP{
+					SourcePort:      40000,
+					DestinationPort: 18083,
+				}}},
+				Source:      endpoint("http-client", "Deployment"),
+				Destination: endpoint("http-server", "Deployment"),
+			},
+			result: processFlowSkip(),
+		},
+		{
+			name: "dropped flow without TraceReason is kept",
+			flow: &flowpb.Flow{
+				Verdict:          flowpb.Verdict_DROPPED,
+				DropReasonDesc:   hubbleObserver.DropReason_POLICY_DENIED,
+				TrafficDirection: hubbleObserver.TrafficDirection_INGRESS,
+				L4: &flowpb.Layer4{Protocol: &flowpb.Layer4_TCP{TCP: &flowpb.TCP{
+					SourcePort:      35876,
+					DestinationPort: 18080,
+					Flags:           &flowpb.TCPFlags{SYN: true},
+				}}},
+				Source:      endpoint("http-client", "Deployment"),
+				Destination: endpoint("http-server", "Deployment"),
+			},
+			result: processFlowRecordViolation(violation.Observation{
+				Provider:  securityv1alpha1.PolicyBackendKubernetes,
+				Direction: networkingv1.PolicyTypeIngress,
+				Protocol:  corev1.ProtocolTCP,
+				DstPort:   18080,
+				Action:    securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+				Source: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "http-client",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+				},
+				Dest: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "http-server",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+				},
+			}),
+		},
+		{
+			name: "dropped ESTABLISHED flow is still kept",
+			flow: &flowpb.Flow{
+				Verdict:          flowpb.Verdict_DROPPED,
+				DropReasonDesc:   hubbleObserver.DropReason_POLICY_DENY,
+				TrafficDirection: hubbleObserver.TrafficDirection_EGRESS,
+				TraceReason:      flowpb.TraceReason_ESTABLISHED,
+				L4: &flowpb.Layer4{Protocol: &flowpb.Layer4_TCP{TCP: &flowpb.TCP{
+					SourcePort:      35876,
+					DestinationPort: 18080,
+					Flags:           &flowpb.TCPFlags{ACK: true},
+				}}},
+				Source:      endpoint("http-client", "Deployment"),
+				Destination: endpoint("http-server", "Deployment"),
+			},
+			result: processFlowRecordViolation(violation.Observation{
+				Provider:  securityv1alpha1.PolicyBackendKubernetes,
+				Direction: networkingv1.PolicyTypeEgress,
+				Protocol:  corev1.ProtocolTCP,
+				DstPort:   18080,
+				Action:    securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+				Source: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "http-client",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+				},
+				Dest: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCiliumTestNamespace,
+					OwnerName: "http-server",
+					OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+				},
+			}),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := parseCiliumFlowResponse(tc.flow)
+			require.Equal(t, tc.result.outcome, result.outcome)
+			if tc.result.outcome == processFlowOutcomeEnqueue {
+				require.Equal(t, tc.result.event, result.event)
+			}
+			if tc.result.outcome == processFlowOutcomeViolation {
+				result.observation.Timestamp = tc.result.observation.Timestamp
+				require.Equal(t, tc.result.observation, result.observation)
+			}
+		})
+	}
+}
