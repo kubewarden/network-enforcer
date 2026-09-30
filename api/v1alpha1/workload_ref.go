@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"fmt"
 
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -47,6 +48,27 @@ func (r *WorkloadRef) IsSupported() bool {
 	default:
 		return false
 	}
+}
+
+// WorkloadTargetRef identifies the target workload.
+type WorkloadTargetRef struct {
+	// Kind is the workload kind.
+	// +kubebuilder:validation:Enum=Deployment;StatefulSet;DaemonSet
+	Kind WorkloadKind `json:"kind"`
+
+	// Name is the workload name in the same namespace as this object.
+	Name string `json:"name"`
+}
+
+// WorkloadTargetingSpec identifies the target workload and traffic direction.
+// +kubebuilder:validation:XValidation:rule="self.backend != 'istio' || self.direction != 'Egress'",message="Istio backend accepts direction Ingress only because ztunnel enforces inbound"
+type WorkloadTargetingSpec struct {
+	// TargetRef is the target workload.
+	TargetRef WorkloadTargetRef `json:"targetRef"`
+
+	// Direction is the traffic direction.
+	// +kubebuilder:validation:Enum=Ingress;Egress
+	Direction networkingv1.PolicyType `json:"direction"`
 }
 
 // spiffeIdentity builds the prefix-free Istio principal form for a pod's

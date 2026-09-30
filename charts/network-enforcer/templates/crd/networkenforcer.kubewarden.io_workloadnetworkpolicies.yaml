@@ -68,6 +68,12 @@ spec:
                 x-kubernetes-validations:
                 - message: backend is immutable
                   rule: self == oldSelf
+              direction:
+                description: Direction is the traffic direction.
+                enum:
+                - Ingress
+                - Egress
+                type: string
               istio:
                 description: |-
                   Istio contains a constrained L4 policy model rendered as an Istio
@@ -644,10 +650,33 @@ spec:
                 - monitor
                 - protect
                 type: string
+              targetRef:
+                description: TargetRef is the target workload.
+                properties:
+                  kind:
+                    description: Kind is the workload kind.
+                    enum:
+                    - Deployment
+                    - StatefulSet
+                    - DaemonSet
+                    type: string
+                  name:
+                    description: Name is the workload name in the same namespace as
+                      this object.
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
             required:
             - backend
+            - direction
+            - targetRef
             type: object
             x-kubernetes-validations:
+            - message: Istio backend accepts direction Ingress only because ztunnel
+                enforces inbound
+              rule: self.backend != 'istio' || self.direction != 'Egress'
             - message: backend must match exactly one populated backend spec
               rule: 'self.backend == ''kubernetes'' ? (has(self.kubernetes) && !has(self.istio))
                 : (self.backend == ''istio'' ? (has(self.istio) && !has(self.kubernetes))

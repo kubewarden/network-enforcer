@@ -36,6 +36,7 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 		Name:      "example",
 		Namespace: "default",
 	}
+	ingressTarget := exampleTarget(networkingv1.PolicyTypeIngress)
 
 	tests := []struct {
 		name      string
@@ -53,6 +54,7 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 						Istio:      &IstioAuthorizationPolicySpec{},
 						Kubernetes: &networkingv1.NetworkPolicySpec{},
 					},
+					WorkloadTargetingSpec: ingressTarget,
 				},
 			},
 			isInvalid: true,
@@ -67,6 +69,7 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 						Backend: PolicyBackendIstio,
 						Istio:   nil,
 					},
+					WorkloadTargetingSpec: ingressTarget,
 				},
 			},
 			isInvalid: true,
@@ -82,6 +85,7 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 						Istio:      &IstioAuthorizationPolicySpec{},
 						Kubernetes: &networkingv1.NetworkPolicySpec{},
 					},
+					WorkloadTargetingSpec: ingressTarget,
 				},
 			},
 			isInvalid: true,
@@ -96,6 +100,7 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 						Backend:    PolicyBackendKubernetes,
 						Kubernetes: nil,
 					},
+					WorkloadTargetingSpec: ingressTarget,
 				},
 			},
 			isInvalid: true,
@@ -115,6 +120,7 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 							},
 						},
 					},
+					WorkloadTargetingSpec: ingressTarget,
 				},
 			},
 			isInvalid: true,
@@ -134,6 +140,7 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 							},
 						},
 					},
+					WorkloadTargetingSpec: ingressTarget,
 				},
 			},
 			isInvalid: true,
@@ -156,6 +163,7 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 							},
 						},
 					},
+					WorkloadTargetingSpec: exampleTarget(networkingv1.PolicyTypeEgress),
 				},
 			},
 		},
@@ -177,8 +185,98 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 							},
 						},
 					},
+					WorkloadTargetingSpec: ingressTarget,
 				},
 			},
+		},
+		{
+			name: "missing_target_ref",
+			policy: &WorkloadNetworkPolicy{
+				ObjectMeta: objectMeta,
+				Spec: WorkloadNetworkPolicySpec{
+					Mode: WorkloadNetworkPolicyModeMonitor,
+					PolicyBackendSpec: PolicyBackendSpec{
+						Backend: PolicyBackendKubernetes,
+						Kubernetes: &networkingv1.NetworkPolicySpec{
+							PodSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "example"},
+							},
+						},
+					},
+					WorkloadTargetingSpec: WorkloadTargetingSpec{
+						Direction: networkingv1.PolicyTypeIngress,
+					},
+				},
+			},
+			isInvalid: true,
+		},
+		{
+			name: "missing_direction",
+			policy: &WorkloadNetworkPolicy{
+				ObjectMeta: objectMeta,
+				Spec: WorkloadNetworkPolicySpec{
+					Mode: WorkloadNetworkPolicyModeMonitor,
+					PolicyBackendSpec: PolicyBackendSpec{
+						Backend: PolicyBackendKubernetes,
+						Kubernetes: &networkingv1.NetworkPolicySpec{
+							PodSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "example"},
+							},
+						},
+					},
+					WorkloadTargetingSpec: WorkloadTargetingSpec{
+						TargetRef: WorkloadTargetRef{
+							Kind: WorkloadKindDeployment,
+							Name: "example",
+						},
+					},
+				},
+			},
+			isInvalid: true,
+		},
+		{
+			name: "unsupported_target_kind",
+			policy: &WorkloadNetworkPolicy{
+				ObjectMeta: objectMeta,
+				Spec: WorkloadNetworkPolicySpec{
+					Mode: WorkloadNetworkPolicyModeMonitor,
+					PolicyBackendSpec: PolicyBackendSpec{
+						Backend: PolicyBackendKubernetes,
+						Kubernetes: &networkingv1.NetworkPolicySpec{
+							PodSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "example"},
+							},
+						},
+					},
+					WorkloadTargetingSpec: WorkloadTargetingSpec{
+						TargetRef: WorkloadTargetRef{
+							Kind: WorkloadKindPod,
+							Name: "example",
+						},
+						Direction: networkingv1.PolicyTypeIngress,
+					},
+				},
+			},
+			isInvalid: true,
+		},
+		{
+			name: "istio_egress_is_rejected",
+			policy: &WorkloadNetworkPolicy{
+				ObjectMeta: objectMeta,
+				Spec: WorkloadNetworkPolicySpec{
+					Mode: WorkloadNetworkPolicyModeMonitor,
+					PolicyBackendSpec: PolicyBackendSpec{
+						Backend: PolicyBackendIstio,
+						Istio: &IstioAuthorizationPolicySpec{
+							Selector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "example"},
+							},
+						},
+					},
+					WorkloadTargetingSpec: exampleTarget(networkingv1.PolicyTypeEgress),
+				},
+			},
+			isInvalid: true,
 		},
 	}
 
@@ -191,5 +289,68 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 			}
 			require.NoError(t, err)
 		})
+	}
+
+	proposalTests := []struct {
+		name      string
+		proposal  *WorkloadNetworkPolicyProposal
+		isInvalid bool
+	}{
+		{
+			name: "istio_egress_is_rejected",
+			proposal: &WorkloadNetworkPolicyProposal{
+				Name: "istio-egress", Namespace: "default",
+				Spec: WorkloadNetworkPolicyProposalSpec{
+					PolicyBackendSpec: PolicyBackendSpec{
+						Backend: PolicyBackendIstio,
+						Istio: &IstioAuthorizationPolicySpec{
+							Selector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "example"},
+							},
+						},
+					},
+					WorkloadTargetingSpec: exampleTarget(networkingv1.PolicyTypeEgress),
+				},
+			},
+			isInvalid: true,
+		},
+		{
+			name: "istio_ingress_is_valid",
+			proposal: &WorkloadNetworkPolicyProposal{
+				Name: "istio-ingress", Namespace: "default",
+				Spec: WorkloadNetworkPolicyProposalSpec{
+					PolicyBackendSpec: PolicyBackendSpec{
+						Backend: PolicyBackendIstio,
+						Istio: &IstioAuthorizationPolicySpec{
+							Selector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "example"},
+							},
+						},
+					},
+					WorkloadTargetingSpec: ingressTarget,
+				},
+			},
+		},
+	}
+
+	for _, tt := range proposalTests {
+		t.Run("proposal_"+tt.name, func(t *testing.T) {
+			err = k8sClient.Create(t.Context(), tt.proposal)
+			if tt.isInvalid {
+				require.True(t, apierrors.IsInvalid(err))
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func exampleTarget(direction networkingv1.PolicyType) WorkloadTargetingSpec {
+	return WorkloadTargetingSpec{
+		TargetRef: WorkloadTargetRef{
+			Kind: WorkloadKindDeployment,
+			Name: "example",
+		},
+		Direction: direction,
 	}
 }
