@@ -36,6 +36,12 @@ func assertEqualKubernetesWNPP(
 		actual.Spec.Backend,
 		"network policy proposal backend does not match expected",
 	)
+	assert.Equal(
+		t,
+		expected.Spec.WorkloadTargetingSpec,
+		actual.Spec.WorkloadTargetingSpec,
+		"network policy proposal targeting does not match expected",
+	)
 	assert.NotNil(t, actual.Spec.Kubernetes, "network policy proposal kubernetes spec is nil")
 	k8sPolicySpec := actual.Spec.Kubernetes
 	expectedK8sPolicySpec := expected.Spec.Kubernetes
@@ -119,6 +125,13 @@ func assessKubernetesProposalGenerated(ctx context.Context, t *testing.T, _ *env
 		Name:      "deployment-" + simpleAppClientDeploymentName + "-egress",
 		Namespace: namespace,
 		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
+			WorkloadTargetingSpec: securityv1alpha1.WorkloadTargetingSpec{
+				TargetRef: securityv1alpha1.WorkloadTargetRef{
+					Kind: securityv1alpha1.WorkloadKindDeployment,
+					Name: simpleAppClientDeploymentName,
+				},
+				Direction: networkingv1.PolicyTypeEgress,
+			},
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 				Backend: securityv1alpha1.PolicyBackendKubernetes,
 				Kubernetes: &networkingv1.NetworkPolicySpec{
@@ -172,6 +185,13 @@ func assessKubernetesProposalGenerated(ctx context.Context, t *testing.T, _ *env
 		Name:      "deployment-" + simpleAppServerDeploymentName + "-ingress",
 		Namespace: namespace,
 		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
+			WorkloadTargetingSpec: securityv1alpha1.WorkloadTargetingSpec{
+				TargetRef: securityv1alpha1.WorkloadTargetRef{
+					Kind: securityv1alpha1.WorkloadKindDeployment,
+					Name: simpleAppServerDeploymentName,
+				},
+				Direction: networkingv1.PolicyTypeIngress,
+			},
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 				Backend: securityv1alpha1.PolicyBackendKubernetes,
 				Kubernetes: &networkingv1.NetworkPolicySpec{
@@ -259,6 +279,7 @@ func assessPolicyProposalsPromoted(ctx context.Context, t *testing.T, _ *envconf
 		require.True(t, policy.HasPromotedLabel(proposal.Name))
 		require.Equal(t, securityv1alpha1.WorkloadNetworkPolicyModeMonitor, policy.Spec.Mode)
 		require.Equal(t, proposal.Spec.PolicyBackendSpec, policy.Spec.PolicyBackendSpec)
+		require.Equal(t, proposal.Spec.WorkloadTargetingSpec, policy.Spec.WorkloadTargetingSpec)
 		policies = append(policies, policy)
 
 		// We expect the proposal to be deleted

@@ -53,6 +53,8 @@ func promoteIstioProposalToMonitor(ctx context.Context, t *testing.T, _ *envconf
 		"promoted policy mode does not match expected")
 	require.Equal(t, proposal.Spec.PolicyBackendSpec, policy.Spec.PolicyBackendSpec,
 		"promoted policy backend spec does not match the proposal")
+	require.Equal(t, proposal.Spec.WorkloadTargetingSpec, policy.Spec.WorkloadTargetingSpec,
+		"promoted policy targeting does not match the proposal")
 
 	require.Eventually(t, func() bool {
 		var p v1alpha1.WorkloadNetworkPolicyProposal

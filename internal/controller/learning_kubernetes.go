@@ -81,6 +81,7 @@ func (r *LearningReconciler) reconcileKubernetesProposal(
 	}
 
 	if _, err = controllerutil.CreateOrUpdate(ctx, r.Client, proposal, func() error {
+		proposal.Spec.WorkloadTargetingSpec = workloadTargetingSpec(workload, direction)
 		proposal.Spec.Backend = securityv1alpha1.PolicyBackendKubernetes
 		if proposal.Spec.Kubernetes == nil {
 			proposal.Spec.Kubernetes = &networkingv1.NetworkPolicySpec{}

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,6 +23,7 @@ func newTestProposalReconciler(t *testing.T, objs ...client.Object) *WorkloadNet
 	t.Helper()
 
 	scheme := runtime.NewScheme()
+	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, securityv1alpha1.AddToScheme(scheme))
 
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
@@ -36,6 +38,13 @@ func newIstioProposal() *securityv1alpha1.WorkloadNetworkPolicyProposal {
 	return &securityv1alpha1.WorkloadNetworkPolicyProposal{
 		Name: "example", Namespace: "default",
 		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
+			WorkloadTargetingSpec: securityv1alpha1.WorkloadTargetingSpec{
+				TargetRef: securityv1alpha1.WorkloadTargetRef{
+					Kind: securityv1alpha1.WorkloadKindDeployment,
+					Name: "example",
+				},
+				Direction: networkingv1.PolicyTypeIngress,
+			},
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 				Backend: securityv1alpha1.PolicyBackendIstio,
 				Istio: &securityv1alpha1.IstioAuthorizationPolicySpec{
@@ -74,6 +83,13 @@ func newBaseProposal() *securityv1alpha1.WorkloadNetworkPolicyProposal {
 	return &securityv1alpha1.WorkloadNetworkPolicyProposal{
 		Name: "example", Namespace: "default",
 		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
+			WorkloadTargetingSpec: securityv1alpha1.WorkloadTargetingSpec{
+				TargetRef: securityv1alpha1.WorkloadTargetRef{
+					Kind: securityv1alpha1.WorkloadKindDeployment,
+					Name: "example",
+				},
+				Direction: networkingv1.PolicyTypeEgress,
+			},
 			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
 				Backend: securityv1alpha1.PolicyBackendKubernetes,
 				Kubernetes: &networkingv1.NetworkPolicySpec{
@@ -184,6 +200,7 @@ func TestWorkloadNetworkPolicyProposalReconciler(t *testing.T) {
 				require.Equal(t, baseProposal.Spec.Backend, p.Spec.Backend)
 				require.Equal(t, baseProposal.Spec.Kubernetes, p.Spec.Kubernetes)
 				require.Equal(t, baseProposal.Spec.Istio, p.Spec.Istio)
+				require.Equal(t, baseProposal.Spec.WorkloadTargetingSpec, p.Spec.WorkloadTargetingSpec)
 			},
 		},
 		{
@@ -202,6 +219,7 @@ func TestWorkloadNetworkPolicyProposalReconciler(t *testing.T) {
 				require.Equal(t, baseProposal.Spec.Backend, p.Spec.Backend)
 				require.Equal(t, baseProposal.Spec.Kubernetes, p.Spec.Kubernetes)
 				require.Equal(t, baseProposal.Spec.Istio, p.Spec.Istio)
+				require.Equal(t, baseProposal.Spec.WorkloadTargetingSpec, p.Spec.WorkloadTargetingSpec)
 			},
 		},
 		{
@@ -220,6 +238,7 @@ func TestWorkloadNetworkPolicyProposalReconciler(t *testing.T) {
 				require.Equal(t, istioProposal.Spec.Backend, p.Spec.Backend)
 				require.Equal(t, istioProposal.Spec.Kubernetes, p.Spec.Kubernetes)
 				require.Equal(t, istioProposal.Spec.Istio, p.Spec.Istio)
+				require.Equal(t, istioProposal.Spec.WorkloadTargetingSpec, p.Spec.WorkloadTargetingSpec)
 
 				var leftover securityv1alpha1.WorkloadNetworkPolicyProposal
 				err = reconciler.Get(t.Context(), istioProposal.NamespacedName(), &leftover)
@@ -243,6 +262,7 @@ func TestWorkloadNetworkPolicyProposalReconciler(t *testing.T) {
 				require.Equal(t, istioProposal.Spec.Backend, p.Spec.Backend)
 				require.Equal(t, istioProposal.Spec.Kubernetes, p.Spec.Kubernetes)
 				require.Equal(t, istioProposal.Spec.Istio, p.Spec.Istio)
+				require.Equal(t, istioProposal.Spec.WorkloadTargetingSpec, p.Spec.WorkloadTargetingSpec)
 
 				var leftover securityv1alpha1.WorkloadNetworkPolicyProposal
 				err = reconciler.Get(t.Context(), istioProposal.NamespacedName(), &leftover)
@@ -278,4 +298,80 @@ func TestWorkloadNetworkPolicyProposalReconciler(t *testing.T) {
 			tt.assert(t, reconciler)
 		})
 	}
+}
+
+func TestPromoteBothDirectionsSameSelector(t *testing.T) {
+	t.Parallel()
+
+	selector := metav1.LabelSelector{
+		MatchLabels: map[string]string{"app": "frontend"},
+	}
+	targetRef := securityv1alpha1.WorkloadTargetRef{
+		Kind: securityv1alpha1.WorkloadKindDeployment,
+		Name: "frontend",
+	}
+
+	egressProposal := &securityv1alpha1.WorkloadNetworkPolicyProposal{
+		Name:      "deployment-frontend-egress",
+		Namespace: "default",
+		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
+			WorkloadTargetingSpec: securityv1alpha1.WorkloadTargetingSpec{
+				TargetRef: targetRef,
+				Direction: networkingv1.PolicyTypeEgress,
+			},
+			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
+				Backend: securityv1alpha1.PolicyBackendKubernetes,
+				Kubernetes: &networkingv1.NetworkPolicySpec{
+					PodSelector: selector,
+					PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
+				},
+			},
+		},
+	}
+	egressProposal.SetPromotionLabel(securityv1alpha1.WorkloadNetworkPolicyModeMonitor)
+
+	ingressProposal := &securityv1alpha1.WorkloadNetworkPolicyProposal{
+		Name:      "deployment-frontend-ingress",
+		Namespace: "default",
+		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
+			WorkloadTargetingSpec: securityv1alpha1.WorkloadTargetingSpec{
+				TargetRef: targetRef,
+				Direction: networkingv1.PolicyTypeIngress,
+			},
+			PolicyBackendSpec: securityv1alpha1.PolicyBackendSpec{
+				Backend: securityv1alpha1.PolicyBackendKubernetes,
+				Kubernetes: &networkingv1.NetworkPolicySpec{
+					PodSelector: selector,
+					PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+				},
+			},
+		},
+	}
+	ingressProposal.SetPromotionLabel(securityv1alpha1.WorkloadNetworkPolicyModeMonitor)
+
+	frontend := &appsv1.Deployment{
+		Name: "frontend", Namespace: "default",
+	}
+	reconciler := newTestProposalReconciler(t, frontend, egressProposal, ingressProposal)
+
+	_, err := reconciler.Reconcile(t.Context(), ctrl.Request{NamespacedName: egressProposal.NamespacedName()})
+	require.NoError(t, err)
+	_, err = reconciler.Reconcile(t.Context(), ctrl.Request{NamespacedName: ingressProposal.NamespacedName()})
+	require.NoError(t, err)
+
+	var egressPolicy, ingressPolicy securityv1alpha1.WorkloadNetworkPolicy
+	require.NoError(t, reconciler.Get(t.Context(), egressProposal.NamespacedName(), &egressPolicy))
+	require.NoError(t, reconciler.Get(t.Context(), ingressProposal.NamespacedName(), &ingressPolicy))
+
+	require.Equal(t, selector, egressPolicy.Spec.Kubernetes.PodSelector)
+	require.Equal(t, selector, ingressPolicy.Spec.Kubernetes.PodSelector)
+	require.Equal(t, egressPolicy.Spec.Kubernetes.PodSelector, ingressPolicy.Spec.Kubernetes.PodSelector)
+	require.Equal(t, networkingv1.PolicyTypeEgress, egressPolicy.Spec.Direction)
+	require.Equal(t, networkingv1.PolicyTypeIngress, ingressPolicy.Spec.Direction)
+	require.NotEqual(t, egressPolicy.Spec.Direction, ingressPolicy.Spec.Direction)
+	require.Equal(t, targetRef, egressPolicy.Spec.TargetRef)
+	require.Equal(t, targetRef, ingressPolicy.Spec.TargetRef)
+	// Values come from the proposal spec, not from parsing the proposal name.
+	require.Equal(t, egressProposal.Spec.WorkloadTargetingSpec, egressPolicy.Spec.WorkloadTargetingSpec)
+	require.Equal(t, ingressProposal.Spec.WorkloadTargetingSpec, ingressPolicy.Spec.WorkloadTargetingSpec)
 }
