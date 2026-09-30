@@ -77,7 +77,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Attestation
-        uses: kubewarden/runtime-enforcer/.github/actions/attestation@9b3cb3764619b1695abd4d0741990da14edd6003
+        uses: kubewarden/runtime-enforcer/.github/actions/attestation@934dcbd1c1d5edf8eed5e5a154d30fe57857bfb0
         with:
           arch: ${{ matrix.arch }}
           image: ${{ matrix.component }}
