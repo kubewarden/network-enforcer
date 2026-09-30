@@ -98,25 +98,18 @@ jobs:
   commitlint:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    env:
-      COMMITLINT_VERSION: "20.5.0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Cache commitlint
-        id: cache-commitlint
+      - name: Cache npm downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            node_modules
-            package.json
-            package-lock.json
-          key: ${{ runner.os }}-commitlint-${{ env.COMMITLINT_VERSION }}
+          path: ~/.npm
+          key: ${{ runner.os }}-commitlint-${{ hashFiles('package-lock.json') }}
       - name: Install commitlint
-        if: steps.cache-commitlint.outputs.cache-hit != 'true'
-        run: npm install -D @commitlint/cli@${{ env.COMMITLINT_VERSION }} @commitlint/config-conventional@${{ env.COMMITLINT_VERSION }}
+        run: npm ci
       - name: Print versions
         run: |
           git --version

@@ -16,6 +16,9 @@ Dockerfile.cross
 # Go workspace file
 go.work
 
+# Node.js dependencies (commitlint tooling)
+node_modules/
+
 # Kubernetes Generated files - skip generated files, except for vendored files
 !vendor/**/zz_generated.*
 

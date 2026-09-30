@@ -166,7 +166,7 @@ jobs:
 
   update-charts:
     needs: [create-release]
-    uses: ./.github/workflows/update-charts.yml
+    uses: $/.github/workflows/update-charts.yml
     permissions:
       contents: write
       pull-requests: write
