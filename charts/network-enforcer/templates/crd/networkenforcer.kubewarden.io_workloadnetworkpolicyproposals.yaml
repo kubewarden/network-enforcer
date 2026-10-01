@@ -640,6 +640,9 @@ spec:
                   name:
                     description: Name is the workload name in the same namespace as
                       this object.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                     type: string
                 required:
                 - kind
@@ -654,6 +657,9 @@ spec:
             - message: Istio backend accepts direction Ingress only because ztunnel
                 enforces inbound
               rule: self.backend != 'istio' || self.direction != 'Egress'
+            - message: kubernetes.policyTypes must equal [direction]
+              rule: self.backend != 'kubernetes' || (has(self.kubernetes.policyTypes)
+                && self.kubernetes.policyTypes == [self.direction])
             - message: backend must match exactly one populated backend spec
               rule: 'self.backend == ''kubernetes'' ? (has(self.kubernetes) && !has(self.istio))
                 : (self.backend == ''istio'' ? (has(self.istio) && !has(self.kubernetes))

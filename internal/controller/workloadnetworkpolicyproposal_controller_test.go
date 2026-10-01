@@ -312,7 +312,7 @@ func TestPromoteBothDirectionsSameSelector(t *testing.T) {
 	}
 
 	egressProposal := &securityv1alpha1.WorkloadNetworkPolicyProposal{
-		Name:      "deployment-frontend-egress",
+		Name:      "proposal-a",
 		Namespace: "default",
 		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
 			WorkloadTargetingSpec: securityv1alpha1.WorkloadTargetingSpec{
@@ -331,7 +331,7 @@ func TestPromoteBothDirectionsSameSelector(t *testing.T) {
 	egressProposal.SetPromotionLabel(securityv1alpha1.WorkloadNetworkPolicyModeMonitor)
 
 	ingressProposal := &securityv1alpha1.WorkloadNetworkPolicyProposal{
-		Name:      "deployment-frontend-ingress",
+		Name:      "proposal-b",
 		Namespace: "default",
 		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
 			WorkloadTargetingSpec: securityv1alpha1.WorkloadTargetingSpec{
@@ -349,10 +349,7 @@ func TestPromoteBothDirectionsSameSelector(t *testing.T) {
 	}
 	ingressProposal.SetPromotionLabel(securityv1alpha1.WorkloadNetworkPolicyModeMonitor)
 
-	frontend := &appsv1.Deployment{
-		Name: "frontend", Namespace: "default",
-	}
-	reconciler := newTestProposalReconciler(t, frontend, egressProposal, ingressProposal)
+	reconciler := newTestProposalReconciler(t, egressProposal, ingressProposal)
 
 	_, err := reconciler.Reconcile(t.Context(), ctrl.Request{NamespacedName: egressProposal.NamespacedName()})
 	require.NoError(t, err)
@@ -371,7 +368,6 @@ func TestPromoteBothDirectionsSameSelector(t *testing.T) {
 	require.NotEqual(t, egressPolicy.Spec.Direction, ingressPolicy.Spec.Direction)
 	require.Equal(t, targetRef, egressPolicy.Spec.TargetRef)
 	require.Equal(t, targetRef, ingressPolicy.Spec.TargetRef)
-	// Values come from the proposal spec, not from parsing the proposal name.
 	require.Equal(t, egressProposal.Spec.WorkloadTargetingSpec, egressPolicy.Spec.WorkloadTargetingSpec)
 	require.Equal(t, ingressProposal.Spec.WorkloadTargetingSpec, ingressPolicy.Spec.WorkloadTargetingSpec)
 }

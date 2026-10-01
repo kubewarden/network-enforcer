@@ -57,11 +57,15 @@ type WorkloadTargetRef struct {
 	Kind WorkloadKind `json:"kind"`
 
 	// Name is the workload name in the same namespace as this object.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	Name string `json:"name"`
 }
 
 // WorkloadTargetingSpec identifies the target workload and traffic direction.
 // +kubebuilder:validation:XValidation:rule="self.backend != 'istio' || self.direction != 'Egress'",message="Istio backend accepts direction Ingress only because ztunnel enforces inbound"
+// +kubebuilder:validation:XValidation:rule="self.backend != 'kubernetes' || (has(self.kubernetes.policyTypes) && self.kubernetes.policyTypes == [self.direction])",message="kubernetes.policyTypes must equal [direction]"
 type WorkloadTargetingSpec struct {
 	// TargetRef is the target workload.
 	TargetRef WorkloadTargetRef `json:"targetRef"`

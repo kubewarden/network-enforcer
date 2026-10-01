@@ -161,11 +161,32 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 								},
 								MatchExpressions: nil,
 							},
+							PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
 						},
 					},
 					WorkloadTargetingSpec: exampleTarget(networkingv1.PolicyTypeEgress),
 				},
 			},
+		},
+		{
+			name: "kubernetes_direction_policy_types_mismatch",
+			policy: &WorkloadNetworkPolicy{
+				ObjectMeta: objectMeta,
+				Spec: WorkloadNetworkPolicySpec{
+					Mode: WorkloadNetworkPolicyModeMonitor,
+					PolicyBackendSpec: PolicyBackendSpec{
+						Backend: PolicyBackendKubernetes,
+						Kubernetes: &networkingv1.NetworkPolicySpec{
+							PodSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "example"},
+							},
+							PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
+						},
+					},
+					WorkloadTargetingSpec: exampleTarget(networkingv1.PolicyTypeIngress),
+				},
+			},
+			isInvalid: true,
 		},
 		{
 			name: "istio_valid_policy",
@@ -252,6 +273,56 @@ func TestValidationAdmissionPolicies(t *testing.T) {
 						TargetRef: WorkloadTargetRef{
 							Kind: WorkloadKindPod,
 							Name: "example",
+						},
+						Direction: networkingv1.PolicyTypeIngress,
+					},
+				},
+			},
+			isInvalid: true,
+		},
+		{
+			name: "empty_target_name",
+			policy: &WorkloadNetworkPolicy{
+				ObjectMeta: objectMeta,
+				Spec: WorkloadNetworkPolicySpec{
+					Mode: WorkloadNetworkPolicyModeMonitor,
+					PolicyBackendSpec: PolicyBackendSpec{
+						Backend: PolicyBackendKubernetes,
+						Kubernetes: &networkingv1.NetworkPolicySpec{
+							PodSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "example"},
+							},
+						},
+					},
+					WorkloadTargetingSpec: WorkloadTargetingSpec{
+						TargetRef: WorkloadTargetRef{
+							Kind: WorkloadKindDeployment,
+							Name: "",
+						},
+						Direction: networkingv1.PolicyTypeIngress,
+					},
+				},
+			},
+			isInvalid: true,
+		},
+		{
+			name: "invalid_target_name",
+			policy: &WorkloadNetworkPolicy{
+				ObjectMeta: objectMeta,
+				Spec: WorkloadNetworkPolicySpec{
+					Mode: WorkloadNetworkPolicyModeMonitor,
+					PolicyBackendSpec: PolicyBackendSpec{
+						Backend: PolicyBackendKubernetes,
+						Kubernetes: &networkingv1.NetworkPolicySpec{
+							PodSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "example"},
+							},
+						},
+					},
+					WorkloadTargetingSpec: WorkloadTargetingSpec{
+						TargetRef: WorkloadTargetRef{
+							Kind: WorkloadKindDeployment,
+							Name: "Invalid_Name",
 						},
 						Direction: networkingv1.PolicyTypeIngress,
 					},
