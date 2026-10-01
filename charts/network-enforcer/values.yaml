@@ -109,7 +109,7 @@ controller:
           repository: fluent/fluent-bit
           # The image tag used by fluent-bit
           # @schema required
-          tag: 5.1.2
+          tag: 5.1.3
           pullPolicy: IfNotPresent
     cilium:
       # Hubble Relay address (host:port). Default is TLS on port 443.
