@@ -54,4 +54,4 @@ annotations:
     - name: otel-collector
       image: otel/opentelemetry-collector-contrib:0.161.0
     - name: fluent-bit
-      image: fluent/fluent-bit:5.1.2
+      image: fluent/fluent-bit:5.1.3
