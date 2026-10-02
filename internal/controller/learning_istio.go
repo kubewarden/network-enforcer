@@ -22,6 +22,7 @@ func (r *LearningReconciler) updateProposal(
 	// so learning always targets the ingress proposal.
 	proposal := getProposalMetadata(evt.Dest, networkingv1.PolicyTypeIngress)
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, proposal, func() error {
+		proposal.Spec.WorkloadTargetingSpec = workloadTargetingSpec(evt.Dest, networkingv1.PolicyTypeIngress)
 		// Populate the Istio backend only when creating the resource the first time.
 		if proposal.Spec.Istio == nil {
 			proposal.Spec.Backend = securityv1alpha1.PolicyBackendIstio

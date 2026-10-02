@@ -5,16 +5,16 @@ metadata:
 spec:
   mode: protect
   backend: kubernetes
+  targetRef:
+    kind: Deployment
+    name: nginx
+  direction: Ingress
   kubernetes:
     podSelector:
       matchLabels:
         app: nginx
     policyTypes:
       - Ingress
-      - Egress
     ingress:
       - from:
-          - podSelector: {}
-    egress:
-      - to:
           - podSelector: {}

@@ -127,6 +127,7 @@ func TestProcessKubernetesLearningEvent(t *testing.T) {
 		require.Equal(t, securityv1alpha1.PolicyBackendKubernetes, proposal.Spec.Backend)
 		require.NotNil(t, proposal.Spec.Kubernetes)
 		require.Nil(t, proposal.Spec.Istio)
+		require.Equal(t, workloadTargetingSpec(workload, direction), proposal.Spec.WorkloadTargetingSpec)
 		require.Equal(t, workload.Selector, proposal.Spec.Kubernetes.PodSelector)
 		require.Equal(t, []networkingv1.PolicyType{direction}, proposal.Spec.Kubernetes.PolicyTypes)
 

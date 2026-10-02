@@ -22,7 +22,8 @@ import (
 )
 
 type WorkloadNetworkPolicyProposalSpec struct {
-	PolicyBackendSpec `json:",inline"`
+	PolicyBackendSpec     `json:",inline"`
+	WorkloadTargetingSpec `json:",inline"`
 }
 
 type WorkloadNetworkPolicyProposalStatus struct {

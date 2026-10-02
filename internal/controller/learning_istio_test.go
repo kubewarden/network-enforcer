@@ -68,6 +68,11 @@ func TestProcessIstioLearningEvent(t *testing.T) {
 		require.Equal(t, securityv1alpha1.PolicyBackendIstio, proposal.Spec.Backend)
 		require.NotNil(t, proposal.Spec.Istio)
 		require.Nil(t, proposal.Spec.Kubernetes)
+		require.Equal(
+			t,
+			workloadTargetingSpec(httpServerRef, networkingv1.PolicyTypeIngress),
+			proposal.Spec.WorkloadTargetingSpec,
+		)
 		require.Equal(t, httpServerRef.Selector, proposal.Spec.Istio.Selector)
 		require.ElementsMatch(t, rules, proposal.Spec.Istio.Rules)
 	}
