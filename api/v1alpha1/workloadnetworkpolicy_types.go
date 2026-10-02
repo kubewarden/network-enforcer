@@ -61,8 +61,11 @@ type WorkloadNetworkPolicyStatus struct {
 	// ViolationCount is the total number of violation records ever
 	// observed for this policy, including those that have already been
 	// trimmed out of Violations or cleared because the flow is now
-	// permitted by the policy template. It is not guaranteed to be strongly
-	// consistent and may be temporarily outdated.
+	// permitted by the policy template. It counts each violation event
+	// reported by the CNI/scraper, not unique TCP sessions: a single
+	// connection may therefore increment this more than once when the
+	// backend emits multiple samples for the same session. It is not
+	// guaranteed to be strongly consistent and may be temporarily outdated.
 	// +kubebuilder:default=0
 	// +optional
 	ViolationCount int64 `json:"violationCount"`
