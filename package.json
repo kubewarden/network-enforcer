@@ -1,0 +1,11 @@
+{
+  "name": "network-enforcer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Commitlint tooling for the network-enforcer repository",
+  "devDependencies": {
+    "@commitlint/cli": "20.5.0",
+    "@commitlint/config-conventional": "20.5.0"
+  },
+  "type": "module"
+}

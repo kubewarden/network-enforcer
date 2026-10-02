@@ -332,7 +332,7 @@ request. The rules are in `commitlint.config.js`. To run commitlint on your
 machine:
 
 ```console
-npm install -D @commitlint/cli @commitlint/config-conventional
+npm ci
 npx commitlint --from main
 ```
 
