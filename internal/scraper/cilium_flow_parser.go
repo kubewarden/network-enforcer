@@ -89,13 +89,10 @@ func fromEndpointToWorkloadRef(endpoint *hubbleObserver.Endpoint) (*securityv1al
 func discardFlow(flowInfo *flowpb.Flow) bool {
 	isReply := flowInfo.GetIsReply()
 	// For now we ignore reply flows, as they are not relevant for learning traffic for k8s network policies.
-	// We don't filter on TCP flags. This means that we will see the same flow multiple times with different TCP flags.
-	// example:
-	//	1. SYN
-	//	2. ACK, ACK/PSH
-	//	3. FIN
-	//  4. ACK
-	// this is probably not ideal but acceptable for now.
+	// We intentionally do not filter on TraceReason or TCP flags: we report
+	// each Hubble forwarded event as observed. Multiple events can belong to
+	// the same TCP session (e.g. SYN, ESTABLISHED ACK/PSH, FIN), so
+	// violationCount may overcount relative to unique sessions.
 	//
 	// In flows with `DROPPED` verdict, `is_reply` field is `nil` so we shouldn't drop them.
 	// We should just drop when the field is there and it is true.
