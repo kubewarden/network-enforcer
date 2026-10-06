@@ -52,6 +52,6 @@ annotations:
     - name: controller
       image: ghcr.io/kubewarden/network-enforcer/controller:v0.2.0
     - name: otel-collector
-      image: otel/opentelemetry-collector-contrib:0.161.0
+      image: otel/opentelemetry-collector-contrib:0.162.0
     - name: fluent-bit
       image: fluent/fluent-bit:5.1.3
