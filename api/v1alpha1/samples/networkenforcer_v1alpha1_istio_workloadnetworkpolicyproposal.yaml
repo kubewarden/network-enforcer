@@ -1,0 +1,23 @@
+apiVersion: networkenforcer.kubewarden.io/v1alpha1
+kind: WorkloadNetworkPolicyProposal
+metadata:
+  name: deployment-http-server-ingress
+spec:
+  backend: istio
+  targetRef:
+    kind: Deployment
+    name: http-server
+  direction: Ingress
+  istio:
+    selector:
+      matchLabels:
+        app: http-server
+    rules:
+      - from:
+          - source:
+              principals:
+                - "cluster.local/ns/default/sa/http-client-sa"
+        to:
+          - operation:
+              ports:
+                - "80"
