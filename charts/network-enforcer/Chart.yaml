@@ -23,7 +23,7 @@ maintainers:
 # Versions are expected to follow Semantic Versioning (https://semver.org/)
 version: 0.1.3
 # This is the version of Network Enforcer
-appVersion: v0.2.0
+appVersion: v0.3.0
 
 annotations:
   # required ones:
