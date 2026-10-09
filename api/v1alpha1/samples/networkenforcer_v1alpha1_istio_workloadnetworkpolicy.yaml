@@ -5,6 +5,10 @@ metadata:
 spec:
   mode: protect
   backend: istio
+  targetRef:
+    kind: Deployment
+    name: http-server
+  direction: Ingress
   istio:
     selector:
       matchLabels:

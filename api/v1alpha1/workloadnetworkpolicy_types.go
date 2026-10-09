@@ -40,7 +40,8 @@ const (
 
 // WorkloadNetworkPolicySpec defines the desired state of a WorkloadNetworkPolicy.
 type WorkloadNetworkPolicySpec struct {
-	PolicyBackendSpec `json:",inline"`
+	PolicyBackendSpec     `json:",inline"`
+	WorkloadTargetingSpec `json:",inline"`
 
 	// Mode controls whether the policy is observed (monitor) or actively
 	// enforced (protect). Defaults to monitor.

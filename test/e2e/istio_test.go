@@ -8,6 +8,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
@@ -92,6 +93,13 @@ func assessIstioProposalGenerated(ctx context.Context, t *testing.T, _ *envconf.
 		Name:      "deployment-" + simpleAppServerDeploymentName + "-ingress",
 		Namespace: namespace,
 		Spec: v1alpha1.WorkloadNetworkPolicyProposalSpec{
+			WorkloadTargetingSpec: v1alpha1.WorkloadTargetingSpec{
+				TargetRef: v1alpha1.WorkloadTargetRef{
+					Kind: v1alpha1.WorkloadKindDeployment,
+					Name: simpleAppServerDeploymentName,
+				},
+				Direction: networkingv1.PolicyTypeIngress,
+			},
 			PolicyBackendSpec: v1alpha1.PolicyBackendSpec{
 				Backend: v1alpha1.PolicyBackendIstio,
 				Istio: &v1alpha1.IstioAuthorizationPolicySpec{
@@ -130,6 +138,8 @@ func assessIstioProposalGenerated(ctx context.Context, t *testing.T, _ *envconf.
 		"expected Istio ingress proposal %q was not generated", expected.Name)
 
 	require.Equal(t, expected.Spec.Backend, proposal.Spec.Backend, "proposal backend does not match expected")
+	require.Equal(t, expected.Spec.WorkloadTargetingSpec, proposal.Spec.WorkloadTargetingSpec,
+		"proposal targeting does not match expected")
 	require.NotNil(t, proposal.Spec.Istio, "proposal has no Istio backend spec")
 	require.Equal(
 		t,

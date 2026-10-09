@@ -18,6 +18,19 @@ func getProposalName(wk *securityv1alpha1.WorkloadRef, direction networkingv1.Po
 	)
 }
 
+func workloadTargetingSpec(
+	wk *securityv1alpha1.WorkloadRef,
+	direction networkingv1.PolicyType,
+) securityv1alpha1.WorkloadTargetingSpec {
+	return securityv1alpha1.WorkloadTargetingSpec{
+		TargetRef: securityv1alpha1.WorkloadTargetRef{
+			Kind: wk.OwnerKind,
+			Name: wk.OwnerName,
+		},
+		Direction: direction,
+	}
+}
+
 func getProposalMetadata(
 	wk *securityv1alpha1.WorkloadRef,
 	direction networkingv1.PolicyType,
@@ -25,5 +38,8 @@ func getProposalMetadata(
 	return &securityv1alpha1.WorkloadNetworkPolicyProposal{
 		Name:      getProposalName(wk, direction),
 		Namespace: wk.Namespace,
+		Spec: securityv1alpha1.WorkloadNetworkPolicyProposalSpec{
+			WorkloadTargetingSpec: workloadTargetingSpec(wk, direction),
+		},
 	}
 }
