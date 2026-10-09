@@ -3,19 +3,25 @@ kind: WorkloadNetworkPolicyProposal
 metadata:
   name: deployment-nginx-deployment-ingress
 spec:
-  ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: default
-      podSelector:
-        matchLabels:
-          app: ubuntu
-    ports:
-    - port: 80
-      protocol: TCP
-  podSelector:
-    matchLabels:
-      app: nginx
-  policyTypes:
-  - Ingress
+  backend: kubernetes
+  targetRef:
+    kind: Deployment
+    name: nginx-deployment
+  direction: Ingress
+  kubernetes:
+    podSelector:
+      matchLabels:
+        app: nginx
+    policyTypes:
+    - Ingress
+    ingress:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: default
+        podSelector:
+          matchLabels:
+            app: ubuntu
+      ports:
+      - port: 80
+        protocol: TCP
