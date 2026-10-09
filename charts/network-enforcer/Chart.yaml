@@ -50,7 +50,7 @@ annotations:
   # Reference: https://artifacthub.io/docs/topics/annotations/helm/
   artifacthub.io/images: |
     - name: controller
-      image: ghcr.io/kubewarden/network-enforcer/controller:v0.2.0
+      image: ghcr.io/kubewarden/network-enforcer/controller:v0.3.0
     - name: otel-collector
       image: otel/opentelemetry-collector-contrib:0.162.0
     - name: fluent-bit
