@@ -245,8 +245,11 @@ the commit of the reusable workflow, not the Network Enforcer tag, so the
 commands match it with `--certificate-identity-regexp`. That identity alone names the
 builder, not the release. The commands also pin the caller repository and the
 release tag with `--certificate-github-workflow-repository` and
-`--certificate-github-workflow-ref`, so a signed file from another component
-or another release does not pass.
+`--certificate-github-workflow-ref`, so a signed file from another repository
+or another release does not pass. The flags do not bind the component. Every
+component of one release shares these certificate values, so a blob and its
+bundle from one component verify under another component's filename. To check
+which image a file describes, read the `subject` field inside the file.
 
 The same workflow runs `actions/attest` on the multi-architecture image. That
 attestation gives the image SLSA Build L3. To verify it, run:
