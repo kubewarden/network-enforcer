@@ -91,15 +91,21 @@ func resolveOutcome(role string, err error) processFlowResult {
 	return processFlowError(fmt.Errorf("cannot resolve %s workload: %w", role, err))
 }
 
+// resolveViolationDenyingPolicy fills in the WorkloadNetworkPolicy targeting the
+// violation subject when the provider did not report a policy. It is
+// best-effort: when no WNP targets the subject, several do, or the lookup fails,
+// the policy stays empty and the observation is kept, so it is still logged and
+// buffered. The controller then attributes it or counts it as unattributed with
+// the reason.
 func resolveViolationDenyingPolicy(
 	ctx context.Context,
 	c client.Reader,
 	observation *violation.Observation,
-) error {
+) {
 	if observation.DenyingPolicyName != "" {
 		// Calico could have already resolved the policy name
 		// so we do that only if necessary
-		return nil
+		return
 	}
 	// this is the correct workload if the direction is egress
 	ref := &observation.Source
@@ -109,12 +115,11 @@ func resolveViolationDenyingPolicy(
 
 	policy, err := workload.ResolveDenyingPolicy(ctx, c, ref, observation.Direction)
 	if err != nil {
-		return fmt.Errorf("cannot resolve denying policy: %w", err)
+		return
 	}
 
 	observation.DenyingPolicyName = policy.Name
 	observation.DenyingPolicyNamespace = policy.Namespace
-	return nil
 }
 
 func resolveParsedFlow(
@@ -147,9 +152,7 @@ func resolveParsedFlow(
 
 	// in case of learning event there are no other things to do.
 	if parsed.outcome == processFlowOutcomeViolation {
-		if err := resolveViolationDenyingPolicy(ctx, c, &parsed.observation); err != nil {
-			return processFlowError(err)
-		}
+		resolveViolationDenyingPolicy(ctx, c, &parsed.observation)
 	}
 
 	return parsed

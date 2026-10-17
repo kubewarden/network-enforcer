@@ -604,6 +604,31 @@ func TestProcessCalicoFlowResolvesWorkloadsWithFakeClient(t *testing.T) {
 				DenyingPolicyName:      sourcePolicyName,
 			}),
 		},
+		{
+			// No WNP targets the StatefulSet: the observation is kept with no
+			// policy so the controller can count it as unattributed.
+			name: "deny_egress_without_target_policy_keeps_violation",
+			flow: calicoFlowResult(func() *pb.FlowKey {
+				key := denySrcWorkloadKey()
+				key.SourceName = "web-*"
+				return key
+			}()),
+			processFlowResult: processFlowRecordViolation(violation.Observation{
+				Provider:  securityv1alpha1.PolicyBackendKubernetes,
+				Direction: networkingv1.PolicyTypeEgress,
+				Timestamp: metav1.NewTime(calicoTestFlowTime()),
+				Source: securityv1alpha1.WorkloadRef{
+					Namespace: defaultCalicoTestNamespace,
+					OwnerName: "web",
+					OwnerKind: securityv1alpha1.WorkloadKindStatefulSet,
+					Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"app": "web"}},
+				},
+				Dest:     *deployDest,
+				Protocol: corev1.ProtocolTCP,
+				DstPort:  18080,
+				Action:   securityv1alpha1.WorkloadNetworkPolicyModeProtect,
+			}),
+		},
 	}
 
 	for _, tc := range tests {

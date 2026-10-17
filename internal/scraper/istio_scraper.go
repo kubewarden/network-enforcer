@@ -18,6 +18,7 @@ import (
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 
@@ -281,6 +282,7 @@ func policyEventToObservation(
 
 	return violation.Observation{
 		Provider:               securityv1alpha1.PolicyBackendIstio,
+		Direction:              networkingv1.PolicyTypeIngress,
 		Timestamp:              timestampFromRecord(rec),
 		Source:                 securityv1alpha1.WorkloadRef{OwnerName: attrs[srcAddrKey]},
 		Dest:                   securityv1alpha1.WorkloadRef{Namespace: dstNamespace, OwnerName: dstName},

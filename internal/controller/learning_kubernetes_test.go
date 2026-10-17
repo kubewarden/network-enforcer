@@ -260,10 +260,16 @@ func TestProcessKubernetesLearningEvent(t *testing.T) {
 				observations := r.violationBuffer.Drain()
 				require.Len(t, observations, 2)
 
-				assertObservations := func(t *testing.T, obs violation.Observation, policyName string) {
+				assertObservations := func(
+					t *testing.T,
+					obs violation.Observation,
+					policyName string,
+					direction networkingv1.PolicyType,
+				) {
 					t.Helper()
 					require.Equal(t, *frontendRef, obs.Source)
 					require.Equal(t, *backendRef, obs.Dest)
+					require.Equal(t, direction, obs.Direction)
 					require.Equal(t, corev1.ProtocolTCP, obs.Protocol)
 					require.Equal(t, int32(8080), obs.DstPort)
 					require.Equal(t, securityv1alpha1.WorkloadNetworkPolicyModeMonitor, obs.Action)
@@ -281,11 +287,13 @@ func TestProcessKubernetesLearningEvent(t *testing.T) {
 					t,
 					egressViolation,
 					getProposalName(frontendRef, networkingv1.PolicyTypeEgress),
+					networkingv1.PolicyTypeEgress,
 				)
 				assertObservations(
 					t,
 					ingressViolation,
 					getProposalName(backendRef, networkingv1.PolicyTypeIngress),
+					networkingv1.PolicyTypeIngress,
 				)
 			},
 		},

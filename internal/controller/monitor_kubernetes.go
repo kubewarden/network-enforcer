@@ -115,6 +115,7 @@ func generateViolationObservation(
 		DenyingPolicyNamespace: workload.Namespace,
 		DenyingPolicyName:      policyName,
 		Provider:               securityv1alpha1.PolicyBackendKubernetes,
+		Direction:              direction,
 	}
 	return observation
 }

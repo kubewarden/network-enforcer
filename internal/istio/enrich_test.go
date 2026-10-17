@@ -341,6 +341,41 @@ func TestEnrich(t *testing.T) {
 			},
 		},
 		{
+			// A policy reported by ztunnel is kept even when the destination's own
+			// WNP resolves, so the controller can detect that it belongs to another
+			// workload and count the disagreement.
+			name: "keeps reported policy instead of the destination's WNP",
+			objs: []client.Object{
+				destPod("server", "ns-app", "server-sa", map[string]string{"app": "server"}),
+				istioWNP("ns-app", "user-named-wnp", "server"),
+				istioWNP("ns-app", "canary-wnp", "canary"),
+			},
+			obs: violation.Observation{
+				ViolationInfo: securityv1alpha1.ViolationInfo{
+					Source: securityv1alpha1.WorkloadRef{OwnerName: "some-external-source"},
+					Dest: securityv1alpha1.WorkloadRef{
+						Namespace: "ns-app",
+						OwnerName: "server-abc123-pod",
+					},
+					DenyingPolicyNamespace: "ns-app",
+					DenyingPolicyName:      "canary-wnp",
+				},
+			},
+			want: violation.Observation{
+				ViolationInfo: securityv1alpha1.ViolationInfo{
+					Source: securityv1alpha1.WorkloadRef{OwnerName: "some-external-source"},
+					Dest: securityv1alpha1.WorkloadRef{
+						Namespace: "ns-app",
+						OwnerKind: "Deployment",
+						OwnerName: "server",
+						Identity:  "cluster.local/ns/ns-app/sa/server-sa",
+					},
+					DenyingPolicyNamespace: "ns-app",
+					DenyingPolicyName:      "canary-wnp",
+				},
+			},
+		},
+		{
 			// An ALLOW-miss whose dest workload no WNP targets leaves the owning
 			// policy unresolved (the controller then drops it).
 			name: "ALLOW-miss with no matching WNP leaves policy empty",

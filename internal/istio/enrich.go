@@ -67,20 +67,23 @@ func (e *Enricher) Enrich(
 	} else {
 		obs.Dest = workloadRefFromPod(dstPod)
 
-		// A WNP violation is always an ALLOW-miss: the event carries no denying
-		// policy, so the owning WNP is not knowable from it. Resolve it by matching
-		// the destination workload's (targetRef, Ingress) and record it in the
-		// DenyingPolicy fields, which for an ALLOW-miss carry the *owning*
-		// WNP rather than a policy that literally denied the flow.
-		// The controller then correlates by name. ztunnel enforces inbound only.
-		owner, ownerErr := workload.ResolveDenyingPolicy(ctx, e.client, &obs.Dest, networkingv1.PolicyTypeIngress)
-		if ownerErr != nil {
-			logger.ErrorContext(ctx,
-				"Failed to resolve owning WorkloadNetworkPolicy for ALLOW-miss correlation",
-				"error", ownerErr)
-		} else if owner.Name != "" {
-			obs.DenyingPolicyNamespace = owner.Namespace
-			obs.DenyingPolicyName = owner.Name
+		// When the event reports no policy, the owning WNP is not knowable from it.
+		// Resolve it by matching the destination workload's (targetRef, Ingress),
+		// since ztunnel enforces inbound only, and record it in the DenyingPolicy
+		// fields. A reported policy is kept as is, and the controller verifies it
+		// against the subject, counting a disagreement when its owning WNP targets
+		// another workload. ztunnel enforces inbound only.
+		if obs.DenyingPolicyName == "" {
+			owner, ownerErr := workload.ResolveDenyingPolicy(ctx, e.client, &obs.Dest, networkingv1.PolicyTypeIngress)
+			switch {
+			case ownerErr != nil:
+				logger.ErrorContext(ctx,
+					"Failed to resolve owning WorkloadNetworkPolicy for ALLOW-miss correlation",
+					"error", ownerErr)
+			case owner.Name != "":
+				obs.DenyingPolicyNamespace = owner.Namespace
+				obs.DenyingPolicyName = owner.Name
+			}
 		}
 	}
 

@@ -39,6 +39,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -449,6 +450,7 @@ func setupControllers(
 	conf.wnpStatusSyncConfig.ViolationBuffer = violationBuffer
 	logger.InfoContext(ctx, "Setting up WorkloadNetworkPolicyStatusSync with",
 		"config", conf.wnpStatusSyncConfig)
+	conf.wnpStatusSyncConfig.MetricsRegisterer = ctrlmetrics.Registry
 	wnpStatusSync, err := controller.NewWorkloadNetworkPolicyStatusSync(
 		mgr.GetClient(),
 		&conf.wnpStatusSyncConfig,
