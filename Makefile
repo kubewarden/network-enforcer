@@ -155,7 +155,7 @@ HELM_VALUES_SCHEMA_JSON ?= $(LOCALBIN)/helm-values-schema-json
 
 ## Tool Versions
 # renovate: datasource=go depName=sigs.k8s.io/controller-tools
-CONTROLLER_TOOLS_VERSION ?= v0.22.0
+CONTROLLER_TOOLS_VERSION ?= v0.23.0
 # renovate: datasource=go depName=google.golang.org/protobuf
 PROTOC_GEN_GO_VERSION ?= v1.36.12
 # renovate: datasource=go depName=google.golang.org/grpc/cmd/protoc-gen-go-grpc
