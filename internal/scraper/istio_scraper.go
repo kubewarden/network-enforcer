@@ -46,10 +46,6 @@ const (
 	dstNamespacedNameKey = "dst.namespaced_name"
 	srcAddrKey           = "src.addr"
 
-	eventTypeLearn   = "learn"
-	eventTypeMonitor = "monitor"
-	eventTypeProtect = "protect"
-
 	spiffeURIPrefix = "spiffe://"
 )
 
@@ -155,10 +151,10 @@ func (s *IstioScraper) Export(
 				attrs := mergeAttrMaps(resourceAttrs, attrMap(record.GetAttributes()))
 				s.Logger.DebugContext(ctx, "Received OTLP log record", "attrs", attrs)
 				dumpFlow(ctx, s.Logger, s.FlowDumperBuffer, record)
-				switch attrs[eventTypeKey] {
-				case eventTypeLearn:
+				switch types.EventType(attrs[eventTypeKey]) {
+				case types.EventTypeLearn:
 					s.enqueueLearningEvent(ctx, attrs)
-				case eventTypeMonitor, eventTypeProtect:
+				case types.EventTypeMonitor, types.EventTypeProtect:
 					// monitor and violation records share the same plumbing: they are
 					// both routed through the violation path, differing only in the
 					// enforcement action (monitor dry-run vs protect enforcement).
@@ -276,7 +272,7 @@ func policyEventToObservation(
 	policyNamespace, policyName := splitNamespacedName(attrs[policyKey])
 
 	action := securityv1alpha1.WorkloadNetworkPolicyModeProtect
-	if attrs[eventTypeKey] == eventTypeMonitor {
+	if types.EventType(attrs[eventTypeKey]) == types.EventTypeMonitor {
 		action = securityv1alpha1.WorkloadNetworkPolicyModeMonitor
 	}
 

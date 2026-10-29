@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	lua "github.com/yuin/gopher-lua"
+
+	"github.com/kubewarden/network-enforcer/internal/types"
 )
 
 const (
@@ -36,7 +38,7 @@ func TestLuaScript(t *testing.T) {
 				},
 			},
 			expectedOtelEvent: map[string]string{
-				eventTypeKey:         eventTypeMonitor,
+				eventTypeKey:         string(types.EventTypeMonitor),
 				dstNamespacedNameKey: "default/http-server-7bbf596dd9-8gs65",
 				policyKey:            "default/deny-http-server-monitor",
 				srcAddrKey:           "10.244.0.9:46266",
@@ -58,7 +60,7 @@ func TestLuaScript(t *testing.T) {
 				},
 			},
 			expectedOtelEvent: map[string]string{
-				eventTypeKey:         eventTypeMonitor,
+				eventTypeKey:         string(types.EventTypeMonitor),
 				dstNamespacedNameKey: "default/http-server-7bbf596dd9-8gs65",
 				policyKey:            "",
 				srcAddrKey:           "10.244.0.9:46266",
@@ -116,7 +118,7 @@ func TestLuaScript(t *testing.T) {
 				},
 			},
 			expectedOtelEvent: map[string]string{
-				eventTypeKey:         eventTypeProtect,
+				eventTypeKey:         string(types.EventTypeProtect),
 				dstNamespacedNameKey: "default/http-server-7bbf596dd9-8gs65",
 				policyKey:            "default/deny-http-server",
 				srcAddrKey:           "10.244.0.9:46266",
@@ -139,7 +141,7 @@ func TestLuaScript(t *testing.T) {
 				},
 			},
 			expectedOtelEvent: map[string]string{
-				eventTypeKey:         eventTypeProtect,
+				eventTypeKey:         string(types.EventTypeProtect),
 				dstNamespacedNameKey: "default/http-server-7bbf596dd9-8gs65",
 				policyKey:            "",
 				srcAddrKey:           "10.244.0.9:46266",
@@ -199,7 +201,7 @@ func TestLuaScript(t *testing.T) {
 				"direction":      "inbound",
 			},
 			expectedOtelEvent: map[string]string{
-				eventTypeKey:    eventTypeLearn,
+				eventTypeKey:    string(types.EventTypeLearn),
 				dstNameKey:      "http-server-7bbf596dd9-4rgdc",
 				dstNamespaceKey: "default",
 				dstPortKey:      "18080",

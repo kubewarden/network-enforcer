@@ -109,7 +109,7 @@ func TestExportRoutesRecordsByEventType(t *testing.T) {
 		{
 			name: "learn routed to learning pipeline",
 			attrs: map[string]string{
-				eventTypeKey:    eventTypeLearn,
+				eventTypeKey:    string(types.EventTypeLearn),
 				dstNameKey:      "http-server-7bbf596dd9-4rgdc",
 				dstNamespaceKey: "default",
 				dstPortKey:      "18080",
@@ -135,7 +135,7 @@ func TestExportRoutesRecordsByEventType(t *testing.T) {
 		{
 			name: "monitor dry-run DENY routed to violation buffer",
 			attrs: map[string]string{
-				eventTypeKey:         eventTypeMonitor,
+				eventTypeKey:         string(types.EventTypeMonitor),
 				dstNamespacedNameKey: "default/http-server-7bbf596dd9-8gs65",
 				policyKey:            "default/deny-http-server-monitor",
 				srcAddrKey:           "10.244.0.9:46266",
@@ -159,7 +159,7 @@ func TestExportRoutesRecordsByEventType(t *testing.T) {
 		{
 			name: "violation explicit DENY routed to violation buffer",
 			attrs: map[string]string{
-				eventTypeKey:         eventTypeProtect,
+				eventTypeKey:         string(types.EventTypeProtect),
 				dstNamespacedNameKey: "default/http-server-6cbcc86f5d-lhq82",
 				policyKey:            "default/deny-http-server-protect",
 				srcAddrKey:           "10.244.0.5:49084",
@@ -183,7 +183,7 @@ func TestExportRoutesRecordsByEventType(t *testing.T) {
 		{
 			name: "violation ALLOW-miss routed to violation buffer without policy",
 			attrs: map[string]string{
-				eventTypeKey:         eventTypeProtect,
+				eventTypeKey:         string(types.EventTypeProtect),
 				dstNamespacedNameKey: "default/http-server-6cbcc86f5d-lhq82",
 				srcAddrKey:           "10.244.0.5:52814",
 			},
@@ -211,7 +211,7 @@ func TestExportRoutesRecordsByEventType(t *testing.T) {
 		{
 			name: "learn with out-of-range port is skipped",
 			attrs: map[string]string{
-				eventTypeKey:    eventTypeLearn,
+				eventTypeKey:    string(types.EventTypeLearn),
 				dstNameKey:      "http-server-7bbf596dd9-4rgdc",
 				dstNamespaceKey: "default",
 				dstPortKey:      "70000",
@@ -221,7 +221,7 @@ func TestExportRoutesRecordsByEventType(t *testing.T) {
 		{
 			name: "learn with non-numeric port is skipped",
 			attrs: map[string]string{
-				eventTypeKey:    eventTypeLearn,
+				eventTypeKey:    string(types.EventTypeLearn),
 				dstNameKey:      "http-server-7bbf596dd9-4rgdc",
 				dstNamespaceKey: "default",
 				dstPortKey:      "http",
@@ -392,7 +392,7 @@ func TestExportEnrichesObservations(t *testing.T) {
 		{
 			name: "protect ALLOW-miss resolves workloads and owning WNP by targetRef",
 			attrs: map[string]string{
-				eventTypeKey:         eventTypeProtect,
+				eventTypeKey:         string(types.EventTypeProtect),
 				dstNamespacedNameKey: "default/" + dstPodName,
 				srcAddrKey:           "10.244.0.9:46266",
 			},
@@ -413,7 +413,7 @@ func TestExportEnrichesObservations(t *testing.T) {
 		{
 			name: "monitor ALLOW-miss resolves workloads and owning WNP by targetRef",
 			attrs: map[string]string{
-				eventTypeKey:         eventTypeMonitor,
+				eventTypeKey:         string(types.EventTypeMonitor),
 				dstNamespacedNameKey: "default/" + dstPodName,
 				srcAddrKey:           "10.244.0.9:46266",
 			},
@@ -461,7 +461,7 @@ func TestPolicyEventToObservation(t *testing.T) {
 	unixNano := time.Date(2026, 8, 3, 15, 39, 7, 0, time.UTC).UnixNano()
 
 	attrs := map[string]string{
-		eventTypeKey:         eventTypeProtect,
+		eventTypeKey:         string(types.EventTypeProtect),
 		dstNamespacedNameKey: "default/http-server-6cbcc86f5d-lhq82",
 		policyKey:            "default/deny-http-server-protect",
 		srcAddrKey:           "10.244.0.5:49084",
@@ -719,7 +719,7 @@ func TestExportReportedPolicyOfOtherWorkloadCountsDisagreement(t *testing.T) {
 		Enricher:        istio.NewEnricher(cl),
 	})
 	attrs := map[string]string{
-		eventTypeKey:         eventTypeProtect,
+		eventTypeKey:         string(types.EventTypeProtect),
 		dstNamespacedNameKey: "default/" + dstPodName,
 		policyKey:            "default/allow-http-canary",
 		srcAddrKey:           "10.244.0.9:46266",

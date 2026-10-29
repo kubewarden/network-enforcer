@@ -6,6 +6,7 @@ require (
 	github.com/avast/retry-go/v5 v5.0.0
 	github.com/cilium/cilium v1.20.3
 	github.com/go-logr/logr v1.4.4
+	github.com/goccy/go-json v0.12.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.72.1
