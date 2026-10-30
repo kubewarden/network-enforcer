@@ -209,7 +209,7 @@ $(HELM_VALUES_SCHEMA_JSON): $(LOCALBIN)
 
 .PHONY: generate-chart-values
 generate-chart-values: $(HELM_VALUES_SCHEMA_JSON)
-	$(HELM_VALUES_SCHEMA_JSON) --no-additional-properties \
+	$(HELM_VALUES_SCHEMA_JSON) \
 		--k8s-schema-version v1.31.0 \
 		--bundle --bundle-without-id --bundle-cache-min 24h \
 		--values charts/network-enforcer/values.yaml \

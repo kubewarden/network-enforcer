@@ -20,7 +20,7 @@ targets:
     scmid: default
     spec:
       file: charts/network-enforcer/values.yaml
-      key: $.controller.provider.istio.fluentBit.image.tag
+      key: $.istioFluentBit.image.tag
   # Keep the artifacthub.io/images annotation in Chart.yaml in sync with
   # the fluent-bit image tag in values.yaml.
   fluentBitArtifactHubAnnotation:

@@ -38,6 +38,28 @@ Create chart name and version as used by the chart label.
 {{- end }}
 
 {{/*
+Namespace for all namespaced resources of the chart.
+It is namespaceOverride, or the release namespace when namespaceOverride is empty.
+This chart has no NATS subchart, so it has no nats.namespaceOverride check.
+*/}}
+{{- define "network-enforcer.namespace" -}}
+{{- $override := .Values.namespaceOverride | default "" -}}
+{{- $override | default .Release.Namespace -}}
+{{- end -}}
+
+{{/*
+Registry prefix for the chart images, with a trailing "/".
+global.imageRegistry wins over the workload imageRegistry.
+This chart has no NATS subchart, so it has no NATS registry check.
+*/}}
+{{- define "system_default_registry" -}}
+{{- $l := include "network-enforcer._levels" (dict "ctx" . "key" "imageRegistry") | fromYamlArray -}}
+{{- with index $l 0 | default (index $l 2) -}}
+{{- printf "%s/" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Common labels
 */}}
 {{- define "network-enforcer.labels" -}}
@@ -46,6 +68,7 @@ helm.sh/chart: {{ include "network-enforcer.chart" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
+app.kubernetes.io/part-of: network-enforcer
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
@@ -56,36 +79,6 @@ Selector labels
 app.kubernetes.io/name: {{ include "network-enforcer.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
-
-{{/*
-Pod labels for the controller Deployment.
-Chart-owned labels (selector labels, component, common labels) always win over
-user-supplied controller.podLabels, so overriding a reserved key such as
-app.kubernetes.io/name cannot desync the Pod template from spec.selector.
-*/}}
-{{- define "network-enforcer.controller.podLabels" -}}
-{{- $chartLabels := dict "app.kubernetes.io/component" "controller" -}}
-{{- $chartLabels = merge $chartLabels (include "network-enforcer.labels" . | fromYaml) -}}
-{{- $userLabels := default dict .Values.controller.podLabels -}}
-{{- toYaml (merge $chartLabels $userLabels) -}}
-{{- end -}}
-
-{{/*
-Print the image pull secrets in the expected format (an array of objects with one possible field, "name").
-Each entry of .Values.imagePullSecrets can be a plain string or a {name: ...} object.
-*/}}
-{{- define "network-enforcer.imagePullSecrets" }}
-    {{- $imagePullSecrets := list }}
-    {{- range . }}
-        {{- if kindIs "string" . }}
-            {{- $imagePullSecrets = append $imagePullSecrets (dict "name" .) }}
-        {{- else }}
-            {{- $imagePullSecrets = append $imagePullSecrets . }}
-        {{- end }}
-    {{- end }}
-    {{- toYaml $imagePullSecrets }}
-{{- end }}
-
 
 {{/*
 Name of the controller OTLP service used to reach the istio scraper.
@@ -211,7 +204,8 @@ Cilium's client certificate only has to sit in Cilium's own name space.
 {{- $provider := include "network-enforcer.provider.name" . -}}
 {{- if eq $provider "istio" -}}
 {{- $svc := include "network-enforcer.controller.istioService" . -}}
-{{- printf "%s,%s.%s,%s.%s.svc,%s.%s.svc.%s" $svc $svc .Release.Namespace $svc .Release.Namespace $svc .Release.Namespace .Values.kubernetesClusterDomain -}}
+{{- $ns := include "network-enforcer.namespace" . -}}
+{{- printf "%s,%s.%s,%s.%s.svc,%s.%s.svc.%s" $svc $svc $ns $svc $ns $svc $ns .Values.kubernetesClusterDomain -}}
 {{- else if eq $provider "cilium" -}}
 network-enforcer.hubble-relay.cilium.io
 {{- else -}}
@@ -357,100 +351,6 @@ Volumes for provider TLS material.
 {{- end -}}
 
 {{/*
-Certificate directory for the shipped OTel collector's own (server-side) mTLS
-keys, mounted via cert-manager CSI.
-*/}}
-{{- define "network-enforcer.otelCollector.certDir" -}}
-/etc/otel-collector/certs
-{{- end -}}
-
-{{/*
-CA certificate path used by the controller when sending OTLP logs to the
-shipped in-cluster collector.
-*/}}
-{{- define "network-enforcer.otel.caCertDir" -}}
-/tmp/otel-collector-certs
-{{- end -}}
-{{- define "network-enforcer.otel.caCertPath" -}}
-{{ include "network-enforcer.otel.caCertDir" . }}/ca.crt
-{{- end -}}
-
-
-{{/*
-Print the otel environment variable settings.
-*/}}
-{{- define "network-enforcer.otel.config.env" }}
-{{- if eq .Values.telemetry.collectorStrategy "default" }}
-- name: OTEL_EXPORTER_OTLP_ENDPOINT
-  value: https://{{ include "network-enforcer.fullname" . }}-otel-collector.{{ .Release.Namespace }}.svc.cluster.local:4317
-- name: OTEL_EXPORTER_OTLP_PROTOCOL
-  value: grpc
-- name: OTEL_EXPORTER_OTLP_CERTIFICATE
-  value: {{ include "network-enforcer.otel.caCertPath" . }}
-{{- else if eq .Values.telemetry.collectorStrategy "external" }}
-- name: OTEL_EXPORTER_OTLP_ENDPOINT
-  value: {{ .Values.telemetry.externalCollector.endpoint }}
-- name: OTEL_EXPORTER_OTLP_PROTOCOL
-  value: {{ .Values.telemetry.externalCollector.protocol }}
-{{- if .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
-- name: OTEL_EXPORTER_OTLP_CERTIFICATE
-  value: {{ include "network-enforcer.otel.caCertPath" . }}
-{{- else }}
-- name: OTEL_EXPORTER_OTLP_INSECURE
-  value: "true"
-{{- end }}
-{{- if .Values.telemetry.externalCollector.otelCollectorClientCertificateSecret }}
-- name: OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE
-  value: /tmp/otel-collector-client-certs/tls.crt
-- name: OTEL_EXPORTER_OTLP_CLIENT_KEY
-  value: /tmp/otel-collector-client-certs/tls.key
-{{- end }}
-{{- end }}
-{{- end }}
-
-{{/*
-Print the otel volumeMounts settings.
-The strategy gate mirrors network-enforcer.otel.config.volumes so mounts and
-volumes are always emitted (or omitted) as a pair.
-*/}}
-{{- define "network-enforcer.otel.config.volumeMounts" }}
-{{- if or (eq .Values.telemetry.collectorStrategy "default") (and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorCertificateSecret) }}
-- name: otel-collector-ca-cert
-  mountPath: {{ include "network-enforcer.otel.caCertDir" . }}
-  readOnly: true
-{{- end }}
-{{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorClientCertificateSecret }}
-- name: otel-collector-client-cert
-  mountPath: /tmp/otel-collector-client-certs
-  readOnly: true
-{{- end }}
-{{- end }}
-
-{{/*
-Print the otel volumes settings.
-*/}}
-{{- define "network-enforcer.otel.config.volumes" }}
-{{- if eq .Values.telemetry.collectorStrategy "default" }}
-- name: otel-collector-ca-cert
-  secret:
-    secretName: {{ include "network-enforcer.caSecretName" . }}
-    items:
-    - key: ca.crt
-      path: ca.crt
-{{- end }}
-{{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
-- name: otel-collector-ca-cert
-  secret:
-    secretName: {{ .Values.telemetry.externalCollector.otelCollectorCertificateSecret }}
-{{- end }}
-{{- if and (eq .Values.telemetry.collectorStrategy "external") .Values.telemetry.externalCollector.otelCollectorClientCertificateSecret }}
-- name: otel-collector-client-cert
-  secret:
-    secretName: {{ .Values.telemetry.externalCollector.otelCollectorClientCertificateSecret }}
-{{- end }}
-{{- end }}
-
-{{/*
 Volume mounts for the Istio fluent-bit client certificate.
 */}}
 {{- define "network-enforcer.istio.fluentBit.tls.volumeMounts" -}}
@@ -501,4 +401,217 @@ Certificate helpers for mTLS (CA issuer and secret share a name).
 {{- end -}}
 {{- define "network-enforcer.caSecretName" -}}
 {{ include "network-enforcer.fullname" . }}-ca
+{{- end -}}
+
+{{/*
+Values of the workloads
+
+The workload templates read their values through the public helpers below.
+Each public helper takes a context dict:
+  root:      the root context ($)
+  workload:  the name of the workload block in .Values: "controller" or "istioFluentBit"
+  component: the value of the app.kubernetes.io/component label, for example "controller"
+A context dict can also have:
+  fixedWorkloadLabels: a map of extra fixed labels for the workload resource
+                       (not the pod), for example the control-plane label.
+
+A template builds the context dict once:
+  {{- $ctx := dict "root" $ "workload" "controller" "component" "controller" }}
+
+Each public helper reads one key with one private helper. The private helper sets the rule:
+  network-enforcer._scalar: the workload value, else the common value, else the global value.
+  network-enforcer._list:   the same rule as network-enforcer._scalar, for a list.
+  network-enforcer._map:    the global, common, and workload maps merged. The workload wins on a duplicate key.
+  network-enforcer._concat: the global, common, and workload lists, in this order.
+An empty value ("", [] or {}) counts as unset.
+system_default_registry (above) uses its own order and does not read common.
+
+The private helpers take dict "ctx" <context dict> "key" <key>.
+A key with a dot, for example "serviceAccount.annotations", reads a nested map.
+Templates do not call the private helpers.
+*/}}
+
+{{/*
+network-enforcer._levels renders a YAML list with three items:
+the value of the key in global, in common, and in the workload block.
+The other private helpers decode this list, so they work on copies of .Values.
+*/}}
+{{- define "network-enforcer._levels" -}}
+{{- $values := .ctx.root.Values -}}
+{{- $blocks := list ($values.global | default dict) ($values.common | default dict) (index $values .ctx.workload | default dict) -}}
+{{- $out := list -}}
+{{- range $block := $blocks -}}
+{{- $value := $block -}}
+{{- range $part := splitList "." $.key -}}
+{{- $value = index ($value | default dict) $part -}}
+{{- end -}}
+{{- $out = append $out $value -}}
+{{- end -}}
+{{- toYaml $out -}}
+{{- end -}}
+
+{{- define "network-enforcer._scalar" -}}
+{{- $l := include "network-enforcer._levels" . | fromYamlArray -}}
+{{- index $l 2 | default (index $l 1) | default (index $l 0) | default "" -}}
+{{- end -}}
+
+{{- define "network-enforcer._list" -}}
+{{- $l := include "network-enforcer._levels" . | fromYamlArray -}}
+{{- toYaml (index $l 2 | default (index $l 1) | default (index $l 0) | default list) -}}
+{{- end -}}
+
+{{- define "network-enforcer._map" -}}
+{{- $l := include "network-enforcer._levels" . | fromYamlArray -}}
+{{- toYaml (mergeOverwrite (dict) (index $l 0 | default dict) (index $l 1 | default dict) (index $l 2 | default dict)) -}}
+{{- end -}}
+
+{{- define "network-enforcer._concat" -}}
+{{- $l := include "network-enforcer._levels" . | fromYamlArray -}}
+{{- toYaml (concat (index $l 0 | default list) (index $l 1 | default list) (index $l 2 | default list)) -}}
+{{- end -}}
+
+{{/*
+network-enforcer._field renders "<name>:" and the value as YAML.
+It renders nothing when the value is empty.
+It takes dict "name" <field name> "value" <value>.
+*/}}
+{{- define "network-enforcer._field" -}}
+{{- with .value -}}
+{{ $.name }}:
+  {{- toYaml . | nindent 2 }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+network-enforcer._labels renders "labels:" with the merged map of the key
+and the fixed chart labels. The fixed chart labels win on a duplicate key.
+It takes dict "ctx" <context dict> "key" <key> and an optional "fixed" map
+of extra fixed labels.
+*/}}
+{{- define "network-enforcer._labels" -}}
+{{- $labels := include "network-enforcer._map" . | fromYaml -}}
+{{- $fixed := include "network-enforcer.labels" .ctx.root | fromYaml -}}
+{{- $_ := set $fixed "app.kubernetes.io/component" .ctx.component -}}
+{{- $fixed = mergeOverwrite $fixed (.fixed | default dict) -}}
+labels:
+  {{- toYaml (mergeOverwrite $labels $fixed) | nindent 2 }}
+{{- end -}}
+
+{{/* Public helpers that render a bare value. */}}
+
+{{- define "network-enforcer.imagePullPolicy" -}}
+{{- include "network-enforcer._scalar" (dict "ctx" . "key" "imagePullPolicy") -}}
+{{- end -}}
+
+{{- define "network-enforcer.logLevel" -}}
+{{- include "network-enforcer._scalar" (dict "ctx" . "key" "logLevel") -}}
+{{- end -}}
+
+{{/* Public helpers that render a whole field, or nothing when the value is empty. */}}
+
+{{/*
+network-enforcer.priorityClassName renders "priorityClassName:".
+The name is the workload value, else common, else global.
+When none is set, the controller and the Istio fluent-bit DaemonSet use priorityClass.name.
+*/}}
+{{- define "network-enforcer.priorityClassName" -}}
+{{- $name := include "network-enforcer._scalar" (dict "ctx" . "key" "priorityClassName") -}}
+{{- if and (not $name) (has .workload (list "controller" "istioFluentBit")) -}}
+{{- $name = .root.Values.priorityClass.name | default "" -}}
+{{- end -}}
+{{- with $name -}}
+priorityClassName: {{ . | quote }}
+{{- end -}}
+{{- end -}}
+
+{{- define "network-enforcer.tolerations" -}}
+{{- include "network-enforcer._field" (dict "name" "tolerations" "value" (include "network-enforcer._list" (dict "ctx" . "key" "tolerations") | fromYamlArray)) -}}
+{{- end -}}
+
+{{- define "network-enforcer.topologySpreadConstraints" -}}
+{{- include "network-enforcer._field" (dict "name" "topologySpreadConstraints" "value" (include "network-enforcer._list" (dict "ctx" . "key" "topologySpreadConstraints") | fromYamlArray)) -}}
+{{- end -}}
+
+{{- define "network-enforcer.extraEnvFrom" -}}
+{{- include "network-enforcer._field" (dict "name" "envFrom" "value" (include "network-enforcer._list" (dict "ctx" . "key" "extraEnvFrom") | fromYamlArray)) -}}
+{{- end -}}
+
+{{- define "network-enforcer.nodeSelector" -}}
+{{- include "network-enforcer._field" (dict "name" "nodeSelector" "value" (include "network-enforcer._map" (dict "ctx" . "key" "nodeSelector") | fromYaml)) -}}
+{{- end -}}
+
+{{- define "network-enforcer.affinity" -}}
+{{- include "network-enforcer._field" (dict "name" "affinity" "value" (include "network-enforcer._map" (dict "ctx" . "key" "affinity") | fromYaml)) -}}
+{{- end -}}
+
+{{- define "network-enforcer.workloadAnnotations" -}}
+{{- include "network-enforcer._field" (dict "name" "annotations" "value" (include "network-enforcer._map" (dict "ctx" . "key" "annotations") | fromYaml)) -}}
+{{- end -}}
+
+{{/*
+network-enforcer.podAnnotations renders "annotations:" for the pod template.
+It takes the context dict and an optional "fixedPodAnnotations" map in it.
+The fixed annotations win on a duplicate key.
+*/}}
+{{- define "network-enforcer.podAnnotations" -}}
+{{- $annotations := include "network-enforcer._map" (dict "ctx" . "key" "podAnnotations") | fromYaml -}}
+{{- $annotations = mergeOverwrite $annotations (.fixedPodAnnotations | default dict) -}}
+{{- include "network-enforcer._field" (dict "name" "annotations" "value" $annotations) -}}
+{{- end -}}
+
+{{- define "network-enforcer.serviceAccountAnnotations" -}}
+{{- include "network-enforcer._field" (dict "name" "annotations" "value" (include "network-enforcer._map" (dict "ctx" . "key" "serviceAccount.annotations") | fromYaml)) -}}
+{{- end -}}
+
+{{- define "network-enforcer.workloadLabels" -}}
+{{- include "network-enforcer._labels" (dict "ctx" . "key" "labels" "fixed" .fixedWorkloadLabels) -}}
+{{- end -}}
+
+{{- define "network-enforcer.podLabels" -}}
+{{- include "network-enforcer._labels" (dict "ctx" . "key" "podLabels") -}}
+{{- end -}}
+
+{{/*
+network-enforcer.imagePullSecrets renders "imagePullSecrets:" with the global,
+common, and workload lists, in this order.
+Each item is a Secret name or a map with a name key. The helper renders a
+name as a map. It skips an item with an empty or missing name.
+It keeps an item of any other type, and Kubernetes rejects it.
+*/}}
+{{- define "network-enforcer.imagePullSecrets" -}}
+{{- $secrets := list -}}
+{{- range include "network-enforcer._concat" (dict "ctx" . "key" "imagePullSecrets") | fromYamlArray -}}
+{{- if kindIs "string" . -}}
+{{- if . -}}
+{{- $secrets = append $secrets (dict "name" .) -}}
+{{- end -}}
+{{- else if kindIs "map" . -}}
+{{- if .name -}}
+{{- $secrets = append $secrets . -}}
+{{- end -}}
+{{- else -}}
+{{- $secrets = append $secrets . -}}
+{{- end -}}
+{{- end -}}
+{{- include "network-enforcer._field" (dict "name" "imagePullSecrets" "value" $secrets) -}}
+{{- end -}}
+
+{{/* Public helpers that render list entries, or nothing when the list is empty. */}}
+
+{{- define "network-enforcer.extraEnv" -}}
+{{- with include "network-enforcer._concat" (dict "ctx" . "key" "extraEnv") | fromYamlArray -}}
+{{- toYaml . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "network-enforcer.extraVolumes" -}}
+{{- with include "network-enforcer._concat" (dict "ctx" . "key" "extraVolumes") | fromYamlArray -}}
+{{- toYaml . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "network-enforcer.extraVolumeMounts" -}}
+{{- with include "network-enforcer._concat" (dict "ctx" . "key" "extraVolumeMounts") | fromYamlArray -}}
+{{- toYaml . -}}
+{{- end -}}
 {{- end -}}

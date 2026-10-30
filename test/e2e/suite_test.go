@@ -9,10 +9,14 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/e2e-framework/klient/conf"
+	"sigs.k8s.io/e2e-framework/klient/decoder"
 	"sigs.k8s.io/e2e-framework/klient/k8s"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/klient/wait"
@@ -23,6 +27,22 @@ import (
 	"sigs.k8s.io/e2e-framework/support/kind"
 	"sigs.k8s.io/e2e-framework/third_party/helm"
 )
+
+const (
+	// The chart does not deploy a collector.
+	// The suite applies this manifest before it installs the chart.
+	// It is not in testdata, because some tests apply every file in testdata.
+	otelCollectorManifestDir    = "./manifests"
+	otelCollectorManifest       = "otel-collector.yaml"
+	otelCollectorDeploymentName = "otel-collector"
+	otelCollectorReadyWait      = 3 * time.Minute
+)
+
+// otelCollectorEndpoint is the plaintext gRPC endpoint of the e2e collector.
+// The http:// scheme turns off TLS in the exporter.
+func otelCollectorEndpoint(namespace string) string {
+	return fmt.Sprintf("http://%s.%s.svc.cluster.local:4317", otelCollectorDeploymentName, namespace)
+}
 
 var (
 	testEnv env.Environment //nolint:gochecknoglobals // provided by e2e-framework
@@ -85,7 +105,10 @@ func TestMain(m *testing.M) {
 
 	if testSuiteConf.installClusterOnly == "" {
 		// We install the network-enforcer and we destroy the cluster only in case we are running tests.
-		setupFuncs = append(setupFuncs, installNetEnforcerChart())
+		// The collector must be ready before the network enforcer starts,
+		// so that the exporter sees no connection errors at startup.
+		// The suite never uninstalls the chart, so it does not delete the collector either.
+		setupFuncs = append(setupFuncs, setupOtelCollector(), installNetEnforcerChart())
 		if !testSuiteConf.useExistingCluster {
 			finishFuncs = append(finishFuncs,
 				envfuncs.ExportClusterLogs(clusterName, testSuiteConf.logsDir),
@@ -140,6 +163,9 @@ func netEnforcerHelmOpts(testCfg suiteConfig) []helm.Option {
 		helm.WithNamespace(testCfg.releaseNS),
 		helm.WithChart(testCfg.chartPath),
 		helm.WithArgs("--create-namespace"),
+		// The e2e image is a full reference with the registry,
+		// so the chart must not add its own registry.
+		helm.WithArgs("--set", "controller.imageRegistry="),
 		helm.WithArgs("--set", fmt.Sprintf("controller.image.repository=%s", controllerRepo)),
 		helm.WithArgs("--set", fmt.Sprintf("controller.image.tag=%s", controllerTag)),
 		helm.WithArgs("--set", "controller.logLevel=debug"),
@@ -147,14 +173,13 @@ func netEnforcerHelmOpts(testCfg suiteConfig) []helm.Option {
 		helm.WithArgs("--set", fmt.Sprintf("controller.provider.name=%s", testCfg.ProviderName())),
 		helm.WithArgs("--set", fmt.Sprintf("controller.wnpStatusUpdateInterval=%s",
 			testCfg.wnpStatusUpdateInterval.String())),
+		// The suite deploys this collector before it installs the chart.
+		helm.WithArgs("--set", "global.otel.endpoint="+otelCollectorEndpoint(testCfg.releaseNS)),
 		helm.WithWait(),
 		helm.WithTimeout(defaultHelmTimeout.String()),
 	}
 	if testCfg.HasE2EDependency("cert-manager") && testCfg.IsIstioProvider() {
 		helmOpts = append(helmOpts, helm.WithArgs("--set", "controller.provider.istio.tls.mode=issuer"))
-	}
-	if !testCfg.HasE2EDependency("cert-manager") {
-		helmOpts = append(helmOpts, helm.WithArgs("--set", "telemetry.collectorStrategy=none"))
 	}
 	return helmOpts
 }
@@ -188,16 +213,6 @@ func waitForNetEnforcerReady(
 		return fmt.Errorf("wait admission webhook CA bundle injected: %w", err)
 	}
 
-	if testCfg.HasE2EDependency("cert-manager") {
-		logger.InfoContext(ctx, "⏲️ waiting for default otel collector")
-		if err := wait.For(
-			conditions.New(r).DeploymentAvailable("network-enforcer-otel-collector", testCfg.releaseNS),
-			wait.WithTimeout(defaultOperationTimeout),
-		); err != nil {
-			return fmt.Errorf("wait default otel collector deployment ready: %w", err)
-		}
-	}
-
 	if testCfg.IsIstioProvider() {
 		// the istio-fluent-bit DaemonSet tails ztunnel access logs and forwards
 		// them via OTLP to the controller's istio scraper (the learning source).
@@ -221,4 +236,53 @@ func parseImage(image string) (string, string) {
 		return image[:i], image[i+1:]
 	}
 	return image, "latest"
+}
+
+// setupOtelCollector deploys the collector in the release namespace
+// and waits until its Deployment is available.
+// It first deletes a collector left by an earlier run,
+// so that a reused cluster also gets the current manifest.
+// The new Deployment counts only its own pods,
+// so an old pod that is still shutting down cannot make it available.
+func setupOtelCollector() env.Func {
+	return func(ctx context.Context, cfg *envconf.Config) (context.Context, error) {
+		logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+		namespace := getSuiteConfig(ctx).releaseNS
+
+		client, err := cfg.NewClient()
+		if err != nil {
+			return ctx, fmt.Errorf("failed to create the client: %w", err)
+		}
+		r := client.Resources(namespace)
+
+		ns := &corev1.Namespace{Name: namespace}
+		if err = r.Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {
+			return ctx, fmt.Errorf("failed to create namespace %s: %w", namespace, err)
+		}
+
+		manifests := os.DirFS(otelCollectorManifestDir)
+		err = decoder.DecodeEachFile(ctx, manifests, otelCollectorManifest,
+			decoder.DeleteIgnoreNotFound(r), decoder.MutateNamespace(namespace))
+		if err != nil {
+			return ctx, fmt.Errorf("failed to delete the old otel collector: %w", err)
+		}
+
+		logger.InfoContext(ctx, "deploying otel collector", "namespace", namespace)
+		err = decoder.DecodeEachFile(ctx, manifests, otelCollectorManifest,
+			decoder.CreateHandler(r), decoder.MutateNamespace(namespace))
+		if err != nil {
+			return ctx, fmt.Errorf("failed to create the otel collector: %w", err)
+		}
+
+		err = wait.For(
+			conditions.New(r).DeploymentAvailable(otelCollectorDeploymentName, namespace),
+			wait.WithContext(ctx),
+			wait.WithTimeout(otelCollectorReadyWait),
+		)
+		if err != nil {
+			return ctx, fmt.Errorf("otel collector is not available: %w", err)
+		}
+		logger.InfoContext(ctx, "otel collector ready", "namespace", namespace)
+		return ctx, nil
+	}
 }

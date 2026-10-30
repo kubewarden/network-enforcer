@@ -9,7 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const collectorConfigMapPath = "../../charts/network-enforcer/templates/otel-collector/configmap.yaml"
+// collectorManifestPath is the OpenTelemetry collector that the e2e suite deploys.
+const collectorManifestPath = "../../test/e2e/manifests/otel-collector.yaml"
 
 var (
 	// countConnectorKeyRE matches the `- key: <attribute>` entries of the count
@@ -20,9 +21,9 @@ var (
 	ottlAttributeRE = regexp.MustCompile(`attributes\["([^"]+)"\]`)
 )
 
-func TestChartCountConnectorMatchesOtelSchema(t *testing.T) {
-	raw, err := os.ReadFile(collectorConfigMapPath)
-	require.NoError(t, err, "collector ConfigMap must be readable from the emitter package")
+func TestCollectorCountConnectorMatchesOtelSchema(t *testing.T) {
+	raw, err := os.ReadFile(collectorManifestPath)
+	require.NoError(t, err, "collector manifest must be readable from the emitter package")
 
 	schema := map[string]bool{}
 	for _, key := range OtelAttributeKeys() {
@@ -56,7 +57,7 @@ func TestEmittedAttributesAreCounted(t *testing.T) {
 	require.Len(t, slices.Compact(slices.Sorted(slices.Values(keys))), len(keys),
 		"attribute schema must not repeat a key")
 
-	raw, err := os.ReadFile(collectorConfigMapPath)
+	raw, err := os.ReadFile(collectorManifestPath)
 	require.NoError(t, err)
 
 	counted := map[string]bool{}
@@ -80,6 +81,6 @@ func TestEmittedAttributesAreCounted(t *testing.T) {
 			continue
 		}
 		require.True(t, counted[key],
-			"emitted attribute %q is not counted by the chart's count connector", key)
+			"emitted attribute %q is not counted by the collector's count connector", key)
 	}
 }

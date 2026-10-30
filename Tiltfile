@@ -22,6 +22,9 @@ providerName = cfg.get("provider") or settings.get("controller").get("providerNa
 
 # Prepare Helm set values based on CNI type
 helm_set_values = [
+    # The image in tilt-settings.yaml is a full reference with the registry,
+    # so the chart must not add its own registry.
+    "controller.imageRegistry=",
     "controller.image.repository=" + controller_image,
     "controller.replicas=1",
     "controller.containerSecurityContext.runAsUser=null",

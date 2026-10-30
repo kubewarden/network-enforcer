@@ -1,0 +1,338 @@
+suite: "Values contract: namespaceOverride"
+templates:
+  - "templates/controller/deployment.yaml"
+  - "templates/istio-fluent-bit/daemonset.yaml"
+  - "templates/istio-fluent-bit/configmap.yaml"
+  - "templates/controller/service.yaml"
+  - "templates/controller/istio-otlp-service.yaml"
+  - "templates/controller/flow-dumper-service.yaml"
+  - "templates/controller/serviceaccount.yaml"
+  - "templates/istio-fluent-bit/serviceaccount.yaml"
+  - "templates/cert-manager.yaml"
+  - "templates/controller/leader-election-rbac.yaml"
+  - "templates/controller/pdb.yaml"
+release:
+  name: rel
+  namespace: release-ns
+set:
+  controller:
+    flowDumper:
+      enabled: true
+    podDisruptionBudget:
+      minAvailable: 1
+tests:
+  - it: "should use the release namespace by default"
+    asserts:
+      - equal:
+          path: "metadata.namespace"
+          value: release-ns
+
+  - it: "should use namespaceOverride for every namespaced resource"
+    set:
+      namespaceOverride: other
+    asserts:
+      - equal:
+          path: "metadata.namespace"
+          value: other
+---
+suite: "Values contract: namespace without a release namespace"
+templates:
+  - "templates/controller/deployment.yaml"
+  - "templates/istio-fluent-bit/daemonset.yaml"
+  - "templates/istio-fluent-bit/configmap.yaml"
+  - "templates/controller/serviceaccount.yaml"
+  - "templates/cert-manager.yaml"
+tests:
+  - it: "should use the helm-unittest release namespace when namespaceOverride is empty"
+    set:
+      namespaceOverride: ""
+    asserts:
+      - equal:
+          path: "metadata.namespace"
+          value: NAMESPACE
+---
+suite: "Values contract: numeric namespace"
+templates:
+  - "templates/controller/deployment.yaml"
+  - "templates/istio-fluent-bit/daemonset.yaml"
+  # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
+  - "templates/istio-fluent-bit/configmap.yaml"
+  - "templates/controller/serviceaccount.yaml"
+  - "templates/istio-fluent-bit/serviceaccount.yaml"
+  - "templates/controller/leader-election-rbac.yaml"
+  - "templates/controller/pdb.yaml"
+  - "templates/controller/rolebinding.yaml"
+  - "templates/controller/metrics-auth-rbac.yaml"
+  - "templates/controller/service.yaml"
+  - "templates/controller/istio-otlp-service.yaml"
+  - "templates/controller/flow-dumper-service.yaml"
+  - "templates/cert-manager.yaml"
+  - "templates/controller/webhook.yaml"
+release:
+  name: rel
+  namespace: release-ns
+set:
+  controller:
+    flowDumper:
+      enabled: true
+    podDisruptionBudget:
+      minAvailable: 1
+numericAsserts: &numericAsserts
+  - equal: {path: metadata.namespace, value: "123"}
+    template: "templates/controller/deployment.yaml"
+  - equal: {path: metadata.namespace, value: "123"}
+    template: "templates/istio-fluent-bit/daemonset.yaml"
+  - equal: {path: metadata.namespace, value: "123"}
+    template: "templates/istio-fluent-bit/configmap.yaml"
+  - equal: {path: metadata.namespace, value: "123"}
+    template: "templates/controller/serviceaccount.yaml"
+  - equal: {path: metadata.namespace, value: "123"}
+    template: "templates/istio-fluent-bit/serviceaccount.yaml"
+  - equal: {path: metadata.namespace, value: "123"}
+    template: "templates/controller/leader-election-rbac.yaml"
+  - equal: {path: metadata.namespace, value: "123"}
+    template: "templates/controller/pdb.yaml"
+  - equal: {path: metadata.namespace, value: "123"}
+    template: "templates/controller/service.yaml"
+  - equal: {path: metadata.namespace, value: "123"}
+    template: "templates/controller/istio-otlp-service.yaml"
+  - equal: {path: metadata.namespace, value: "123"}
+    template: "templates/controller/flow-dumper-service.yaml"
+  - equal: {path: metadata.namespace, value: "123"}
+    template: "templates/cert-manager.yaml"
+  - equal: {path: "webhooks[0].clientConfig.service.namespace", value: "123"}
+    template: "templates/controller/webhook.yaml"
+  - equal: {path: "subjects[0].namespace", value: "123"}
+    template: "templates/controller/rolebinding.yaml"
+  - equal: {path: "subjects[0].namespace", value: "123"}
+    template: "templates/controller/leader-election-rbac.yaml"
+    documentSelector: {path: kind, value: RoleBinding}
+  - equal: {path: "subjects[0].namespace", value: "123"}
+    template: "templates/controller/metrics-auth-rbac.yaml"
+    documentSelector: {path: kind, value: ClusterRoleBinding}
+tests:
+  - it: "should render a numeric release namespace as a string"
+    release:
+      namespace: "123"
+    asserts: *numericAsserts
+
+  - it: "should render a numeric namespaceOverride as a string"
+    set:
+      namespaceOverride: "123"
+    asserts: *numericAsserts
+---
+suite: "Values contract: namespaceOverride references"
+templates:
+  - "templates/controller/deployment.yaml"
+  - "templates/istio-fluent-bit/daemonset.yaml"
+  - "templates/istio-fluent-bit/configmap.yaml"
+  - "templates/controller/serviceaccount.yaml"
+  - "templates/istio-fluent-bit/serviceaccount.yaml"
+  - "templates/controller/leader-election-rbac.yaml"
+  - "templates/controller/service.yaml"
+  - "templates/controller/istio-otlp-service.yaml"
+  - "templates/controller/flow-dumper-service.yaml"
+  - "templates/controller/pdb.yaml"
+  - "templates/cert-manager.yaml"
+  - "templates/controller/rolebinding.yaml"
+  - "templates/controller/metrics-auth-rbac.yaml"
+  - "templates/controller/webhook.yaml"
+release:
+  name: rel
+  namespace: release-ns
+set:
+  controller:
+    flowDumper:
+      enabled: true
+    podDisruptionBudget:
+      minAvailable: 1
+
+namespacedTemplates: &namespacedAsserts
+  - equal: {path: metadata.namespace, value: &ns other}
+    template: "templates/controller/deployment.yaml"
+  - equal: {path: metadata.namespace, value: *ns}
+    template: "templates/istio-fluent-bit/daemonset.yaml"
+  - equal: {path: metadata.namespace, value: *ns}
+    template: "templates/istio-fluent-bit/configmap.yaml"
+  - equal: {path: metadata.namespace, value: *ns}
+    template: "templates/controller/serviceaccount.yaml"
+  - equal: {path: metadata.namespace, value: *ns}
+    template: "templates/istio-fluent-bit/serviceaccount.yaml"
+  - equal: {path: metadata.namespace, value: *ns}
+    template: "templates/controller/leader-election-rbac.yaml"
+  - equal: {path: metadata.namespace, value: *ns}
+    template: "templates/controller/service.yaml"
+  - equal: {path: metadata.namespace, value: *ns}
+    template: "templates/controller/istio-otlp-service.yaml"
+  - equal: {path: metadata.namespace, value: *ns}
+    template: "templates/controller/flow-dumper-service.yaml"
+  - equal: {path: metadata.namespace, value: *ns}
+    template: "templates/controller/pdb.yaml"
+  - equal: {path: metadata.namespace, value: *ns}
+    template: "templates/cert-manager.yaml"
+  - hasDocuments: {count: 3}
+    template: "templates/cert-manager.yaml"
+  # Namespace references
+  - equal: {path: "subjects[0].namespace", value: *ns}
+    template: "templates/controller/rolebinding.yaml"
+  - equal: {path: "subjects[0].namespace", value: *ns}
+    template: "templates/controller/leader-election-rbac.yaml"
+    documentSelector: {path: kind, value: RoleBinding}
+  - equal: {path: "subjects[0].namespace", value: *ns}
+    template: "templates/controller/metrics-auth-rbac.yaml"
+    documentSelector: {path: kind, value: ClusterRoleBinding}
+  - equal: {path: "webhooks[*].clientConfig.service.namespace", value: *ns}
+    template: "templates/controller/webhook.yaml"
+  - equal:
+      path: "metadata.annotations[\"cert-manager.io/inject-ca-from\"]"
+      value: other/rel-network-enforcer-ca
+    template: "templates/controller/webhook.yaml"
+  # The default Istio provider mounts its TLS certificate first, so the webhook certificate is the second volume.
+  - equal:
+      path: "spec.template.spec.volumes[1].name"
+      value: webhook-certs
+    template: "templates/controller/deployment.yaml"
+  - equal:
+      path: "spec.template.spec.volumes[1].csi.volumeAttributes[\"csi.cert-manager.io/dns-names\"]"
+      value: rel-network-enforcer-controller-webhook.other.svc
+    template: "templates/controller/deployment.yaml"
+  - equal:
+      path: "spec.template.spec.volumes[0].name"
+      value: provider-tls
+    template: "templates/controller/deployment.yaml"
+  - equal:
+      path: "spec.template.spec.volumes[0].csi.volumeAttributes[\"csi.cert-manager.io/dns-names\"]"
+      value: "rel-network-enforcer-istio-otlp,rel-network-enforcer-istio-otlp.other,rel-network-enforcer-istio-otlp.other.svc,rel-network-enforcer-istio-otlp.other.svc.cluster.local"
+    template: "templates/controller/deployment.yaml"
+
+tests:
+  - it: "should use the release namespace by default"
+    asserts:
+      - equal: {path: metadata.namespace, value: release-ns}
+        template: "templates/controller/deployment.yaml"
+      - equal: {path: metadata.namespace, value: release-ns}
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal: {path: metadata.namespace, value: release-ns}
+        template: "templates/cert-manager.yaml"
+      - equal: {path: "subjects[0].namespace", value: release-ns}
+        template: "templates/controller/rolebinding.yaml"
+      - equal: {path: "subjects[0].namespace", value: release-ns}
+        template: "templates/controller/metrics-auth-rbac.yaml"
+        documentSelector: {path: kind, value: ClusterRoleBinding}
+      - equal: {path: "webhooks[*].clientConfig.service.namespace", value: release-ns}
+        template: "templates/controller/webhook.yaml"
+      - equal:
+          path: "metadata.annotations[\"cert-manager.io/inject-ca-from\"]"
+          value: release-ns/rel-network-enforcer-ca
+        template: "templates/controller/webhook.yaml"
+      - equal:
+          path: "spec.template.spec.volumes[1].csi.volumeAttributes[\"csi.cert-manager.io/dns-names\"]"
+          value: rel-network-enforcer-controller-webhook.release-ns.svc
+        template: "templates/controller/deployment.yaml"
+      - equal:
+          path: "spec.template.spec.volumes[0].csi.volumeAttributes[\"csi.cert-manager.io/dns-names\"]"
+          value: "rel-network-enforcer-istio-otlp,rel-network-enforcer-istio-otlp.release-ns,rel-network-enforcer-istio-otlp.release-ns.svc,rel-network-enforcer-istio-otlp.release-ns.svc.cluster.local"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should apply namespaceOverride to every namespaced resource and reference"
+    set:
+      namespaceOverride: other
+    asserts: *namespacedAsserts
+---
+suite: "Values contract: namespaceOverride and the provider TLS RBAC"
+templates:
+  - "templates/controller/provider-tls-rbac.yaml"
+  - "templates/controller/deployment.yaml"
+release:
+  name: rel
+  namespace: release-ns
+tests:
+  - it: "should render a numeric namespaceOverride as a string in the provider TLS RoleBinding subject"
+    set:
+      namespaceOverride: "123"
+      controller:
+        provider:
+          name: cilium
+    asserts:
+      - equal:
+          path: "subjects[0].namespace"
+          value: "123"
+        template: "templates/controller/provider-tls-rbac.yaml"
+        documentSelector: {path: kind, value: RoleBinding}
+
+  - it: "should keep the Cilium provider TLS RBAC in the Secret namespace"
+    set:
+      namespaceOverride: other
+      controller:
+        provider:
+          name: cilium
+    asserts:
+      - hasDocuments:
+          count: 2
+        template: "templates/controller/provider-tls-rbac.yaml"
+      - equal:
+          path: metadata.namespace
+          value: kube-system
+        template: "templates/controller/provider-tls-rbac.yaml"
+      - equal:
+          path: "subjects[0].namespace"
+          value: other
+        template: "templates/controller/provider-tls-rbac.yaml"
+        documentSelector: {path: kind, value: RoleBinding}
+      - equal:
+          path: "subjects[0].name"
+          value: rel-network-enforcer-controller-manager
+        template: "templates/controller/provider-tls-rbac.yaml"
+        documentSelector: {path: kind, value: RoleBinding}
+      - equal:
+          path: metadata.namespace
+          value: other
+        template: "templates/controller/deployment.yaml"
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--provider-tls-cert-secret=kube-system/hubble-relay-client-certs"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should keep the Calico provider TLS RBAC in the Secret namespace"
+    set:
+      namespaceOverride: other
+      controller:
+        provider:
+          name: calico
+    asserts:
+      - hasDocuments:
+          count: 2
+        template: "templates/controller/provider-tls-rbac.yaml"
+      - equal:
+          path: metadata.namespace
+          value: calico-system
+        template: "templates/controller/provider-tls-rbac.yaml"
+      - equal:
+          path: "subjects[0].namespace"
+          value: other
+        template: "templates/controller/provider-tls-rbac.yaml"
+        documentSelector: {path: kind, value: RoleBinding}
+      - equal:
+          path: metadata.namespace
+          value: other
+        template: "templates/controller/deployment.yaml"
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--provider-tls-cert-secret=calico-system/goldmane-key-pair"
+        template: "templates/controller/deployment.yaml"
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--provider-tls-ca-configmap=calico-system/goldmane-ca-bundle"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should bind the provider TLS RBAC to the release namespace by default"
+    set:
+      controller:
+        provider:
+          name: cilium
+    asserts:
+      - equal:
+          path: "subjects[0].namespace"
+          value: release-ns
+        template: "templates/controller/provider-tls-rbac.yaml"
+        documentSelector: {path: kind, value: RoleBinding}
