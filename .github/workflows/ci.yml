@@ -50,6 +50,13 @@ jobs:
       - name: Running Tests
         run: |
           make test
+      - name: Run ztunnel parser benchmarks
+        run: |
+          go test ./internal/ztunnel \
+            -bench='^BenchmarkParse$' \
+            -benchmem \
+            -count=1 \
+            -run='^$'
       - name: Upload unit-tests coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:

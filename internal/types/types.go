@@ -14,6 +14,14 @@ const (
 	ProviderCalico Provider = "calico"
 )
 
+type EventType string
+
+const (
+	EventTypeLearn   EventType = "learn"
+	EventTypeMonitor EventType = "monitor"
+	EventTypeProtect EventType = "protect"
+)
+
 // LearningEvent represents a learning event in the network enforcer.
 type LearningEvent struct {
 	Source   *securityv1alpha1.WorkloadRef  `json:"source"`
