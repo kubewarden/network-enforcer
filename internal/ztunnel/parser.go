@@ -4,11 +4,10 @@ package ztunnel
 
 import (
 	"bytes"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/goccy/go-json/v2"
 
 	"github.com/kubewarden/network-enforcer/internal/types"
 )

@@ -1,12 +1,12 @@
 package ztunnel
 
 import (
+	"encoding/json/v2"
 	"os"
 	"reflect"
 	"slices"
 	"testing"
 
-	"github.com/goccy/go-json"
 	lua "github.com/yuin/gopher-lua"
 )
 
