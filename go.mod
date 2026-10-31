@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/avast/retry-go/v5 v5.0.0
-	github.com/cilium/cilium v1.20.3
+	github.com/cilium/cilium v1.20.4
 	github.com/go-logr/logr v1.4.4
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
@@ -19,7 +19,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.1
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
-	istio.io/api v1.32.0-alpha.0
+	istio.io/api v1.32.0-beta.0
 	istio.io/client-go v1.31.3
 	k8s.io/api v0.37.1
 	k8s.io/apiextensions-apiserver v0.37.1
