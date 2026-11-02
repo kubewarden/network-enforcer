@@ -119,8 +119,10 @@ What that leaves out:
   record and comparing it: enrichment changes between a first delivery and a replay, the
   acknowledgement history is capped, and record timestamps can be rewritten. That
   suppression lives in the leader's memory and is lost with it.
-- A durable on-disk spool would remove the first two caveats and is explicitly out of
-  scope for this iteration. The table is the promise until that changes.
+- A durable on-disk spool would remove the first caveat, and only that one. The
+  leader-crash caveat needs durable staging before acknowledgement, which is the same
+  project as persisting observations, not a change to the agent. Both are out of scope
+  for this iteration, and the table is the promise until that changes.
 
 ### TLS
 
@@ -160,12 +162,23 @@ the leader scales.
 
 ## Migration
 
-The agent ships before anything is removed. The controller then starts pulling while the
-old shipper still runs, and the push path and its receiver are removed last, in the same
-release. That ordering is a deployment barrier, not a commit order: the agent must be
-ready on every node before the controller that stops listening is rolled out, otherwise
-there is a window with no producer. A pre-upgrade check that fails the release while the
-agent is not fully available is the cheap way to enforce it.
+The agent ships one release before anything uses it, because the cutover needs an upgrade
+in which every node already serves:
+
+1. **Agent only.** The agent DaemonSet is added next to the existing shipper and nobody
+   reads it. No puller, no listener removal, no other change. This release is the
+   barrier: it is what makes the next one safe.
+2. **Cutover.** The controller starts pulling and stops listening in the same release,
+   and the shipper and its receiving Service are removed with it. The agents already
+   exist and are ready, so the only window is the controller rollout itself, which the
+   agents cover.
+
+A pre-upgrade check that refuses the cutover while the agent is not fully available is
+the cheap guard. It has to stay quiet on a fresh install, where both components are
+created together and there is no old path to protect; a check that requires the DaemonSet
+to exist would otherwise block the very upgrade that creates it. If the project prefers a
+single release, the equivalent is a hook that creates the agents and waits for them
+before the controller rolls, and that is more machinery than the second release.
 
 After the cutover there is no push path left, so rolling back one component without the
 other leaves either a producer with no endpoint or an endpoint with no producer; roll
@@ -179,10 +192,9 @@ controller replica count no longer decides whether events arrive.
 The costs are real. We add a second binary to build, sign and ship, running as root on
 every node and listening on the network. Users who pointed their own collector at the
 controller lose that integration, and users relying on a shared Secret lose per-pod
-authentication. During the overlap both paths deliver the same events, which is safe for
-learned proposals and for violations only because of the duplicate suppression above.
-And the delivery guarantee becomes a sentence with three exceptions, which is worse than
-the sentence people would like to read.
+authentication. The release that introduces the agent carries a component nobody reads
+yet, and an operator who skips it cannot cut over. And the delivery guarantee becomes a
+sentence with exceptions, which is worse than the sentence people would like to read.
 
 ## Alternatives
 
