@@ -1,0 +1,16 @@
+FROM docker.io/library/golang:1.27.3 AS builder
+
+WORKDIR /src
+COPY api/ /src/api
+COPY cmd/ /src/cmd
+COPY internal/ /src/internal
+COPY go.mod go.sum /src/
+COPY Makefile /src/
+RUN make agent
+
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+COPY --from=builder /src/bin/agent /agent
+
+USER 65532:65532
+ENTRYPOINT ["/agent"]
