@@ -70,17 +70,19 @@ than detected.
 ### The cursor
 
 Every event gets a sequence number. The buffer also has an epoch: a random identifier for
-the buffer instance, checkpointed with the sequence and the read position, so a container
-restart continues the same sequence while a new pod starts a new one. Using the pod
-identity as the epoch was rejected because a container restart keeps the pod identity and
-resets the counter, which would leave the controller's cursor ahead of the agent.
+the buffer instance. Buffer, sequence, read position and the agent-side cursor live in the
+same volume, so a container restart continues the same sequence and resumes where it
+stopped, while a new pod starts a new one. Using the pod identity as the epoch was
+rejected because a container restart keeps the pod identity and resets the counter, which
+would leave the controller's cursor ahead of the agent.
 
 Pulls are unary. Each pull carries the acknowledgement for the previous batch and returns
 events after the last one acknowledged; the agent keeps the highest acknowledged sequence
-so a new leader can resume from the agent instead of from its own memory. Acknowledging
-at pull time was rejected: a response lost in flight, or a batch whose last event the
-consumer refused, would then be skipped by the next leader, which is the silent skip this
-design exists to remove.
+so a new leader can resume from the agent instead of from its own memory. Advancing the
+cursor only after the status write succeeded was considered and rejected: one flapping
+policy would then pin every node's cursor. Acknowledging at pull time was rejected: a
+response lost in flight, or a batch whose last event the consumer refused, would then be
+skipped by the next leader, which is the silent skip this design exists to remove.
 
 "Acknowledged" means accepted into the leader's buffers, not written to the API. A
 leader that dies in between loses what it held, and a handover looks like a death from
@@ -99,16 +101,17 @@ the event. Everything above and below that is weaker, and deliberately stated:
 
 | Hop | Guarantee | Bound |
 | --- | --- | --- |
-| ztunnel log to agent buffer | at least once while retained | 10k events / 5 minutes |
+| ztunnel log to agent buffer | at least once while retained | 10k events / 5 minutes on disk |
 | agent buffer to leader buffers | at least once while retained; the leader acknowledges what it accepted | one batch per pull |
 | leader buffers to policy status | best effort, duplicates suppressed by event identity | bounded buffer, periodic drain |
 | leader buffers to learned proposals | idempotent, the same rule applied twice is the same rule | bounded channel, then a queue |
 
 What that leaves out:
 
-- A container restart loses whatever was buffered and not yet read. A new pod replays the
-  current log file, which is bounded by log rotation, and loses whatever rotation already
-  removed. An epoch change is the only signal for the latter.
+- A container restart loses nothing: the unread buffer is on the same volume as the
+  checkpoint. A pod replacement loses it unless the volume is a host path or a persistent
+  volume, which also survives upgrades at the cost of node-local state to clean up. What
+  rotation removed before either is gone, and an epoch change is the only signal.
 - A leader that dies between accepting a batch and writing status loses that batch.
   Rewinding on a failed write was rejected: one policy's write conflict would replay every
   node's events, and a flapping policy would never make progress.
@@ -119,10 +122,10 @@ What that leaves out:
   record and comparing it: enrichment changes between a first delivery and a replay, the
   acknowledgement history is capped, and record timestamps can be rewritten. That
   suppression lives in the leader's memory and is lost with it.
-- A durable on-disk spool would remove the first caveat, and only that one. The
-  leader-crash caveat needs durable staging before acknowledgement, which is the same
-  project as persisting observations, not a change to the agent. Both are out of scope
-  for this iteration, and the table is the promise until that changes.
+- Persisting the buffer on the agent does not fix the leader-crash caveat, and no volume
+  can: the leader acknowledges on acceptance, so its successor starts after a batch it
+  never wrote. Fixing that means acknowledging after the write, which is the rejected
+  option above.
 
 ### TLS
 
