@@ -41,5 +41,5 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: {{ include "network-enforcer.fullname" . }}-controller-manager
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ include "network-enforcer.namespace" . | quote }}
 {{- end }}

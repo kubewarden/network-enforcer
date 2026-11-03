@@ -1,15 +1,16 @@
-{{- if and .Values.controller.pdb .Values.controller.pdb.enabled }}
+{{- with .Values.controller.podDisruptionBudget }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "network-enforcer.fullname" . }}-controller-manager
+  name: {{ include "network-enforcer.fullname" $ }}-controller-manager
+  namespace: {{ include "network-enforcer.namespace" $ | quote }}
   labels:
-    {{- include "network-enforcer.labels" . | nindent 4 }}
+    {{- include "network-enforcer.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: controller
 spec:
-  {{- $pdbSpec := omit .Values.controller.pdb "enabled" }}
-  {{- $pdbSpec | toYaml | nindent 2 }}
+  {{- toYaml . | nindent 2 }}
   selector:
     matchLabels:
       app.kubernetes.io/component: controller
-      {{- include "network-enforcer.selectorLabels" . | nindent 6 }}
+      {{- include "network-enforcer.selectorLabels" $ | nindent 6 }}
 {{- end }}

@@ -63,9 +63,9 @@ in the cluster. The
 [Quick Start](https://docs.kubewarden.io/network-enforcer/latest/en/installation/quickstart.html)
 shows how to install them.
 
-Network Enforcer ships with a standalone OTEL collector Deployment that handles
-violation metrics and events forwarding. No external OpenTelemetry Collector is
-needed for a basic setup.
+The chart does not deploy an OpenTelemetry collector. The controller exports
+violation events to a collector that you deploy. To turn on the export, set
+`global.otel.endpoint`.
 
 ```sh
 helm repo add kubewarden https://charts.kubewarden.io
@@ -91,14 +91,18 @@ kubectl get pods -n network-enforcer
 The top-level keys of
 [`values.yaml`](https://github.com/kubewarden/network-enforcer/blob/main/charts/network-enforcer/values.yaml):
 
-| Key                   | Description                                                                                |
-| --------------------- | ------------------------------------------------------------------------------------------ |
-| `controller`          | The controller Deployment: image, resources, security context, scheduling, log level.      |
-| `controller.provider` | The data-plane provider (`istio`, `cilium`, `calico`), and per-provider endpoint/TLS settings. |
-| `telemetry`           | The OTEL collector strategy: `none`, `default` (bundled collector), or `external`. The bundled collector also has `resources`, `tolerations`, `nodeSelector`, and `affinity` keys. |
-| `imagePullSecrets`    | Secrets with private registry credentials.                                                 |
-| `nameOverride`        | Replaces the chart name in the generated resource names.                                   |
-| `fullnameOverride`    | Replaces the whole `<release>-<chart>` prefix in the generated resource names.             |
+| Key                       | Description                                                                                                 |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `namespaceOverride`       | The namespace of the chart resources. If it is empty, the chart uses the release namespace.                 |
+| `global`                  | The values for all workloads: registry, pull secrets, log level, labels, scheduling, extra env, `otel`.     |
+| `otel`                    | The telemetry export of this chart. A key that is set here wins over the workload `otel` and `global.otel`. |
+| `controller`              | The controller Deployment: image, replicas, resources, security context, PodDisruptionBudget.               |
+| `controller.provider`     | The data-plane provider (`istio`, `cilium`, `calico`), and per-provider endpoint/TLS settings.              |
+| `istioFluentBit`          | The fluent-bit DaemonSet that sends `ztunnel` logs to the controller. The chart deploys it only for `istio`. |
+| `kubernetesClusterDomain` | The DNS domain of the cluster.                                                                              |
+| `priorityClass`           | The PriorityClass shared by the controller and fluent-bit pods. A `priorityClassName` overrides it.         |
+| `nameOverride`            | Replaces the chart name in the generated resource names.                                                    |
+| `fullnameOverride`        | Replaces the whole `<release>-<chart>` prefix in the generated resource names.                              |
 
 ### Provider endpoint and TLS
 
@@ -125,8 +129,10 @@ The controller serves a validating admission webhook for
 
 ### Scheduling
 
-`controller`, `controller.provider.istio.fluentBit`, and `telemetry.defaultCollector`
-each have their own `resources`, `tolerations`, `nodeSelector`, and `affinity` keys.
+The `global` block sets `tolerations`, `nodeSelector`, `affinity`, and the
+other scheduling keys for all workloads. The `controller` and `istioFluentBit`
+blocks accept the same keys. A value in a workload block replaces the value in
+`global`. `controller` and `istioFluentBit` also have their own `resources` key.
 
 The `istio-fluent-bit` DaemonSet must run on every node that runs the Istio
 ambient `ztunnel` DaemonSet. This includes nodes with taints, for example
@@ -134,16 +140,16 @@ control-plane nodes. The DaemonSet reads `ztunnel` logs from the node's
 filesystem. It needs a pod on each node where `ztunnel` runs.
 
 `ztunnel` tolerates all taints by default.
-`controller.provider.istio.fluentBit.tolerations` uses the same default
-(`- operator: Exists`). If you set this value to `[]`, fluent-bit no longer
-tolerates any taint. The fluent-bit pod is then missing from each tainted
-node that `ztunnel` still runs on. The chart does not collect logs from
-`ztunnel` on those nodes.
+`istioFluentBit.tolerations` uses the same default (`- operator: Exists`), and
+this default replaces `global.tolerations`. If you set
+`istioFluentBit.tolerations` to `[]`, fluent-bit uses `global.tolerations`. If
+that is also empty, fluent-bit no longer tolerates any taint. The fluent-bit
+pod is then missing from each tainted node that `ztunnel` still runs on. The
+chart does not collect logs from `ztunnel` on those nodes.
 
-The `controller` Deployment and the `telemetry.defaultCollector` Deployment
-have no tolerations by default. Set `controller.tolerations` or
-`telemetry.defaultCollector.tolerations` to schedule these Deployments onto
-tainted nodes.
+The `controller` Deployment has no tolerations by default. Set
+`controller.tolerations` or `global.tolerations` to schedule it onto tainted
+nodes.
 
 Override examples:
 

@@ -142,57 +142,6 @@ func ServerCredentials(certDir string) (credentials.TransportCredentials, error)
 	return credentials.NewTLS(tlsConfig), nil
 }
 
-// ClientTLSConfig builds a *[tls.Config] for an OTLP exporter client that
-// verifies the collector's server certificate against the CA at caCertPath
-// and optionally presents a client certificate for mTLS.
-//
-// The CA is re-read on every handshake so certificate rotation works without
-// restarting the process. An explicit ServerName is not set: the gRPC/HTTP
-// dialer populates it from the endpoint host, and VerifyConnection reads it
-// from the connection state.
-//
-// caCertPath must be non-empty. Use an insecure exporter option instead of
-// this function when no CA is configured.
-func ClientTLSConfig(caCertPath, clientCertPath, clientKeyPath string) (*tls.Config, error) {
-	// Validate that the CA certificate is readable at startup.
-	if _, err := LoadCACertPool(caCertPath); err != nil {
-		return nil, err
-	}
-	// Fail fast on partial client cert configuration.
-	if (clientCertPath != "") != (clientKeyPath != "") {
-		return nil, fmt.Errorf("both or neither of client cert and key must be set (cert=%q, key=%q)",
-			clientCertPath, clientKeyPath)
-	}
-	cfg := &tls.Config{
-		MinVersion:         tls.VersionTLS13,
-		InsecureSkipVerify: true, //nolint:gosec // verified in VerifyConnection
-		VerifyConnection: func(cs tls.ConnectionState) error {
-			certPool, err := LoadCACertPool(caCertPath)
-			if err != nil {
-				return err
-			}
-			opts := x509.VerifyOptions{
-				Roots:         certPool,
-				DNSName:       cs.ServerName,
-				Intermediates: x509.NewCertPool(),
-			}
-			for _, cert := range cs.PeerCertificates[1:] {
-				opts.Intermediates.AddCert(cert)
-			}
-			_, err = cs.PeerCertificates[0].Verify(opts)
-			return err
-		},
-	}
-	if clientCertPath != "" && clientKeyPath != "" {
-		clientCert, err := LoadKeyPair(clientCertPath, clientKeyPath)
-		if err != nil {
-			return nil, err
-		}
-		cfg.Certificates = []tls.Certificate{clientCert}
-	}
-	return cfg, nil
-}
-
 // ClientCredentialsFromPEM creates gRPC transport credentials for client-side
 // mTLS from PEM-encoded material. serverName is used for TLS SNI and
 // certificate hostname verification.

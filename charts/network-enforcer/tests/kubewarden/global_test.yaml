@@ -1,0 +1,477 @@
+suite: "Values contract: global"
+templates:
+  - "templates/controller/deployment.yaml"
+  - "templates/istio-fluent-bit/daemonset.yaml"
+  # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
+  # The documentSelector below keeps the assertions on the Deployment and the DaemonSet.
+  - "templates/istio-fluent-bit/configmap.yaml"
+workloads: &workloads
+  path: apiVersion
+  value: apps/v1
+  skipEmptyTemplates: true
+  matchMany: true
+tests:
+  # The fluent-bit DaemonSet has no log level, so the log level assertion checks the controller only.
+  - it: "should render the defaults on every workload"
+    documentSelector: *workloads
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].imagePullPolicy"
+          value: IfNotPresent
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--log-level=info"
+        template: "templates/controller/deployment.yaml"
+      - notExists:
+          path: "spec.template.spec.containers[0].args"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - matchRegex:
+          path: "spec.template.spec.containers[0].image"
+          pattern: "^ghcr\\.io/"
+        template: "templates/controller/deployment.yaml"
+      - matchRegex:
+          path: "spec.template.spec.containers[0].image"
+          pattern: "^docker\\.io/"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should render global.imagePullPolicy on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        imagePullPolicy: Always
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].imagePullPolicy"
+          value: Always
+
+  # The fluent-bit DaemonSet has no log level, so this case checks the controller only.
+  - it: "should render global.logLevel on every workload"
+    templates:
+      - "templates/controller/deployment.yaml"
+    set:
+      global:
+        logLevel: debug
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--log-level=debug"
+
+  - it: "should render global.labels on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        labels:
+          team: security
+    asserts:
+      - equal:
+          path: "metadata.labels.team"
+          value: security
+
+  - it: "should render global.annotations on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        annotations:
+          example.com/owner: security
+    asserts:
+      - equal:
+          path: "metadata.annotations[\"example.com/owner\"]"
+          value: security
+
+  - it: "should render global.podLabels on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        podLabels:
+          team: security
+    asserts:
+      - equal:
+          path: "spec.template.metadata.labels.team"
+          value: security
+
+  - it: "should render global.podAnnotations on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        podAnnotations:
+          example.com/owner: security
+    asserts:
+      - equal:
+          path: "spec.template.metadata.annotations[\"example.com/owner\"]"
+          value: security
+
+  - it: "should render global.nodeSelector on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        nodeSelector:
+          kubernetes.io/os: linux
+    asserts:
+      - equal:
+          path: "spec.template.spec.nodeSelector"
+          value:
+            kubernetes.io/os: linux
+
+  # istioFluentBit.tolerations has a default that wins over global.
+  # This case clears it, so global.tolerations applies to every workload.
+  - it: "should render global.tolerations on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        tolerations:
+          - key: dedicated
+            operator: Exists
+            effect: NoSchedule
+      istioFluentBit:
+        tolerations: []
+    asserts:
+      - equal:
+          path: "spec.template.spec.tolerations"
+          value:
+            - key: dedicated
+              operator: Exists
+              effect: NoSchedule
+
+  - it: "should render global.affinity on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: kubernetes.io/arch
+                      operator: In
+                      values: [amd64]
+    asserts:
+      - equal:
+          path: "spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key"
+          value: kubernetes.io/arch
+
+  - it: "should render global.topologySpreadConstraints on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+    asserts:
+      - equal:
+          path: "spec.template.spec.topologySpreadConstraints"
+          value:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: ScheduleAnyway
+
+  - it: "should render global.priorityClassName on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        priorityClassName: system-cluster-critical
+    asserts:
+      - equal:
+          path: "spec.template.spec.priorityClassName"
+          value: system-cluster-critical
+
+  - it: "should render global.extraEnv on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        extraEnv:
+          - name: HTTPS_PROXY
+            value: http://proxy:3128
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: HTTPS_PROXY
+            value: http://proxy:3128
+
+  - it: "should render global.extraEnvFrom on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        extraEnvFrom:
+          - configMapRef:
+              name: proxy-env
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].envFrom"
+          value:
+            - configMapRef:
+                name: proxy-env
+
+  - it: "should render global.extraVolumes on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        extraVolumes:
+          - name: extra-ca
+            configMap:
+              name: extra-ca
+    asserts:
+      - contains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: extra-ca
+            configMap:
+              name: extra-ca
+
+  - it: "should render global.extraVolumeMounts on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        extraVolumeMounts:
+          - name: extra-ca
+            mountPath: /etc/extra-ca
+            readOnly: true
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].volumeMounts"
+          content:
+            name: extra-ca
+            mountPath: /etc/extra-ca
+            readOnly: true
+
+  # network-enforcer has no NATS subchart, so this case does not set global.image.registry.
+  - it: "should render global.imageRegistry on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        imageRegistry: registry.example.com
+      controller:
+        image:
+          tag: 1.0.0
+      istioFluentBit:
+        image:
+          tag: 2.0.0
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].image"
+          value: "registry.example.com/kubewarden/network-enforcer/controller:1.0.0"
+        template: "templates/controller/deployment.yaml"
+      - equal:
+          path: "spec.template.spec.containers[0].image"
+          value: "registry.example.com/fluent/fluent-bit:2.0.0"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should ignore global.cattle.systemDefaultRegistry"
+    documentSelector: *workloads
+    set:
+      global:
+        cattle:
+          systemDefaultRegistry: rancher.example.com
+    asserts:
+      - matchRegex:
+          path: "spec.template.spec.containers[0].image"
+          pattern: "^(ghcr|docker)\\.io/"
+
+  - it: "should render global.imagePullSecrets on every workload"
+    documentSelector: *workloads
+    set:
+      global:
+        imagePullSecrets:
+          - name: registry-credentials
+    asserts:
+      - equal:
+          path: "spec.template.spec.imagePullSecrets"
+          value:
+            - name: registry-credentials
+
+  - it: "should accept plain Secret names in global.imagePullSecrets"
+    documentSelector: *workloads
+    set:
+      global:
+        imagePullSecrets:
+          - registry-credentials
+    asserts:
+      - equal:
+          path: "spec.template.spec.imagePullSecrets"
+          value:
+            - name: registry-credentials
+
+  - it: "should skip empty names in imagePullSecrets"
+    documentSelector: *workloads
+    set:
+      global:
+        imagePullSecrets:
+          - ""
+          - {}
+          - name: ""
+          - other: x
+          - name: real-secret
+    asserts:
+      - equal:
+          path: "spec.template.spec.imagePullSecrets"
+          value:
+            - name: real-secret
+
+  - it: "should omit imagePullSecrets when all names are empty"
+    documentSelector: *workloads
+    set:
+      global:
+        imagePullSecrets:
+          - ""
+          - {}
+          - name: ""
+    asserts:
+      - notExists:
+          path: "spec.template.spec.imagePullSecrets"
+
+  # network-enforcer cases
+  - it: "should render the network-enforcer images and no pull secrets or envFrom by default"
+    documentSelector: *workloads
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].imagePullPolicy"
+          value: IfNotPresent
+      - matchRegex:
+          path: "spec.template.spec.containers[0].image"
+          pattern: "^ghcr\\.io/kubewarden/network-enforcer/controller:[^:/]+$"
+        template: "templates/controller/deployment.yaml"
+      - matchRegex:
+          path: "spec.template.spec.containers[0].image"
+          pattern: "^docker\\.io/fluent/fluent-bit:[^:/]+$"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notExists:
+          path: "spec.template.spec.imagePullSecrets"
+      - notExists:
+          path: "spec.template.spec.containers[0].envFrom"
+
+  - it: "should render global.logLevel on the controller"
+    templates:
+      - "templates/controller/deployment.yaml"
+    set:
+      global:
+        logLevel: debug
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--log-level=debug"
+      - notContains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--log-level=info"
+
+  - it: "should not render global.logLevel on the fluent-bit DaemonSet"
+    templates:
+      - "templates/istio-fluent-bit/daemonset.yaml"
+      - "templates/istio-fluent-bit/configmap.yaml"
+    documentSelector: *workloads
+    set:
+      global:
+        logLevel: debug
+    asserts:
+      - notExists:
+          path: "spec.template.spec.containers[0].args"
+
+  - it: "should render global.labels on the workloads but not on the pods"
+    documentSelector: *workloads
+    set:
+      global:
+        labels:
+          team: security
+    asserts:
+      - equal:
+          path: "metadata.labels.team"
+          value: security
+      - notExists:
+          path: "spec.template.metadata.labels.team"
+
+  - it: "should render global.annotations on the workloads but not on the pods"
+    documentSelector: *workloads
+    set:
+      global:
+        annotations:
+          example.com/owner: security
+    asserts:
+      - equal:
+          path: "metadata.annotations[\"example.com/owner\"]"
+          value: security
+      - notExists:
+          path: "spec.template.metadata.annotations[\"example.com/owner\"]"
+
+  - it: "should render global.podLabels on the pods but not on the workloads"
+    documentSelector: *workloads
+    set:
+      global:
+        podLabels:
+          team: security
+    asserts:
+      - equal:
+          path: "spec.template.metadata.labels.team"
+          value: security
+      - notExists:
+          path: "metadata.labels.team"
+
+  - it: "should keep the fixed pod annotations with global.podAnnotations"
+    documentSelector: *workloads
+    set:
+      global:
+        podAnnotations:
+          example.com/owner: security
+    asserts:
+      - equal:
+          path: "spec.template.metadata.annotations[\"example.com/owner\"]"
+          value: security
+      - equal:
+          path: "spec.template.metadata.annotations[\"kubectl.kubernetes.io/default-container\"]"
+          value: manager
+        template: "templates/controller/deployment.yaml"
+      - matchRegex:
+          path: "spec.template.metadata.annotations[\"checksum/config\"]"
+          pattern: "^[a-f0-9]{64}$"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should render global.otel on the controller"
+    templates:
+      - "templates/controller/deployment.yaml"
+    set:
+      global:
+        otel:
+          endpoint: "https://collector.example.com:4317"
+          caSecretName: otel-ca
+          clientCertificateSecretName: otel-client
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "https://collector.example.com:4317"
+      - contains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+            secret:
+              secretName: otel-ca
+      - contains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-client-tls
+            secret:
+              secretName: otel-client
+
+  - it: "should not render global.otel on the fluent-bit DaemonSet"
+    templates:
+      - "templates/istio-fluent-bit/daemonset.yaml"
+      - "templates/istio-fluent-bit/configmap.yaml"
+    documentSelector: *workloads
+    set:
+      global:
+        otel:
+          endpoint: "https://collector.example.com:4317"
+          caSecretName: otel-ca
+          clientCertificateSecretName: otel-client
+    asserts:
+      - notContains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "https://collector.example.com:4317"
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+            secret:
+              secretName: otel-ca

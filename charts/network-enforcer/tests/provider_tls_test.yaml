@@ -395,10 +395,8 @@ release:
   name: my-release
   namespace: my-namespace
 tests:
-  - it: "creates the CA issuer for issuer mode without the shipped collector"
+  - it: "creates the CA issuer for issuer mode"
     set:
-      telemetry:
-        collectorStrategy: none
       controller:
         provider:
           istio:
@@ -408,10 +406,8 @@ tests:
       - hasDocuments:
           count: 3
 
-  - it: "creates the CA issuer for Cilium issuer mode without the shipped collector"
+  - it: "creates the CA issuer for Cilium issuer mode"
     set:
-      telemetry:
-        collectorStrategy: none
       controller:
         provider:
           name: cilium
@@ -422,10 +418,8 @@ tests:
       - hasDocuments:
           count: 3
 
-  - it: "creates the CA issuer for the webhook in insecure mode without the shipped collector"
+  - it: "creates the CA issuer for the webhook in insecure mode"
     set:
-      telemetry:
-        collectorStrategy: none
       controller:
         provider:
           name: cilium
@@ -437,8 +431,11 @@ tests:
       - hasDocuments:
           count: 3
 
-  - it: "still creates the CA issuer when the shipped collector is enabled"
+  - it: "still creates the CA issuer when an OpenTelemetry endpoint is set"
     set:
+      global:
+        otel:
+          endpoint: https://collector:4317
       controller:
         provider:
           name: cilium

@@ -1,0 +1,167 @@
+suite: "Removed resources"
+# No templates list: every chart template renders, so a resource from a
+# deleted template file would show up here.
+set:
+  global:
+    otel:
+      endpoint: "https://collector:4317"
+tests:
+  - it: "should not render the bundled collector Deployment, ConfigMap, or Service"
+    asserts:
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+          name: RELEASE-NAME-network-enforcer-otel-collector
+        not: true
+      - containsDocument:
+          kind: ConfigMap
+          apiVersion: v1
+          name: RELEASE-NAME-network-enforcer-otel-collector
+        not: true
+      - containsDocument:
+          kind: Service
+          apiVersion: v1
+          name: RELEASE-NAME-network-enforcer-otel-collector
+        not: true
+
+  - it: "should not render the bundled collector with the removed telemetry values"
+    set:
+      telemetry:
+        collectorStrategy: default
+    asserts:
+      - containsDocument:
+          kind: Deployment
+          apiVersion: apps/v1
+          name: RELEASE-NAME-network-enforcer-otel-collector
+        not: true
+      - containsDocument:
+          kind: ConfigMap
+          apiVersion: v1
+          name: RELEASE-NAME-network-enforcer-otel-collector
+        not: true
+      - containsDocument:
+          kind: Service
+          apiVersion: v1
+          name: RELEASE-NAME-network-enforcer-otel-collector
+        not: true
+
+  - it: "should not render a PodDisruptionBudget from the removed controller.pdb"
+    set:
+      controller:
+        pdb:
+          enabled: true
+          minAvailable: 1
+    asserts:
+      - containsDocument:
+          kind: PodDisruptionBudget
+          apiVersion: policy/v1
+          name: RELEASE-NAME-network-enforcer-controller-manager
+        not: true
+
+  - it: "should never render OTEL_EXPORTER_OTLP_PROTOCOL or OTEL_EXPORTER_OTLP_INSECURE"
+    templates:
+      - "templates/controller/deployment.yaml"
+      - "templates/istio-fluent-bit/daemonset.yaml"
+      # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
+      - "templates/istio-fluent-bit/configmap.yaml"
+    documentSelector:
+      path: apiVersion
+      value: apps/v1
+      skipEmptyTemplates: true
+      matchMany: true
+    set:
+      otel:
+        endpoint: "http://collector:4317"
+      global:
+        otel:
+          endpoint: "https://collector:4317"
+          caSecretName: otel-ca
+          clientCertificateSecretName: otel-client
+      istioFluentBit:
+        otel:
+          endpoint: "http://collector:4317"
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://collector:4317"
+        template: "templates/controller/deployment.yaml"
+      - notContains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_PROTOCOL
+          any: true
+      - notContains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_INSECURE
+          any: true
+
+  # network-enforcer keeps the metrics endpoint that runtime-enforcer removed.
+  - it: "should keep the metrics endpoint and its RBAC"
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--metrics-bind-address=:8443"
+        template: "templates/controller/deployment.yaml"
+      - containsDocument:
+          kind: ClusterRole
+          apiVersion: rbac.authorization.k8s.io/v1
+          name: RELEASE-NAME-network-enforcer-metrics-reader
+        template: "templates/controller/metrics-reader-rbac.yaml"
+      - containsDocument:
+          kind: ClusterRole
+          apiVersion: rbac.authorization.k8s.io/v1
+          name: RELEASE-NAME-network-enforcer-metrics-auth-role
+        template: "templates/controller/metrics-auth-rbac.yaml"
+        documentSelector:
+          path: kind
+          value: ClusterRole
+      - containsDocument:
+          kind: ClusterRoleBinding
+          apiVersion: rbac.authorization.k8s.io/v1
+          name: RELEASE-NAME-network-enforcer-metrics-auth-rolebinding
+        template: "templates/controller/metrics-auth-rbac.yaml"
+        documentSelector:
+          path: kind
+          value: ClusterRoleBinding
+      - equal:
+          path: roleRef
+          value:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: RELEASE-NAME-network-enforcer-metrics-auth-role
+        template: "templates/controller/metrics-auth-rbac.yaml"
+        documentSelector:
+          path: kind
+          value: ClusterRoleBinding
+      - equal:
+          path: subjects
+          value:
+            - kind: ServiceAccount
+              name: RELEASE-NAME-network-enforcer-controller-manager
+              namespace: NAMESPACE
+        template: "templates/controller/metrics-auth-rbac.yaml"
+        documentSelector:
+          path: kind
+          value: ClusterRoleBinding
+
+  - it: "should keep the metrics RBAC subject in namespaceOverride"
+    set:
+      namespaceOverride: other
+    asserts:
+      - equal:
+          path: subjects
+          value:
+            - kind: ServiceAccount
+              name: RELEASE-NAME-network-enforcer-controller-manager
+              namespace: other
+        template: "templates/controller/metrics-auth-rbac.yaml"
+        documentSelector:
+          path: kind
+          value: ClusterRoleBinding
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--metrics-bind-address=:8443"
+        template: "templates/controller/deployment.yaml"

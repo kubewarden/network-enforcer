@@ -3,7 +3,7 @@ kind: ValidatingWebhookConfiguration
 metadata:
   name: {{ include "network-enforcer.fullname" . }}-validating-webhook-configuration
   annotations:
-    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "network-enforcer.caIssuerName" . }}
+    cert-manager.io/inject-ca-from: {{ include "network-enforcer.namespace" . }}/{{ include "network-enforcer.caIssuerName" . }}
   labels:
   {{- include "network-enforcer.labels" . | nindent 4 }}
 webhooks:
@@ -12,7 +12,7 @@ webhooks:
   clientConfig:
     service:
       name: {{ include "network-enforcer.webhookServiceName" . }}
-      namespace: {{ .Release.Namespace }}
+      namespace: {{ include "network-enforcer.namespace" . | quote }}
       path: /validate-networkenforcer-kubewarden-io-v1alpha1-workloadnetworkpolicy
   failurePolicy: Fail
   name: validate-workloadnetworkpolicies.kubewarden.io

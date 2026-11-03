@@ -58,9 +58,8 @@ body:
     attributes:
       label: Relevant logs
       description: |
-        Logs from the controller and/or otel-collector, e.g.:
+        Logs from the controller, e.g.:
           - `kubectl logs -n network-enforcer deploy/network-enforcer-controller-manager`
-          - `kubectl logs -n network-enforcer deploy/network-enforcer-otel-collector`
       render: shell
     validations:
       required: false

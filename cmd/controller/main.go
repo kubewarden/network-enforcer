@@ -58,6 +58,7 @@ import (
 	"github.com/kubewarden/network-enforcer/internal/ringbuf"
 	"github.com/kubewarden/network-enforcer/internal/scraper"
 	"github.com/kubewarden/network-enforcer/internal/types"
+	"github.com/kubewarden/network-enforcer/internal/types/otlp"
 	"github.com/kubewarden/network-enforcer/internal/violation"
 	// +kubebuilder:scaffold:imports
 )
@@ -89,11 +90,8 @@ func (cacheSyncReadinessRunnable) NeedLeaderElection() bool {
 }
 
 type otelConf struct {
-	Endpoint   string
-	Protocol   string
-	CACert     string
-	ClientCert string
-	ClientKey  string
+	Endpoint string
+	Protocol string
 }
 
 type metricsConf struct {
@@ -311,9 +309,12 @@ func setupOtelLogExporter(
 	ctx context.Context,
 	logger *slog.Logger,
 	mgr manager.Manager,
-	otelCfg events.OTELConfig,
+	otelCfg otelConf,
 ) (otellog.Logger, error) {
-	eventLogger, eventShutdown, err := events.Init(ctx, otelCfg)
+	if err := otlp.ValidateEndpoint(otelCfg.Endpoint); err != nil {
+		return nil, err
+	}
+	eventLogger, eventShutdown, err := events.Init(ctx, otelCfg.Protocol)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OTLP log exporter: %w", err)
 	}
@@ -383,14 +384,7 @@ func run(logger *slog.Logger, conf *config) error {
 
 	var eventLogger otellog.Logger
 	if conf.otel.Endpoint != "" {
-		otelCfg := events.OTELConfig{
-			Endpoint:   conf.otel.Endpoint,
-			Protocol:   conf.otel.Protocol,
-			CACert:     conf.otel.CACert,
-			ClientCert: conf.otel.ClientCert,
-			ClientKey:  conf.otel.ClientKey,
-		}
-		eventLogger, err = setupOtelLogExporter(ctx, logger, mgr, otelCfg)
+		eventLogger, err = setupOtelLogExporter(ctx, logger, mgr, conf.otel)
 		if err != nil {
 			return err
 		}
@@ -575,37 +569,14 @@ func main() {
 	flag.StringVar(&conf.provider.tlsServerName, "provider-tls-server-name", "",
 		"Optional TLS server name verified against the provider's server certificate. "+
 			"Defaults to the host part of --provider-endpoint.")
-	flag.StringVar(&conf.otel.Endpoint, "otlp-log-endpoint",
-		os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
-		"OTLP endpoint for the violation-lifecycle log exporter "+
-			"(policy_violation_acknowledged records). Defaults to the "+
-			"OTEL_EXPORTER_OTLP_ENDPOINT env var; empty disables OTLP logs.")
-	otlpLogProtocolDefault := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
-	if otlpLogProtocolDefault == "" {
-		otlpLogProtocolDefault = "grpc"
-	}
-	flag.StringVar(&conf.otel.Protocol, "otlp-log-protocol",
-		otlpLogProtocolDefault,
-		"OTLP protocol for the violation-lifecycle log exporter: grpc or "+
-			"http/protobuf. Defaults to OTEL_EXPORTER_OTLP_PROTOCOL env var or grpc.")
-	flag.StringVar(&conf.otel.CACert, "otlp-log-ca-cert",
-		os.Getenv("OTEL_EXPORTER_OTLP_CERTIFICATE"),
-		"Path to the CA certificate for verifying the OTLP log collector's "+
-			"TLS certificate. Defaults to the OTEL_EXPORTER_OTLP_CERTIFICATE env "+
-			"var; empty means insecure.")
-	flag.StringVar(&conf.otel.ClientCert, "otlp-log-client-cert",
-		os.Getenv("OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE"),
-		"Path to the client TLS certificate for mTLS with the OTLP log "+
-			"collector. Defaults to the OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE env var.")
-	flag.StringVar(&conf.otel.ClientKey, "otlp-log-client-key",
-		os.Getenv("OTEL_EXPORTER_OTLP_CLIENT_KEY"),
-		"Path to the client TLS key for mTLS with the OTLP log collector. "+
-			"Defaults to the OTEL_EXPORTER_OTLP_CLIENT_KEY env var.")
 	flag.DurationVar(&conf.wnpStatusSyncConfig.UpdateInterval,
 		"wnp-status-reconciler-update-interval",
 		defaultWnpStatusUpdateInterval,
 		"The interval at which WorkloadNetworkPolicy status is synced.")
 	flag.Parse()
+	// The OpenTelemetry SDK reads the other OTEL_EXPORTER_OTLP_* variables itself.
+	conf.otel.Endpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	conf.otel.Protocol = os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
 
 	parsedLogLevel, err := parseLogLevel(conf.logLevel)
 	if err != nil {

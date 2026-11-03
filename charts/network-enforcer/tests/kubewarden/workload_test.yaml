@@ -1,0 +1,454 @@
+suite: "Values contract: workload-only keys"
+templates:
+  - "templates/controller/deployment.yaml"
+  - "templates/istio-fluent-bit/daemonset.yaml"
+  # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
+  # The documentSelector below keeps the assertions on the Deployment and the DaemonSet.
+  - "templates/istio-fluent-bit/configmap.yaml"
+workloads: &workloads
+  path: apiVersion
+  value: apps/v1
+  skipEmptyTemplates: true
+  matchMany: true
+tests:
+  # The fluent-bit DaemonSet has fixed security contexts, so only its resources are configurable.
+  - it: "should render the resources and security contexts of each workload block on its own workload"
+    documentSelector: *workloads
+    set:
+      controller:
+        resources: {limits: {cpu: "1"}}
+        podSecurityContext: {fsGroup: 1001}
+        containerSecurityContext: {runAsUser: 1001}
+      istioFluentBit:
+        resources: {limits: {cpu: "2"}}
+    asserts:
+      - equal: {path: "spec.template.spec.containers[0].resources.limits.cpu", value: "1"}
+        template: "templates/controller/deployment.yaml"
+      - equal: {path: "spec.template.spec.securityContext.fsGroup", value: 1001}
+        template: "templates/controller/deployment.yaml"
+      - equal: {path: "spec.template.spec.containers[0].securityContext.runAsUser", value: 1001}
+        template: "templates/controller/deployment.yaml"
+      - equal: {path: "spec.template.spec.containers[0].resources.limits.cpu", value: "2"}
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal: {path: "spec.template.spec.containers[0].securityContext.runAsUser", value: 0}
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should render istioFluentBit.resources on the DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        resources:
+          limits:
+            memory: 4Gi
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].resources.limits.memory"
+          value: 4Gi
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal:
+          path: "spec.template.spec.containers[0].resources.limits.memory"
+          value: 256Mi
+        template: "templates/controller/deployment.yaml"
+
+  # The network-enforcer workloads have no init containers,
+  # so this case checks the main containers only.
+  - it: "should render controller.imageRegistry and istioFluentBit.imageRegistry on their own workload only"
+    documentSelector: *workloads
+    set:
+      controller:
+        imageRegistry: controller.example.com
+      istioFluentBit:
+        imageRegistry: node.example.com
+    asserts:
+      - matchRegex:
+          path: "spec.template.spec.containers[0].image"
+          pattern: "^controller\\.example\\.com/kubewarden/network-enforcer/controller:"
+        template: "templates/controller/deployment.yaml"
+      - matchRegex:
+          path: "spec.template.spec.containers[0].image"
+          pattern: "^node\\.example\\.com/fluent/fluent-bit:"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  # network-enforcer cases
+  - it: "should render istioFluentBit.imageRegistry on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      controller:
+        image:
+          tag: 1.0.0
+      istioFluentBit:
+        imageRegistry: mirror.example.com
+        image:
+          tag: 2.0.0
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].image"
+          value: "mirror.example.com/fluent/fluent-bit:2.0.0"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal:
+          path: "spec.template.spec.containers[0].image"
+          value: "ghcr.io/kubewarden/network-enforcer/controller:1.0.0"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render istioFluentBit.imagePullSecrets on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        imagePullSecrets:
+          - name: fluent-bit-secret
+    asserts:
+      - equal:
+          path: "spec.template.spec.imagePullSecrets"
+          value:
+            - name: fluent-bit-secret
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notExists:
+          path: "spec.template.spec.imagePullSecrets"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render istioFluentBit.imagePullPolicy on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        imagePullPolicy: Always
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].imagePullPolicy"
+          value: Always
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal:
+          path: "spec.template.spec.containers[0].imagePullPolicy"
+          value: IfNotPresent
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render controller.imagePullPolicy on the controller only"
+    documentSelector: *workloads
+    set:
+      controller:
+        imagePullPolicy: Always
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].imagePullPolicy"
+          value: Always
+        template: "templates/controller/deployment.yaml"
+      - equal:
+          path: "spec.template.spec.containers[0].imagePullPolicy"
+          value: IfNotPresent
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should render controller.logLevel on the controller only"
+    documentSelector: *workloads
+    set:
+      controller:
+        logLevel: debug
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--log-level=debug"
+        template: "templates/controller/deployment.yaml"
+      - notExists:
+          path: "spec.template.spec.containers[0].args"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should ignore istioFluentBit.logLevel"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        logLevel: debug
+    asserts:
+      - notExists:
+          path: "spec.template.spec.containers[0].args"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--log-level=info"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render istioFluentBit.labels on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        labels:
+          team: fluent-bit
+    asserts:
+      - equal:
+          path: "metadata.labels.team"
+          value: fluent-bit
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notExists:
+          path: "metadata.labels.team"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render istioFluentBit.annotations on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        annotations:
+          example.com/owner: fluent-bit
+    asserts:
+      - equal:
+          path: "metadata.annotations[\"example.com/owner\"]"
+          value: fluent-bit
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notExists:
+          path: "metadata.annotations"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render istioFluentBit.podLabels on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        podLabels:
+          team: fluent-bit
+    asserts:
+      - equal:
+          path: "spec.template.metadata.labels.team"
+          value: fluent-bit
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notExists:
+          path: "spec.template.metadata.labels.team"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render istioFluentBit.podAnnotations on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        podAnnotations:
+          example.com/owner: fluent-bit
+    asserts:
+      - equal:
+          path: "spec.template.metadata.annotations[\"example.com/owner\"]"
+          value: fluent-bit
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notExists:
+          path: "spec.template.metadata.annotations[\"example.com/owner\"]"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render istioFluentBit.nodeSelector on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        nodeSelector:
+          kubernetes.io/os: linux
+    asserts:
+      - equal:
+          path: "spec.template.spec.nodeSelector"
+          value:
+            kubernetes.io/os: linux
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notExists:
+          path: "spec.template.spec.nodeSelector"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render controller.affinity on the controller only"
+    documentSelector: *workloads
+    set:
+      controller:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  topologyKey: kubernetes.io/hostname
+    asserts:
+      - equal:
+          path: "spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight"
+          value: 100
+        template: "templates/controller/deployment.yaml"
+      - notExists:
+          path: "spec.template.spec.affinity"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should render istioFluentBit.tolerations on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        tolerations:
+          - key: dedicated
+            operator: Exists
+    asserts:
+      - equal:
+          path: "spec.template.spec.tolerations"
+          value:
+            - key: dedicated
+              operator: Exists
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notExists:
+          path: "spec.template.spec.tolerations"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render controller.tolerations on the controller only"
+    documentSelector: *workloads
+    set:
+      controller:
+        tolerations:
+          - key: dedicated
+            operator: Exists
+    asserts:
+      - equal:
+          path: "spec.template.spec.tolerations"
+          value:
+            - key: dedicated
+              operator: Exists
+        template: "templates/controller/deployment.yaml"
+      - equal:
+          path: "spec.template.spec.tolerations"
+          value:
+            - operator: Exists
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should render controller.topologySpreadConstraints on the controller only"
+    documentSelector: *workloads
+    set:
+      controller:
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+    asserts:
+      - equal:
+          path: "spec.template.spec.topologySpreadConstraints[0].maxSkew"
+          value: 1
+        template: "templates/controller/deployment.yaml"
+      - notExists:
+          path: "spec.template.spec.topologySpreadConstraints"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should render istioFluentBit.priorityClassName on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        priorityClassName: system-node-critical
+    asserts:
+      - equal:
+          path: "spec.template.spec.priorityClassName"
+          value: system-node-critical
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal:
+          path: "spec.template.spec.priorityClassName"
+          value: network-enforcer-priorityclass
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render istioFluentBit.extraEnv on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        extraEnv:
+          - name: FLUENT_BIT_ONLY
+            value: "1"
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: FLUENT_BIT_ONLY
+            value: "1"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notContains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: FLUENT_BIT_ONLY
+            value: "1"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render istioFluentBit.extraEnvFrom on the fluent-bit DaemonSet only"
+    documentSelector: *workloads
+    set:
+      istioFluentBit:
+        extraEnvFrom:
+          - secretRef:
+              name: fluent-bit-env
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].envFrom"
+          value:
+            - secretRef:
+                name: fluent-bit-env
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notExists:
+          path: "spec.template.spec.containers[0].envFrom"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render controller.extraVolumes and controller.extraVolumeMounts on the controller only"
+    documentSelector: *workloads
+    set:
+      controller:
+        extraVolumes:
+          - name: scratch
+            emptyDir: {}
+        extraVolumeMounts:
+          - name: scratch
+            mountPath: /scratch
+    asserts:
+      - contains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: scratch
+            emptyDir: {}
+        template: "templates/controller/deployment.yaml"
+      - contains:
+          path: "spec.template.spec.containers[0].volumeMounts"
+          content:
+            name: scratch
+            mountPath: /scratch
+        template: "templates/controller/deployment.yaml"
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: scratch
+            emptyDir: {}
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notContains:
+          path: "spec.template.spec.containers[0].volumeMounts"
+          content:
+            name: scratch
+            mountPath: /scratch
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should render controller.otel on the controller only"
+    documentSelector: *workloads
+    set:
+      controller:
+        otel:
+          endpoint: "http://controller-collector:4317"
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://controller-collector:4317"
+        template: "templates/controller/deployment.yaml"
+      - notContains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://controller-collector:4317"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+---
+suite: "Values contract: fluent-bit DaemonSet only for the Istio provider"
+templates:
+  - "templates/istio-fluent-bit/daemonset.yaml"
+  - "templates/istio-fluent-bit/configmap.yaml"
+  - "templates/istio-fluent-bit/serviceaccount.yaml"
+tests:
+  - it: "should render the fluent-bit DaemonSet, ConfigMap, and ServiceAccount for the Istio provider"
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "should not render the fluent-bit templates for the Cilium provider"
+    set:
+      controller:
+        provider:
+          name: cilium
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "should not render the fluent-bit templates for the Calico provider"
+    set:
+      controller:
+        provider:
+          name: calico
+    asserts:
+      - hasDocuments:
+          count: 0

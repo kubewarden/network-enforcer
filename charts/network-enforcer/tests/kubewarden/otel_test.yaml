@@ -1,0 +1,419 @@
+suite: "Values contract: telemetry"
+templates:
+  - "templates/controller/deployment.yaml"
+  - "templates/istio-fluent-bit/daemonset.yaml"
+  # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
+  # The documentSelector below keeps the assertions on the Deployment and the DaemonSet.
+  - "templates/istio-fluent-bit/configmap.yaml"
+workloads: &workloads
+  path: apiVersion
+  value: apps/v1
+  skipEmptyTemplates: true
+  matchMany: true
+noOtelOnFluentBit: &noOtelOnFluentBit
+  - notMatchRegex:
+      path: "spec.template.spec.containers[0].env[*].name"
+      pattern: "^(OTEL_|K8S_POD_)"
+    template: "templates/istio-fluent-bit/daemonset.yaml"
+  - notContains:
+      path: "spec.template.spec.volumes"
+      content:
+        name: otel-ca
+      any: true
+    template: "templates/istio-fluent-bit/daemonset.yaml"
+  - notContains:
+      path: "spec.template.spec.volumes"
+      content:
+        name: otel-client-tls
+      any: true
+    template: "templates/istio-fluent-bit/daemonset.yaml"
+  - notContains:
+      path: "spec.template.spec.containers[0].volumeMounts"
+      content:
+        name: otel-ca
+      any: true
+    template: "templates/istio-fluent-bit/daemonset.yaml"
+  - notContains:
+      path: "spec.template.spec.containers[0].volumeMounts"
+      content:
+        name: otel-client-tls
+      any: true
+    template: "templates/istio-fluent-bit/daemonset.yaml"
+tests:
+  # Only the controller exports telemetry, so this case checks the controller only.
+  - it: "should render global.otel on every instrumented workload"
+    templates:
+      - "templates/controller/deployment.yaml"
+    set:
+      global:
+        otel:
+          endpoint: "https://otel-collector:4317"
+          caSecretName: "otel-ca-secret"
+          clientCertificateSecretName: "otel-client-secret"
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "https://otel-collector:4317"
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_CERTIFICATE
+            value: /otel/tls/ca/ca.crt
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE
+            value: /otel/tls/client/tls.crt
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_CLIENT_KEY
+            value: /otel/tls/client/tls.key
+      - contains:
+          path: "spec.template.spec.containers[0].volumeMounts"
+          content:
+            name: otel-ca
+            mountPath: /otel/tls/ca
+            readOnly: true
+      - contains:
+          path: "spec.template.spec.containers[0].volumeMounts"
+          content:
+            name: otel-client-tls
+            mountPath: /otel/tls/client
+            readOnly: true
+      - contains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+            secret:
+              secretName: otel-ca-secret
+      - contains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-client-tls
+            secret:
+              secretName: otel-client-secret
+
+  - it: "should not render global.otel on the fluent-bit DaemonSet"
+    documentSelector: *workloads
+    set:
+      global:
+        otel:
+          endpoint: "https://otel-collector:4317"
+          caSecretName: "otel-ca-secret"
+          clientCertificateSecretName: "otel-client-secret"
+    asserts: *noOtelOnFluentBit
+
+  - it: "should render each workload otel block on its own workload"
+    documentSelector: *workloads
+    set:
+      controller:
+        otel:
+          endpoint: "http://controller:4317"
+      istioFluentBit:
+        otel:
+          endpoint: "http://fluent-bit:4317"
+          caSecretName: "fluent-bit-ca-secret"
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://controller:4317"
+        template: "templates/controller/deployment.yaml"
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+            secret:
+              secretName: fluent-bit-ca-secret
+        template: "templates/controller/deployment.yaml"
+      # istioFluentBit.otel has no effect, because fluent-bit does not export telemetry.
+      - notMatchRegex:
+          path: "spec.template.spec.containers[0].env[*].name"
+          pattern: "^(OTEL_|K8S_POD_)"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+          any: true
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+---
+# network-enforcer cases
+suite: "Values contract: otel"
+templates:
+  - "templates/controller/deployment.yaml"
+  - "templates/istio-fluent-bit/daemonset.yaml"
+  # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
+  # The documentSelector below keeps the assertions on the Deployment and the DaemonSet.
+  - "templates/istio-fluent-bit/configmap.yaml"
+workloads: &workloads
+  path: apiVersion
+  value: apps/v1
+  skipEmptyTemplates: true
+  matchMany: true
+tests:
+  - it: "should render no OTel env, mounts, or volumes by default"
+    documentSelector: *workloads
+    asserts:
+      - notMatchRegex:
+          path: "spec.template.spec.containers[0].env[*].name"
+          pattern: "^OTEL_"
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+          any: true
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-client-tls
+          any: true
+
+  - it: "should render the endpoint and the pod identity on the controller"
+    templates:
+      - "templates/controller/deployment.yaml"
+    set:
+      global:
+        otel:
+          endpoint: "http://collector:4317"
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://collector:4317"
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: K8S_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: K8S_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+      - notContains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_CERTIFICATE
+          any: true
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+          any: true
+
+  - it: "should never render OTEL_EXPORTER_OTLP_PROTOCOL or OTEL_EXPORTER_OTLP_INSECURE"
+    documentSelector: *workloads
+    set:
+      global:
+        otel:
+          endpoint: "https://collector:4317"
+          caSecretName: otel-ca
+          clientCertificateSecretName: otel-client
+      common:
+        otel:
+          endpoint: "http://collector:4317"
+    asserts:
+      - notContains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_PROTOCOL
+          any: true
+      - notContains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_INSECURE
+          any: true
+
+  - it: "should render the certificate env, mounts, and volumes with both secret names"
+    templates:
+      - "templates/controller/deployment.yaml"
+    set:
+      global:
+        otel:
+          endpoint: "https://collector:4317"
+          caSecretName: otel-ca-secret
+          clientCertificateSecretName: otel-client-secret
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_CERTIFICATE
+            value: /otel/tls/ca/ca.crt
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE
+            value: /otel/tls/client/tls.crt
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_CLIENT_KEY
+            value: /otel/tls/client/tls.key
+      - contains:
+          path: "spec.template.spec.containers[0].volumeMounts"
+          content:
+            name: otel-ca
+            mountPath: /otel/tls/ca
+            readOnly: true
+      - contains:
+          path: "spec.template.spec.containers[0].volumeMounts"
+          content:
+            name: otel-client-tls
+            mountPath: /otel/tls/client
+            readOnly: true
+      - contains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+            secret:
+              secretName: otel-ca-secret
+      - contains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-client-tls
+            secret:
+              secretName: otel-client-secret
+
+  - it: "should render nothing on the fluent-bit DaemonSet with every otel field set"
+    templates:
+      - "templates/istio-fluent-bit/daemonset.yaml"
+      - "templates/istio-fluent-bit/configmap.yaml"
+    documentSelector: *workloads
+    set:
+      otel: &fullOtel
+        endpoint: "https://collector:4317"
+        caSecretName: otel-ca-secret
+        clientCertificateSecretName: otel-client-secret
+      global:
+        otel: *fullOtel
+      common:
+        otel: *fullOtel
+      istioFluentBit:
+        otel: *fullOtel
+    asserts:
+      - notMatchRegex:
+          path: "spec.template.spec.containers[0].env[*].name"
+          pattern: "^(OTEL_|K8S_POD_)"
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+          any: true
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-client-tls
+          any: true
+      - notContains:
+          path: "spec.template.spec.containers[0].volumeMounts"
+          content:
+            name: otel-ca
+          any: true
+      - notContains:
+          path: "spec.template.spec.containers[0].volumeMounts"
+          content:
+            name: otel-client-tls
+          any: true
+
+  - it: "should render nothing with secret names but no endpoint"
+    documentSelector: *workloads
+    set:
+      global:
+        otel:
+          caSecretName: otel-ca-secret
+          clientCertificateSecretName: otel-client-secret
+    asserts:
+      - notMatchRegex:
+          path: "spec.template.spec.containers[0].env[*].name"
+          pattern: "^(OTEL_|K8S_POD_)"
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+          any: true
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-client-tls
+          any: true
+      - notContains:
+          path: "spec.template.spec.containers[0].volumeMounts"
+          content:
+            name: otel-ca
+          any: true
+
+  - it: "should prefer the workload otel over common, and common over global"
+    documentSelector: *workloads
+    set:
+      global:
+        otel:
+          endpoint: "http://global:4317"
+      common:
+        otel:
+          endpoint: "http://common:4317"
+      controller:
+        otel:
+          endpoint: "http://controller:4317"
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://controller:4317"
+        template: "templates/controller/deployment.yaml"
+      - notMatchRegex:
+          path: "spec.template.spec.containers[0].env[*].name"
+          pattern: "^(OTEL_|K8S_POD_)"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should prefer the top-level otel over the workload, common, and global otel"
+    documentSelector: *workloads
+    set:
+      otel:
+        endpoint: "http://chart:4317"
+        caSecretName: chart-ca
+      global:
+        otel:
+          endpoint: "http://global:4317"
+          caSecretName: global-ca
+      common:
+        otel:
+          endpoint: "http://common:4317"
+      controller:
+        otel:
+          endpoint: "http://controller:4317"
+          caSecretName: controller-ca
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].env"
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://chart:4317"
+        template: "templates/controller/deployment.yaml"
+      - contains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+            secret:
+              secretName: chart-ca
+        template: "templates/controller/deployment.yaml"
+      - notMatchRegex:
+          path: "spec.template.spec.containers[0].env[*].name"
+          pattern: "^(OTEL_|K8S_POD_)"
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notContains:
+          path: "spec.template.spec.volumes"
+          content:
+            name: otel-ca
+          any: true
+        template: "templates/istio-fluent-bit/daemonset.yaml"
