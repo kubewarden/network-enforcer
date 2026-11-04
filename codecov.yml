@@ -6,3 +6,4 @@ coverage:
 ignore:
   - pkg/generated
   - api
+  - "proto/agent/v1/*.pb.go"
