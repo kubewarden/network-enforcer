@@ -209,6 +209,65 @@ func TestTailerIgnoresCompressedRotations(t *testing.T) {
 	eventuallyHas(t, c, "live-1")
 }
 
+// TestTailerFollowsKubeletRotationLifecycle models the full kubelet container
+// log rotation lifecycle and checks the tailer against it.
+//
+// The kubelet rotates a container log in two steps. See
+// k8s.io/kubernetes/pkg/kubelet/logs/container_log_manager.go
+// (https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/logs/container_log_manager.go):
+//   - rotateLatestLog renames the active "0.log" to "0.log.<timestamp>" (the
+//     timestamp format is "20060102-150405") and the runtime reopens a fresh
+//     "0.log".
+//   - On a later cycle, compressLog compresses the plain rotated file. It writes
+//     "0.log.<timestamp>.tmp", renames it to "0.log.<timestamp>.gz", then removes
+//     the plain file.
+//
+// The tailer must drain the plain rotated file, because the glob "*.log*" matches
+// it and fileconsumer holds the descriptor across the rename. The tailer must
+// never read the ".tmp" or ".gz" archive, because the caller excludes them. The
+// archive here holds a readable sentinel, not gzip bytes, so the test fails loud
+// if the tailer ever reads an excluded path.
+func TestTailerFollowsKubeletRotationLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "0.log")
+	appendLines(t, logPath, "gen0-1", "gen0-2")
+
+	c := startTailer(t, Config{
+		Include:      []string{filepath.Join(dir, "*.log*")},
+		Exclude:      []string{"**/*.gz", "**/*.tmp"},
+		PollInterval: 20 * time.Millisecond,
+		StartAt:      "beginning",
+	})
+	// Let the tailer open and read the active file, so the first rotation drains
+	// the held descriptor, as it does on a live node.
+	eventuallyHas(t, c, "gen0-1", "gen0-2")
+
+	// First rotation: rename the active file, reopen a fresh one.
+	rotated1 := logPath + ".20261104-000000"
+	require.NoError(t, os.Rename(logPath, rotated1))
+	require.NoError(t, os.WriteFile(logPath, nil, 0o600))
+	appendLines(t, logPath, "gen1-1", "gen1-2")
+
+	// Second rotation: compress the first rotated file to ".gz" through a ".tmp"
+	// file and remove the plain file, then rotate the active file again. The
+	// ".gz" archive keeps a readable sentinel to catch an exclusion miss.
+	writeRaw(t, rotated1+".tmp", "archive-garbage\n")
+	require.NoError(t, os.Rename(rotated1+".tmp", rotated1+".gz"))
+	require.NoError(t, os.Remove(rotated1))
+	rotated2 := logPath + ".20261104-000010"
+	require.NoError(t, os.Rename(logPath, rotated2))
+	require.NoError(t, os.WriteFile(logPath, nil, 0o600))
+	appendLines(t, logPath, "gen2-1", "gen2-2")
+
+	// Every line from every generation arrives exactly once and no archive
+	// content leaks. Order is not kept across a rotation boundary.
+	eventuallyHasSet(t, c,
+		"gen0-1", "gen0-2",
+		"gen1-1", "gen1-2",
+		"gen2-1", "gen2-2",
+	)
+}
+
 func TestTailerNoLossOnCopytruncate(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "0.log")
