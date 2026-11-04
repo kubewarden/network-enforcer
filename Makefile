@@ -71,7 +71,7 @@ manifests: controller-gen ## Generate webhook configuration, CRDs and RBAC.
 		charts/network-enforcer/templates/controller/role.yaml
 
 .PHONY: generate
-generate: manifests controller-gen generate-chart-values generate-crd-docs ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: manifests controller-gen generate-chart-values generate-crd-docs generate-agent-proto ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: generate-crd-docs
@@ -201,6 +201,12 @@ $(PROTOC_GEN_GO): | $(LOCALBIN)
 protoc-gen-go-grpc: $(PROTOC_GEN_GO_GRPC)
 $(PROTOC_GEN_GO_GRPC): | $(LOCALBIN)
 	$(call go-install-tool,$(PROTOC_GEN_GO_GRPC),google.golang.org/grpc/cmd/protoc-gen-go-grpc,$(PROTOC_GEN_GO_GRPC_VERSION))
+
+.PHONY: generate-agent-proto
+generate-agent-proto: protoc-gen-go protoc-gen-go-grpc ## Generate the node-agent protobuf and gRPC bindings.
+	PATH=$(LOCALBIN):$(PATH) protoc --go_out=. --go_opt=paths=source_relative \
+		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
+		proto/agent/v1/agent.proto
 
 .PHONY: helm-values-schema-json
 helm-values-schema-json: $(HELM_VALUES_SCHEMA_JSON) ## Download helm-values-schema-json locally if necessary.
