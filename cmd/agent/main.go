@@ -31,7 +31,13 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	glob := flag.String("log-glob", "/var/log/containers/*ztunnel*.log",
+	// Tail the pod log directory, not the "/var/log/containers" symlinks. The
+	// symlinks only point to the active file, so a file that the kubelet rotates
+	// while the agent is down would be missed on restart. The pod directory also
+	// holds the retained rotated files, so recovery can drain their unread tail.
+	// The default matches the ztunnel pod in the "istio-system" namespace. Pass
+	// -log-glob to tail a different namespace, pod or path.
+	glob := flag.String("log-glob", "/var/log/pods/istio-system_ztunnel*/*/*.log*",
 		"glob for the container log files to tail")
 	poll := flag.Duration("poll-interval", 200*time.Millisecond,
 		"file poll period")
