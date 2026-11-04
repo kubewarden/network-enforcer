@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -119,6 +120,23 @@ func eventuallyHas(t *testing.T, c *collector, want ...string) {
 	}, 3*time.Second, 20*time.Millisecond, "got %v want %v", c.snapshot(), wantRaw)
 }
 
+// eventuallyHasSet waits until c holds the raw lines for want with no loss and
+// no duplicate. It ignores order, because a poll tailer does not keep order
+// across a rotation boundary.
+func eventuallyHasSet(t *testing.T, c *collector, want ...string) {
+	t.Helper()
+	wantRaw := make([]string, len(want))
+	for i, w := range want {
+		wantRaw[i] = criLine(w)
+	}
+	sort.Strings(wantRaw)
+	require.Eventually(t, func() bool {
+		got := c.snapshot()
+		sort.Strings(got)
+		return assert.ObjectsAreEqual(wantRaw, got)
+	}, 5*time.Second, 20*time.Millisecond, "missing or duplicate lines: got %d want %d", len(c.snapshot()), len(wantRaw))
+}
+
 // startTailer builds and starts a tailer and stops it on cleanup.
 func startTailer(t *testing.T, cfg Config) *collector {
 	t.Helper()
@@ -165,6 +183,84 @@ func TestTailerNoLossOnRenameRotation(t *testing.T) {
 	appendLines(t, logPath, "after-rotate")
 
 	eventuallyHas(t, c, "before-rotate", "after-rotate")
+}
+
+func TestTailerIgnoresCompressedRotations(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "0.log")
+	appendLines(t, logPath, "seed")
+
+	c := startTailer(t, Config{
+		Include:      []string{filepath.Join(dir, "*.log*")},
+		Exclude:      []string{"**/*.gz", "**/*.tmp"},
+		PollInterval: 20 * time.Millisecond,
+	})
+	time.Sleep(100 * time.Millisecond)
+
+	// The kubelet renames the active file, then compresses the older rotated
+	// file to ".gz" through a ".tmp" file. The caller excludes those files, so
+	// the tailer must not read them. It reads container logs, not archives.
+	appendLines(t, filepath.Join(dir, "0.log.20261104-000000.gz"), "gz-garbage")
+	appendLines(t, filepath.Join(dir, "0.log.20261104-000000.tmp"), "tmp-garbage")
+
+	// A sentinel on the live file arrives after one more poll. By then the
+	// tailer has also seen the .gz and .tmp files.
+	appendLines(t, logPath, "live-1")
+	eventuallyHas(t, c, "live-1")
+}
+
+func TestTailerNoLossOnCopytruncate(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "0.log")
+	appendLines(t, logPath, "seed")
+
+	c := startTailer(t, Config{
+		Include:      []string{filepath.Join(dir, "*.log*")},
+		PollInterval: 20 * time.Millisecond,
+	})
+	time.Sleep(100 * time.Millisecond)
+
+	appendLines(t, logPath, "a-1", "a-2")
+	eventuallyHas(t, c, "a-1", "a-2")
+
+	// A copytruncate rotator copies the file, then truncates it in place. The
+	// runtime keeps the same descriptor and writes new lines from offset 0.
+	// With on_truncate "read_new" the tailer reads the new lines.
+	require.NoError(t, os.Truncate(logPath, 0))
+	appendLines(t, logPath, "b-1", "b-2")
+
+	eventuallyHas(t, c, "a-1", "a-2", "b-1", "b-2")
+}
+
+func TestTailerRotationUnderLoad(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "0.log")
+	require.NoError(t, os.WriteFile(logPath, nil, 0o600))
+
+	c := startTailer(t, Config{
+		Include:      []string{filepath.Join(dir, "*.log*")},
+		PollInterval: 20 * time.Millisecond,
+		StartAt:      "beginning",
+	})
+
+	const total = 200
+	const rotateAt = 100
+	for i := range total {
+		appendLines(t, logPath, fmt.Sprintf("load-%d", i))
+		if i == rotateAt {
+			// Rename rotation while writes continue. The runtime opens a new
+			// file at the same path.
+			require.NoError(t, os.Rename(logPath, logPath+".1"))
+			require.NoError(t, os.WriteFile(logPath, nil, 0o600))
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	want := make([]string, total)
+	for i := range total {
+		want[i] = fmt.Sprintf("load-%d", i)
+	}
+	eventuallyHasSet(t, c, want...)
 }
 
 func TestTailerResumesAfterRestart(t *testing.T) {
