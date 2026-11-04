@@ -352,6 +352,63 @@ func TestTailerResumesAfterRestart(t *testing.T) {
 	eventuallyHas(t, second, "line-2", "line-3")
 }
 
+// TestTailerRecoversRotationDuringDowntime covers a rotation that happens while
+// the agent is down, with the real node log layout.
+//
+// On a node the container runtime writes to
+// "/var/log/pods/<ns>_<pod>_<uid>/<container>/0.log" and the kubelet keeps a
+// "/var/log/containers/<name>.log" symlink that points to the active file. See
+// k8s.io/kubernetes/pkg/kubelet/logs/container_log_manager.go. The kubelet
+// rotates by renaming the active file in the pod directory and reopening a fresh
+// "0.log"; the symlink keeps pointing to the active file, not the rotated one.
+//
+// The agent must tail the pod directory, not the symlink. The open descriptor
+// that drains a renamed file during live rotation does not survive a restart, so
+// recovery can only reach the rotated file if the glob discovers it. The glob
+// "<poddir>/*.log*" matches the retained rotated file, so recovery delivers both
+// the unread tail of the rotated file and the records of the new file.
+func TestTailerRecoversRotationDuringDowntime(t *testing.T) {
+	root := t.TempDir()
+	podDir := filepath.Join(root, "pods", "ns_ztunnel-abcde_uid", "ztunnel")
+	require.NoError(t, os.MkdirAll(podDir, 0o755))
+	containersDir := filepath.Join(root, "containers")
+	require.NoError(t, os.MkdirAll(containersDir, 0o755))
+
+	active := filepath.Join(podDir, "0.log")
+	appendLines(t, active, "seed")
+	// The kubelet symlink points at the active file, as on a real node.
+	require.NoError(t, os.Symlink(active, filepath.Join(containersDir, "ztunnel-abcde.log")))
+
+	cfg := Config{
+		Include:      []string{filepath.Join(podDir, "*.log*")},
+		Exclude:      []string{"**/*.gz", "**/*.tmp"},
+		PollInterval: 20 * time.Millisecond,
+		StatePath:    filepath.Join(root, "state.json"),
+	}
+
+	// First run: read one live line, then stop so the checkpoint is saved.
+	first := &collector{}
+	tl1, err := New(cfg, first.handle)
+	require.NoError(t, err)
+	require.NoError(t, tl1.Start())
+	time.Sleep(100 * time.Millisecond)
+	appendLines(t, active, "live-1")
+	require.Eventually(t, func() bool { return len(first.snapshot()) == 1 },
+		3*time.Second, 20*time.Millisecond)
+	require.NoError(t, tl1.Stop())
+
+	// Downtime: the runtime writes more lines, then the kubelet rotates the file
+	// and reopens a fresh one. The rotated file keeps the unread lines.
+	appendLines(t, active, "downtime-1", "downtime-2")
+	require.NoError(t, os.Rename(active, active+".20261104-000000"))
+	require.NoError(t, os.WriteFile(active, nil, 0o600))
+	appendLines(t, active, "new-1")
+
+	// Recovery must deliver the unread tail of the rotated file and the new file.
+	second := startTailer(t, cfg)
+	eventuallyHasSet(t, second, "downtime-1", "downtime-2", "new-1")
+}
+
 // writeRaw appends exact bytes to path without a trailing newline.
 func writeRaw(t *testing.T, path, s string) {
 	t.Helper()
