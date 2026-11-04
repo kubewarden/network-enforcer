@@ -54,7 +54,7 @@ build-$(1)-image:
 E2E_DEPS += build-$(1)-image
 endef
 
-TARGET=controller
+TARGET=controller agent
 $(foreach T,$(TARGET),$(eval $(call BUILD_template,$(T))))
 
 .PHONY: manifests
@@ -107,6 +107,10 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 .PHONY: controller
 controller: fmt ## Build controller binary.
 	CGO_ENABLED=0 GOOS=linux go build -o bin/controller ./cmd/controller
+
+.PHONY: agent
+agent: fmt ## Build agent binary.
+	CGO_ENABLED=0 GOOS=linux go build -o bin/agent ./cmd/agent
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
