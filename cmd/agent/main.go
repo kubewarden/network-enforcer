@@ -40,7 +40,11 @@ func main() {
 	flag.Parse()
 
 	cfg := tailer.Config{
-		Include:      []string{*glob},
+		Include: []string{*glob},
+		// Skip the kubelet rotation artifacts. The kubelet compresses older
+		// rotated files to ".gz" through a ".tmp" file. Those files are not
+		// live container logs.
+		Exclude:      []string{"**/*.gz", "**/*.tmp"},
 		PollInterval: *poll,
 		StatePath:    *statePath,
 	}

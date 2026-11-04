@@ -32,6 +32,10 @@ type Config struct {
 	// Include is the set of file globs to tail, for example
 	// "/var/log/containers/*ztunnel*.log".
 	Include []string
+	// Exclude is an optional set of globs to skip. A caller that tails kubelet
+	// container logs must exclude the rotation artifacts (".gz" and ".tmp"
+	// files), because the kubelet compresses older rotated files.
+	Exclude []string
 	// PollInterval is the file poll period. The default is 200 ms.
 	PollInterval time.Duration
 	// StartAt is "end" (default) or "beginning". The agent uses "end", so it
@@ -74,7 +78,7 @@ func New(cfg Config, h Handler) (*Tailer, error) {
 	cfg.applyDefaults()
 
 	fcCfg := fileconsumer.NewConfig()
-	fcCfg.Criteria = matcher.Criteria{Include: cfg.Include}
+	fcCfg.Criteria = matcher.Criteria{Include: cfg.Include, Exclude: cfg.Exclude}
 	fcCfg.PollInterval = cfg.PollInterval
 	fcCfg.StartAt = cfg.StartAt
 	fcCfg.OnTruncate = cfg.OnTruncate
