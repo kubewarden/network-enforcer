@@ -44,6 +44,11 @@ func newFilePersister(path string) (*filePersister, error) {
 		slog.Default().Warn("Dropped a corrupt checkpoint file", "path", path, "err", unmarshalErr)
 		p.data = map[string][]byte{}
 	}
+	// The JSON literal null unmarshals without error but leaves a nil map.
+	// Reset it so the first Set or Batch does not panic on a nil map.
+	if p.data == nil {
+		p.data = map[string][]byte{}
+	}
 	return p, nil
 }
 
@@ -59,6 +64,16 @@ func (p *filePersister) flush() error {
 		return writeErr
 	}
 	return os.Rename(tmp, p.path)
+}
+
+// reset clears the in-memory store and overwrites the checkpoint file with an
+// empty store. The tailer calls it after fileconsumer rejects a malformed
+// offset payload. The bad offsets must not stop the agent on the next restart.
+func (p *filePersister) reset() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.data = map[string][]byte{}
+	return p.flush()
 }
 
 func (p *filePersister) Get(_ context.Context, k string) ([]byte, error) {

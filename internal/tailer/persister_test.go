@@ -38,6 +38,18 @@ func TestFilePersister(t *testing.T) {
 			},
 		},
 		{
+			name: "null literal starts empty and set does not panic",
+			setup: func(t *testing.T, path string) {
+				require.NoError(t, os.WriteFile(path, []byte("null"), 0o600))
+			},
+			check: func(t *testing.T, p *filePersister) {
+				require.NoError(t, p.Set(context.Background(), "k", []byte("v")))
+				got, err := p.Get(context.Background(), "k")
+				require.NoError(t, err)
+				assert.Equal(t, []byte("v"), got)
+			},
+		},
+		{
 			name: "existing file loads values",
 			setup: func(t *testing.T, path string) {
 				raw, err := json.Marshal(map[string][]byte{"k": []byte("v")})
@@ -60,6 +72,26 @@ func TestFilePersister(t *testing.T) {
 			c.check(t, p)
 		})
 	}
+}
+
+func TestFilePersisterReset(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	// The file is valid JSON, but the offset payload is malformed.
+	require.NoError(t, os.WriteFile(path, []byte(`{"knownFiles":"/w=="}`), 0o600))
+	p, err := newFilePersister(path)
+	require.NoError(t, err)
+	require.NoError(t, p.reset())
+
+	got, err := p.Get(context.Background(), "knownFiles")
+	require.NoError(t, err)
+	assert.Nil(t, got)
+
+	// The file now holds an empty store, so the next start reads no offsets.
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var data map[string][]byte
+	require.NoError(t, json.Unmarshal(raw, &data))
+	assert.Empty(t, data)
 }
 
 func TestFilePersisterSetReloadAtomic(t *testing.T) {

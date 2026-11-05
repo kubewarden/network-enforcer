@@ -409,6 +409,29 @@ func TestTailerRecoversRotationDuringDowntime(t *testing.T) {
 	eventuallyHasSet(t, second, "downtime-1", "downtime-2", "new-1")
 }
 
+func TestTailerRecoversFromMalformedCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "0.log")
+	statePath := filepath.Join(dir, "state.json")
+	appendLines(t, logPath, "seed")
+
+	// The checkpoint file is valid JSON, but its offset payload is malformed.
+	// fileconsumer cannot decode it. The agent must start fresh, not exit.
+	require.NoError(t, os.WriteFile(statePath, []byte(`{"knownFiles":"/w=="}`), 0o600))
+
+	// startTailer requires Start to return no error, so a recovery that returns
+	// an error fails here.
+	c := startTailer(t, Config{
+		Include:      []string{filepath.Join(dir, "*.log*")},
+		PollInterval: 20 * time.Millisecond,
+		StatePath:    statePath,
+	})
+	// The tailer started fresh at end, so new lines still arrive.
+	time.Sleep(100 * time.Millisecond)
+	appendLines(t, logPath, "new-1", "new-2")
+	eventuallyHas(t, c, "new-1", "new-2")
+}
+
 // writeRaw appends exact bytes to path without a trailing newline.
 func writeRaw(t *testing.T, path, s string) {
 	t.Helper()

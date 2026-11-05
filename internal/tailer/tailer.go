@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/fileconsumer"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/fileconsumer/emit"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/fileconsumer/matcher"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/stanza/operator"
 	"go.opentelemetry.io/collector/component"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
@@ -120,16 +122,37 @@ func New(cfg Config, h Handler) (*Tailer, error) {
 	return t, nil
 }
 
+// persister returns the checkpoint store for the manager, or nil when the
+// tailer keeps no offsets. It must not return a typed-nil pointer, because the
+// manager treats any non-nil interface as a real store.
+func (t *Tailer) persister() operator.Persister {
+	if t.per == nil {
+		return nil
+	}
+	return t.per
+}
+
 // Start begins the poll loop. The manager polls on the interval until Stop.
 func (t *Tailer) Start() error {
-	var err error
-	if t.per != nil {
-		err = t.mgr.Start(t.per)
-	} else {
-		err = t.mgr.Start(nil)
+	err := t.mgr.Start(t.persister())
+	if err == nil {
+		return nil
 	}
-	if err != nil {
+	// Without a checkpoint store the error cannot be a bad payload.
+	if t.per == nil {
 		return fmt.Errorf("tailer: start: %w", err)
+	}
+	// The checkpoint file passed the outer JSON decode, but fileconsumer
+	// rejects its offset payload. Drop the bad offsets and start fresh, so a
+	// corrupt checkpoint does not stop the agent on every restart.
+	slog.Default().Warn("Dropped a malformed checkpoint payload; started fresh",
+		"path", t.per.path, "err", err)
+	if resetErr := t.per.reset(); resetErr != nil {
+		return fmt.Errorf("tailer: reset checkpoints: %w", resetErr)
+	}
+	// A second failure, now with an empty store, is a genuine error.
+	if retryErr := t.mgr.Start(t.per); retryErr != nil {
+		return fmt.Errorf("tailer: start: %w", retryErr)
 	}
 	return nil
 }
