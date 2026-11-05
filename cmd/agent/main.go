@@ -18,22 +18,76 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/kubewarden/network-enforcer/internal/tailer"
 )
 
-// main is a placeholder entrypoint for the per-node agent.
-// It waits for a termination signal and then exits.
-// Later work adds the log tailing, buffer and pull API.
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
+	// Tail the pod log directory, not the "/var/log/containers" symlinks. The
+	// symlinks only point to the active file, so a file that the kubelet rotates
+	// while the agent is down would be missed on restart. The pod directory also
+	// holds the retained rotated files, so recovery can drain their unread tail.
+	// The default matches the ztunnel pod in the "istio-system" namespace. Pass
+	// -log-glob to tail a different namespace, pod or path.
+	glob := flag.String("log-glob", "/var/log/pods/istio-system_ztunnel*/*/*.log*",
+		"glob for the container log files to tail")
+	poll := flag.Duration("poll-interval", 200*time.Millisecond,
+		"file poll period")
+	statePath := flag.String("checkpoint-file", "",
+		"path to the JSON checkpoint file; empty disables persistence")
+	flag.Parse()
+
+	cfg := tailer.Config{
+		Include: []string{*glob},
+		// Skip the kubelet rotation artifacts. The kubelet compresses older
+		// rotated files to ".gz" through a ".tmp" file. Those files are not
+		// live container logs.
+		Exclude:      []string{"**/*.gz", "**/*.tmp"},
+		PollInterval: *poll,
+		StatePath:    *statePath,
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	logger.Info("Starting agent")
-	<-ctx.Done()
+	exitCode := 0
+	if err := run(ctx, cfg, printLine(logger), logger); err != nil {
+		logger.Error("Agent failed", "err", err)
+		exitCode = 1
+	}
 	logger.Info("Stopped agent")
+	stop()
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
+}
+
+// run starts the tailer, blocks until the context ends, then stops the tailer.
+func run(ctx context.Context, cfg tailer.Config, h tailer.Handler, logger *slog.Logger) error {
+	t, err := tailer.New(cfg, h)
+	if err != nil {
+		return err
+	}
+	if startErr := t.Start(); startErr != nil {
+		return startErr
+	}
+	logger.InfoContext(ctx, "Started tailer", "glob", cfg.Include)
+	<-ctx.Done()
+	logger.InfoContext(ctx, "Stopping tailer")
+	return t.Stop()
+}
+
+// printLine returns a handler that prints each line through the logger.
+func printLine(logger *slog.Logger) tailer.Handler {
+	return func(l tailer.Line) {
+		logger.Info("Flow log", "line", string(l.Raw))
+	}
 }
