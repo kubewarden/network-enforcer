@@ -31,7 +31,7 @@ const (
 // A consumer serializes pulls for an agent; this API does not fence multiple consumers
 // or split-brain leaders. To preserve same-epoch replay identities, the server persists
 // the epoch, newest assigned sequence, retained events, read position, acknowledgement,
-// and cumulative status retention counters consistently across restarts. It restores the
+// and cumulative status counters consistently across restarts. It restores the
 // same epoch only when that state is recovered consistently; otherwise it creates a new
 // random epoch. Durably commit each event, its sequence, and the epoch/read position before
 // exposing that event or newest_seq; same-epoch recovery must never forget or reuse an
@@ -77,7 +77,7 @@ func (c *agentServiceClient) GetStatus(ctx context.Context, in *GetStatusRequest
 // A consumer serializes pulls for an agent; this API does not fence multiple consumers
 // or split-brain leaders. To preserve same-epoch replay identities, the server persists
 // the epoch, newest assigned sequence, retained events, read position, acknowledgement,
-// and cumulative status retention counters consistently across restarts. It restores the
+// and cumulative status counters consistently across restarts. It restores the
 // same epoch only when that state is recovered consistently; otherwise it creates a new
 // random epoch. Durably commit each event, its sequence, and the epoch/read position before
 // exposing that event or newest_seq; same-epoch recovery must never forget or reuse an

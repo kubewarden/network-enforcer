@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -55,8 +56,13 @@ func TestPullAndStatusFieldDescriptors(t *testing.T) {
 	status := file.Messages().ByName("GetStatusResponse")
 	assertField(t, status, "oldest_seq", 4, protoreflect.Uint64Kind)
 	assertField(t, status, "newest_seq", 3, protoreflect.Uint64Kind)
+	assertField(t, status, "buffered_events", 5, protoreflect.Uint64Kind)
+	assertField(t, status, "max_events", 6, protoreflect.Uint64Kind)
 	assertField(t, status, "dropped_events", 8, protoreflect.Uint64Kind)
-	assertField(t, status, "current_log_file", 9, protoreflect.StringKind)
+	logFiles := assertField(t, status, "current_log_files", 9, protoreflect.StringKind)
+	assert.Equal(t, protoreflect.Repeated, logFiles.Cardinality())
+	received := assertField(t, status, "received_events", 10, protoreflect.Uint64Kind)
+	assert.Equal(t, protoreflect.Optional, received.Cardinality())
 	maxAge := assertField(t, status, "max_age", 7, protoreflect.MessageKind)
 	assert.Equal(t, protoreflect.FullName("google.protobuf.Duration"), maxAge.Message().FullName())
 }
@@ -176,6 +182,64 @@ func TestPolicyEventBinaryRoundTripWithoutTimestamp(t *testing.T) {
 	)
 	assert.Nil(t, got.GetObservedAt())
 	assert.Equal(t, PolicyMode_POLICY_MODE_PROTECT, got.GetPolicy().GetMode())
+}
+
+func TestStatusBinaryRoundTrip(t *testing.T) {
+	cases := []struct {
+		name   string
+		status *GetStatusResponse
+	}{
+		{
+			name:   "no input or monitored files",
+			status: &GetStatusResponse{Epoch: "empty", MaxEvents: 10_000},
+		},
+		{
+			name: "multiple monitored files with retained events",
+			status: &GetStatusResponse{
+				Epoch:          "active",
+				AckedSeq:       12,
+				NewestSeq:      17,
+				OldestSeq:      15,
+				BufferedEvents: 3,
+				MaxEvents:      10_000,
+				MaxAge:         durationpb.New(5 * time.Minute),
+				DroppedEvents:  2,
+				CurrentLogFiles: []string{
+					"/var/log/containers/ztunnel-a_istio-system_ztunnel-first.log",
+					"/var/log/containers/ztunnel-b_istio-system_ztunnel-second.log",
+				},
+				ReceivedEvents: 42,
+			},
+		},
+		{
+			name: "input received without producing events",
+			status: &GetStatusResponse{
+				Epoch:           "filtered",
+				MaxEvents:       10_000,
+				CurrentLogFiles: []string{"/var/log/containers/ztunnel.log"},
+				ReceivedEvents:  42,
+			},
+		},
+		{
+			name: "received total retained after acknowledged events are purged",
+			status: &GetStatusResponse{
+				Epoch:          "drained",
+				AckedSeq:       17,
+				NewestSeq:      17,
+				MaxEvents:      10_000,
+				ReceivedEvents: 42,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := marshalRoundTrip(t, tc.status).(*GetStatusResponse)
+			require.True(t, proto.Equal(tc.status, got),
+				"status changed after binary round trip:\n got: %v\nwant: %v", got, tc.status)
+			assert.Equal(t, tc.status.GetCurrentLogFiles(), got.GetCurrentLogFiles())
+			assert.Equal(t, tc.status.GetReceivedEvents(), got.GetReceivedEvents())
+		})
+	}
 }
 
 func marshalRoundTrip(t *testing.T, message proto.Message) proto.Message {

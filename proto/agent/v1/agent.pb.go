@@ -575,16 +575,27 @@ type GetStatusResponse struct {
 	// Oldest currently retained event, or zero when no events are retained. Retention removes
 	// only an oldest prefix, so retained events form a contiguous oldest_seq..newest_seq range.
 	OldestSeq uint64 `protobuf:"varint,4,opt,name=oldest_seq,json=oldestSeq,proto3" json:"oldest_seq,omitempty"`
-	// Number of currently retained events.
-	BufferedEvents uint64               `protobuf:"varint,5,opt,name=buffered_events,json=bufferedEvents,proto3" json:"buffered_events,omitempty"`
-	MaxEvents      uint64               `protobuf:"varint,6,opt,name=max_events,json=maxEvents,proto3" json:"max_events,omitempty"`
-	MaxAge         *durationpb.Duration `protobuf:"bytes,7,opt,name=max_age,json=maxAge,proto3" json:"max_age,omitempty"`
+	// Number of currently retained events, not a cumulative count of received events.
+	BufferedEvents uint64 `protobuf:"varint,5,opt,name=buffered_events,json=bufferedEvents,proto3" json:"buffered_events,omitempty"`
+	// Configured capacity of the agent buffer. This bounds the backlog when the controller
+	// is unavailable or falls behind. Acknowledged events may be purged sooner; unacknowledged
+	// events can still be evicted when this capacity or max_age is exceeded.
+	MaxEvents uint64 `protobuf:"varint,6,opt,name=max_events,json=maxEvents,proto3" json:"max_events,omitempty"`
+	// Configured age limit for agent-side retention, including unacknowledged events.
+	MaxAge *durationpb.Duration `protobuf:"bytes,7,opt,name=max_age,json=maxAge,proto3" json:"max_age,omitempty"`
 	// Cumulative events evicted while not yet acknowledged at eviction, reset only with the
 	// epoch and preserved across same-epoch restarts. This is not PullEventsResponse.dropped
 	// and is not proof of end-to-end loss (an inflight batch may already have been accepted).
 	DroppedEvents uint64 `protobuf:"varint,8,opt,name=dropped_events,json=droppedEvents,proto3" json:"dropped_events,omitempty"`
-	// Current tailed log file, or empty when no file is current.
-	CurrentLogFile string `protobuf:"bytes,9,opt,name=current_log_file,json=currentLogFile,proto3" json:"current_log_file,omitempty"`
+	// Paths of all log files currently monitored by the tailer, not the configured globs.
+	// Empty when no files are monitored. The list has no duplicates and its order is unspecified.
+	CurrentLogFiles []string `protobuf:"bytes,9,rep,name=current_log_files,json=currentLogFiles,proto3" json:"current_log_files,omitempty"`
+	// Cumulative log records received from the tailer before parsing or filtering, including
+	// records that do not produce an Event or are not admitted to the buffer. Unlike newest_seq,
+	// this counter shows input activity even when no events are stored. Pulls, acknowledgements,
+	// and eviction do not change it. Reset only with the epoch and preserved across same-epoch
+	// restarts, consistently with the read positions.
+	ReceivedEvents uint64 `protobuf:"varint,10,opt,name=received_events,json=receivedEvents,proto3" json:"received_events,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -675,11 +686,18 @@ func (x *GetStatusResponse) GetDroppedEvents() uint64 {
 	return 0
 }
 
-func (x *GetStatusResponse) GetCurrentLogFile() string {
+func (x *GetStatusResponse) GetCurrentLogFiles() []string {
 	if x != nil {
-		return x.CurrentLogFile
+		return x.CurrentLogFiles
 	}
-	return ""
+	return nil
+}
+
+func (x *GetStatusResponse) GetReceivedEvents() uint64 {
+	if x != nil {
+		return x.ReceivedEvents
+	}
+	return 0
 }
 
 var File_proto_agent_v1_agent_proto protoreflect.FileDescriptor
@@ -722,7 +740,7 @@ const file_proto_agent_v1_agent_proto_rawDesc = "" +
 	"\x1bdestination_namespaced_name\x18\x03 \x01(\tR\x19destinationNamespacedName\x12\x16\n" +
 	"\x06policy\x18\x04 \x01(\tR\x06policy\x12%\n" +
 	"\x0esource_address\x18\x05 \x01(\tR\rsourceAddress\"\x12\n" +
-	"\x10GetStatusRequest\"\xd1\x02\n" +
+	"\x10GetStatusRequest\"\xfc\x02\n" +
 	"\x11GetStatusResponse\x12\x14\n" +
 	"\x05epoch\x18\x01 \x01(\tR\x05epoch\x12\x1b\n" +
 	"\tacked_seq\x18\x02 \x01(\x04R\backedSeq\x12\x1d\n" +
@@ -734,8 +752,10 @@ const file_proto_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"max_events\x18\x06 \x01(\x04R\tmaxEvents\x122\n" +
 	"\amax_age\x18\a \x01(\v2\x19.google.protobuf.DurationR\x06maxAge\x12%\n" +
-	"\x0edropped_events\x18\b \x01(\x04R\rdroppedEvents\x12(\n" +
-	"\x10current_log_file\x18\t \x01(\tR\x0ecurrentLogFile*[\n" +
+	"\x0edropped_events\x18\b \x01(\x04R\rdroppedEvents\x12*\n" +
+	"\x11current_log_files\x18\t \x03(\tR\x0fcurrentLogFiles\x12'\n" +
+	"\x0freceived_events\x18\n" +
+	" \x01(\x04R\x0ereceivedEvents*[\n" +
 	"\n" +
 	"PolicyMode\x12\x1b\n" +
 	"\x17POLICY_MODE_UNSPECIFIED\x10\x00\x12\x17\n" +

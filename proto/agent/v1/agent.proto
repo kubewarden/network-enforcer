@@ -11,7 +11,7 @@ import "google/protobuf/timestamp.proto";
 // A consumer serializes pulls for an agent; this API does not fence multiple consumers
 // or split-brain leaders. To preserve same-epoch replay identities, the server persists
 // the epoch, newest assigned sequence, retained events, read position, acknowledgement,
-// and cumulative status retention counters consistently across restarts. It restores the
+// and cumulative status counters consistently across restarts. It restores the
 // same epoch only when that state is recovered consistently; otherwise it creates a new
 // random epoch. Durably commit each event, its sequence, and the epoch/read position before
 // exposing that event or newest_seq; same-epoch recovery must never forget or reuse an
@@ -140,14 +140,25 @@ message GetStatusResponse {
   // Oldest currently retained event, or zero when no events are retained. Retention removes
   // only an oldest prefix, so retained events form a contiguous oldest_seq..newest_seq range.
   uint64 oldest_seq = 4;
-  // Number of currently retained events.
+  // Number of currently retained events, not a cumulative count of received events.
   uint64 buffered_events = 5;
+  // Configured capacity of the agent buffer. This bounds the backlog when the controller
+  // is unavailable or falls behind. Acknowledged events may be purged sooner; unacknowledged
+  // events can still be evicted when this capacity or max_age is exceeded.
   uint64 max_events = 6;
+  // Configured age limit for agent-side retention, including unacknowledged events.
   google.protobuf.Duration max_age = 7;
   // Cumulative events evicted while not yet acknowledged at eviction, reset only with the
   // epoch and preserved across same-epoch restarts. This is not PullEventsResponse.dropped
   // and is not proof of end-to-end loss (an inflight batch may already have been accepted).
   uint64 dropped_events = 8;
-  // Current tailed log file, or empty when no file is current.
-  string current_log_file = 9;
+  // Paths of all log files currently monitored by the tailer, not the configured globs.
+  // Empty when no files are monitored. The list has no duplicates and its order is unspecified.
+  repeated string current_log_files = 9;
+  // Cumulative log records received from the tailer before parsing or filtering, including
+  // records that do not produce an Event or are not admitted to the buffer. Unlike newest_seq,
+  // this counter shows input activity even when no events are stored. Pulls, acknowledgements,
+  // and eviction do not change it. Reset only with the epoch and preserved across same-epoch
+  // restarts, consistently with the read positions.
+  uint64 received_events = 10;
 }
