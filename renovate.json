@@ -35,7 +35,7 @@
       "matchPackageNames": [
         "kubewarden/network-enforcer/controller"
       ],
-      "matchPaths": [
+      "matchFileNames": [
         "charts/network-enforcer/values.yaml"
       ]
     },
@@ -48,7 +48,7 @@
       "matchPackageNames": [
         "otel/opentelemetry-collector-contrib"
       ],
-      "matchPaths": [
+      "matchFileNames": [
         "test/e2e/manifests/otel-collector.yaml"
       ]
     }
