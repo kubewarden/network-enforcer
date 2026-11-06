@@ -58,8 +58,8 @@ TARGET=controller agent
 $(foreach T,$(TARGET),$(eval $(call BUILD_template,$(T))))
 
 .PHONY: manifests
-manifests: controller-gen ## Generate webhook configuration, CRDs and RBAC.
-	"$(CONTROLLER_GEN)" crd rbac:roleName=controller-role webhook \
+manifests: ## Generate webhook configuration, CRDs and RBAC.
+	$(CONTROLLER_GEN) crd rbac:roleName=controller-role webhook \
 		paths="./api/v1alpha1" paths="./internal/controller" \
 		output:crd:artifacts:config=charts/network-enforcer/templates/crd \
 		output:rbac:artifacts:config=charts/network-enforcer/templates/controller \
@@ -71,8 +71,8 @@ manifests: controller-gen ## Generate webhook configuration, CRDs and RBAC.
 		charts/network-enforcer/templates/controller/role.yaml
 
 .PHONY: generate
-generate: manifests controller-gen generate-chart-values generate-crd-docs generate-agent-proto ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
+generate: manifests generate-chart-values generate-crd-docs generate-agent-proto ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: generate-crd-docs
 generate-crd-docs: ## Generate CRD documentation.
@@ -149,28 +149,18 @@ LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p "$(LOCALBIN)"
 
-## Tool Binaries
-CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
-ENVTEST ?= $(LOCALBIN)/setup-envtest
-GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
-PROTOC_GEN_GO ?= $(LOCALBIN)/protoc-gen-go
-PROTOC_GEN_GO_GRPC ?= $(LOCALBIN)/protoc-gen-go-grpc
-HELM_VALUES_SCHEMA_JSON ?= $(LOCALBIN)/helm-values-schema-json
-
 ## Tool Versions
 # renovate: datasource=go depName=sigs.k8s.io/controller-tools
 CONTROLLER_TOOLS_VERSION ?= v0.23.0
-# renovate: datasource=go depName=google.golang.org/protobuf
-PROTOC_GEN_GO_VERSION ?= v1.36.12
-# renovate: datasource=go depName=google.golang.org/grpc/cmd/protoc-gen-go-grpc
-PROTOC_GEN_GO_GRPC_VERSION ?= v1.6.2
 # renovate: datasource=go depName=github.com/losisin/helm-values-schema-json/v2
 HELM_VALUES_SCHEMA_JSON_VERSION ?= v2.6.0
+# renovate: datasource=go depName=github.com/bufbuild/buf
+BUF_VERSION ?= v1.75.0
 
-#ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
+#ENVTEST_VERSION is the version of controller-runtime. setup-envtest uses the same version tags (i.e. v0.20.4)
 ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
   [ -n "$$v" ] || { echo "Set ENVTEST_VERSION manually (controller-runtime replace has no tag)" >&2; exit 1; }; \
-  printf '%s\n' "$$v" | sed -E 's/^v?([0-9]+)\.([0-9]+).*/release-\1.\2/')
+  printf '%s\n' "$$v")
 
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
@@ -178,47 +168,43 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.15.0
-.PHONY: controller-gen
-controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
-$(CONTROLLER_GEN): $(LOCALBIN)
-	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
+
+## Tool Binaries
+# go run builds the pinned version when needed and caches it. As a result, a
+# version change always takes effect.
+CONTROLLER_GEN ?= go run sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+ENVTEST ?= go run sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION)
+HELM_VALUES_SCHEMA_JSON ?= go run github.com/losisin/helm-values-schema-json/v2@$(HELM_VALUES_SCHEMA_JSON_VERSION)
+# The version is part of the file name, so make installs the tool again after
+# a version change.
+BUF ?= $(LOCALBIN)/buf-$(BUF_VERSION)
+GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 .PHONY: setup-envtest
-setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
+setup-envtest: $(LOCALBIN) ## Download the binaries required for ENVTEST in the local bin directory.
 	@echo "Setting up envtest binaries for Kubernetes version $(ENVTEST_K8S_VERSION)..."
-	@"$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path || { \
+	@$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path || { \
 		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
 		exit 1; \
 	}
 
-.PHONY: envtest
-envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
-$(ENVTEST): $(LOCALBIN)
-	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
+.PHONY: buf
+buf: $(BUF) ## Download buf locally if necessary.
+$(BUF): | $(LOCALBIN)
+	$(call go-install-tool,$(BUF),github.com/bufbuild/buf/cmd/buf,$(BUF_VERSION))
 
-.PHONY: protoc-gen-go
-protoc-gen-go: $(PROTOC_GEN_GO)
-$(PROTOC_GEN_GO): | $(LOCALBIN)
-	$(call go-install-tool,$(PROTOC_GEN_GO),google.golang.org/protobuf/cmd/protoc-gen-go,$(PROTOC_GEN_GO_VERSION))
-
-.PHONY: protoc-gen-go-grpc
-protoc-gen-go-grpc: $(PROTOC_GEN_GO_GRPC)
-$(PROTOC_GEN_GO_GRPC): | $(LOCALBIN)
-	$(call go-install-tool,$(PROTOC_GEN_GO_GRPC),google.golang.org/grpc/cmd/protoc-gen-go-grpc,$(PROTOC_GEN_GO_GRPC_VERSION))
-
+# buf runs the protoc-gen-go and protoc-gen-go-grpc plugins with "go tool", so
+# their versions come from go.mod.
 .PHONY: generate-agent-proto
-generate-agent-proto: protoc-gen-go protoc-gen-go-grpc ## Generate the node-agent protobuf and gRPC bindings.
-	PATH=$(LOCALBIN):$(PATH) protoc --go_out=. --go_opt=paths=source_relative \
-		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
-		proto/agent/v1/agent.proto
+generate-agent-proto: $(BUF) ## Generate the node-agent protobuf and gRPC bindings.
+	$(BUF) generate --path proto
 
-.PHONY: helm-values-schema-json
-helm-values-schema-json: $(HELM_VALUES_SCHEMA_JSON) ## Download helm-values-schema-json locally if necessary.
-$(HELM_VALUES_SCHEMA_JSON): $(LOCALBIN)
-	$(call go-install-tool,$(HELM_VALUES_SCHEMA_JSON),github.com/losisin/helm-values-schema-json/v2,$(HELM_VALUES_SCHEMA_JSON_VERSION))
+.PHONY: proto-breaking
+proto-breaking: $(BUF) ## Check the gRPC API for breaking changes against main. Needs the full git history.
+	$(BUF) breaking --path proto --against '.git#branch=main'
 
 .PHONY: generate-chart-values
-generate-chart-values: $(HELM_VALUES_SCHEMA_JSON)
+generate-chart-values: ## Generate Helm chart values schema.
 	$(HELM_VALUES_SCHEMA_JSON) \
 		--k8s-schema-version v1.31.0 \
 		--bundle --bundle-without-id --bundle-cache-min 24h \
@@ -227,7 +213,7 @@ generate-chart-values: $(HELM_VALUES_SCHEMA_JSON)
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
-$(GOLANGCI_LINT): $(LOCALBIN)
+$(GOLANGCI_LINT): | $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 	@test -f .custom-gcl.yml && { \
 		echo "Building custom golangci-lint with plugins..." && \
@@ -236,19 +222,17 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 	} || true
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
-# $1 - target path with name of binary
+# $1 - target path with name of binary, including the version
 # $2 - package url which can be installed
 # $3 - specific version of package
 define go-install-tool
-@[ -f "$(1)-$(3)" ] && [ "$$(readlink -- "$(1)" 2>/dev/null)" = "$(1)-$(3)" ] || { \
+@[ -f "$(1)" ] || { \
 set -e; \
 package=$(2)@$(3) ;\
 echo "Downloading $${package}" ;\
-rm -f "$(1)" ;\
 GOBIN="$(LOCALBIN)" go install $${package} ;\
-mv "$(LOCALBIN)/$$(basename "$(1)")" "$(1)-$(3)" ;\
-} ;\
-ln -sf "$$(realpath "$(1)-$(3)")" "$(1)"
+mv "$$(echo "$(1)" | sed "s/-$(3)$$//")" "$(1)" ;\
+}
 endef
 
 define gomodver
@@ -264,11 +248,9 @@ download-calico-goldmane-proto: ## Download Calico Goldmane proto file.
 	curl -fsSL https://raw.githubusercontent.com/projectcalico/calico/$(GOLDMANE_VERSION)/goldmane/proto/api.proto -o $(GOLDMANE_PROTO_DIR)/api.proto
 
 .PHONY: generate-calico-goldmane-proto
-generate-calico-goldmane-proto: download-calico-goldmane-proto protoc-gen-go protoc-gen-go-grpc ## Generate Go code from Goldmane proto definitions.
+generate-calico-goldmane-proto: download-calico-goldmane-proto $(BUF) ## Generate Go code from Goldmane proto definitions.
 	@echo "Generating Go code from Goldmane proto definitions..."
-	PATH=$(LOCALBIN):$(PATH) protoc --go_out=. --go_opt=paths=source_relative \
-		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
-		$(GOLDMANE_PROTO_DIR)/api.proto
+	$(BUF) generate --path $(GOLDMANE_PROTO_DIR)
 
 # The e2e suite installs the selected data-plane provider (default: istio) and
 # the network-enforcer chart on a dedicated kind cluster.

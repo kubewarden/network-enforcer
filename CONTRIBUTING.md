@@ -15,8 +15,6 @@ You need the following tools to build and run this project:
 - **Go**: required by all the components. The exact version is defined in `go.mod`.
 - **A C compiler** (`gcc` or equivalent): required by the Go race detector
   that `make test` uses.
-- **[protoc](https://grpc.io/docs/protoc-installation/)**: required to
-  regenerate the Calico Goldmane gRPC client.
 - **Make**: the build tool controlling various build tasks.
 - **[Tilt](https://docs.tilt.dev/)**: a development tool for multi-service applications.
 - **[kind](https://kind.sigs.k8s.io/)**: creates the local Kubernetes
@@ -215,6 +213,7 @@ This will:
 - Update the CRDs and the RBAC rules shipped by our Helm chart
 - Update the CRD reference in `docs/crds/CRD-docs-for-docs-repo.adoc`
 - Update the `values.schema.json` of the Helm chart
+- Update the gRPC code of the node agent in `proto/`
 
 To update only the CRD reference:
 
@@ -225,12 +224,29 @@ make generate-crd-docs
 CI runs `make generate` on each pull request. If the generated files are not up
 to date, CI fails.
 
+### Node agent gRPC code
+
+[buf](https://buf.build/) generates the Go code in `proto/`. The Makefile
+installs buf, so you do not have to install it. To generate only this code,
+run:
+
+```console
+make generate-agent-proto
+```
+
+After you change a `.proto` file, make sure that the change does not break
+the API of the `main` branch:
+
+```console
+make proto-breaking
+```
+
 ### Calico Goldmane gRPC client
 
 The Calico scraper talks to Goldmane, the flow aggregator of Calico, over
 gRPC. The `.proto` file and the generated Go code live in
 `internal/scraper/goldmane`. When the Goldmane API changes, download the new
-`.proto` file and regenerate the Go code. `protoc` must be on your `PATH`.
+`.proto` file and regenerate the Go code with buf.
 `GOLDMANE_VERSION` is the Calico version, the same one used by the e2e tests:
 
 ```console
