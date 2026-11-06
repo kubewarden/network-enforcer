@@ -587,8 +587,11 @@ type GetStatusResponse struct {
 	// epoch and preserved across same-epoch restarts. This is not PullEventsResponse.dropped
 	// and is not proof of end-to-end loss (an inflight batch may already have been accepted).
 	DroppedEvents uint64 `protobuf:"varint,8,opt,name=dropped_events,json=droppedEvents,proto3" json:"dropped_events,omitempty"`
-	// Paths of all log files currently monitored by the tailer, not the configured globs.
-	// Empty when no files are monitored. The list has no duplicates and its order is unspecified.
+	// Paths returned by the latest tailer-side matcher observation for the configured
+	// include/exclude criteria, not an authoritative list of open file descriptors. A hit
+	// may not have been opened, a lost descriptor may be omitted, and the observation may
+	// lag a rotation or removal until the next poll. Empty when no paths match. The list
+	// has no duplicates; ordering is unspecified.
 	CurrentLogFiles []string `protobuf:"bytes,9,rep,name=current_log_files,json=currentLogFiles,proto3" json:"current_log_files,omitempty"`
 	// Cumulative log records received from the tailer before parsing or filtering, including
 	// records that do not produce an Event or are not admitted to the buffer. Unlike newest_seq,
