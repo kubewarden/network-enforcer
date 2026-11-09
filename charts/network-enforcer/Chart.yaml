@@ -52,4 +52,4 @@ annotations:
     - name: controller
       image: ghcr.io/kubewarden/network-enforcer/controller:v0.4.0
     - name: fluent-bit
-      image: fluent/fluent-bit:5.1.5
+      image: fluent/fluent-bit:5.2.0
