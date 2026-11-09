@@ -11,5 +11,6 @@
 !go.sum
 !Makefile
 
-# Re-include built binary for Tilt dev builds
+# Re-include built binaries for Tilt dev builds
 !bin/controller
+!bin/agent

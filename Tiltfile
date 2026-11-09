@@ -14,6 +14,7 @@ load("ext://namespace", "namespace_create")
 namespace_create(release_namespace)
 
 controller_image = settings.get("controller").get("image")
+agent_image = settings.get("agent").get("image")
 
 # allow the override of the provider from command line
 config.define_string("provider")
@@ -31,6 +32,13 @@ helm_set_values = [
     "controller.podSecurityContext.runAsNonRoot=false",
 	"controller.provider.name=" + providerName,
 	"controller.flowDumper.enabled=true",
+    # The agent workload, always on in tilt.
+    "agent.enabled=true",
+    "agent.image.registry=",
+    "agent.image.repository=" + agent_image,
+    # The agent reads node log files, so it runs as root.
+    "agent.podSecurityContext.runAsNonRoot=false",
+    "agent.containerSecurityContext.runAsUser=null",
 ]
 
 yaml = helm(
@@ -71,5 +79,36 @@ docker_build_with_restart(
     ],
     live_update=[
         sync("./bin/controller", "/controller"),
+    ],
+)
+
+local_resource(
+    "agent_tilt",
+    "make agent",
+    deps=[
+        "go.mod",
+        "go.sum",
+        "cmd/agent",
+        "api",
+        "internal",
+        "proto",
+    ],
+)
+
+agent_entrypoint = ["/agent"]
+agent_dockerfile = "./hack/Dockerfile.agent.tilt"
+
+docker_build_with_restart(
+    agent_image,
+    ".",
+    dockerfile=agent_dockerfile,
+    entrypoint=agent_entrypoint,
+    # `only` here is important, otherwise, the container will get updated
+    # on _any_ file change.
+    only=[
+        "./bin/agent",
+    ],
+    live_update=[
+        sync("./bin/agent", "/agent"),
     ],
 )
