@@ -14,6 +14,51 @@ tests:
           path: spec.template.spec.containers[0].args
           content: --log-level=info
 
+  - it: "serves the webhook certificate with a readable fs-group"
+    # The cert-manager CSI driver writes the files as root:root. The
+    # fs-group attribute makes the files group-readable. It must match the
+    # container runAsGroup so the non-root controller can read them.
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 65532
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsGroup
+          value: 65532
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: webhook-certs
+            csi:
+              driver: csi.cert-manager.io
+              readOnly: true
+              volumeAttributes:
+                csi.cert-manager.io/issuer-name: my-release-network-enforcer-ca
+                csi.cert-manager.io/issuer-kind: Issuer
+                csi.cert-manager.io/dns-names: my-release-network-enforcer-controller-webhook.my-namespace.svc
+                csi.cert-manager.io/fs-group: "65532"
+          count: 1
+
+  - it: "tracks the webhook fs-group to the container runAsGroup"
+    set:
+      controller:
+        containerSecurityContext:
+          runAsGroup: 2000
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: webhook-certs
+            csi:
+              driver: csi.cert-manager.io
+              readOnly: true
+              volumeAttributes:
+                csi.cert-manager.io/issuer-name: my-release-network-enforcer-ca
+                csi.cert-manager.io/issuer-kind: Issuer
+                csi.cert-manager.io/dns-names: my-release-network-enforcer-controller-webhook.my-namespace.svc
+                csi.cert-manager.io/fs-group: "2000"
+          count: 1
+
   - it: "uses custom log level"
     set:
       controller:
@@ -213,3 +258,10 @@ tests:
       - equal:
           path: spec.template.spec.serviceAccountName
           value: custom-fullname-controller-manager
+
+  - it: "runs the controller as the image user by default"
+    template: "templates/controller/deployment.yaml"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 65532

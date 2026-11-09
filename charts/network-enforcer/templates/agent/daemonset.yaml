@@ -71,6 +71,9 @@ spec:
             csi.cert-manager.io/issuer-name: {{ include "network-enforcer.caIssuerName" . }}
             csi.cert-manager.io/issuer-kind: Issuer
             csi.cert-manager.io/dns-names: ${POD_NAME}.${POD_NAMESPACE}
+            {{- with $a.containerSecurityContext.runAsGroup }}
+            csi.cert-manager.io/fs-group: {{ . | quote }}
+            {{- end }}
       {{- with include "network-enforcer.extraVolumes" $ctx }}{{ . | nindent 6 }}{{ end }}
       terminationGracePeriodSeconds: 10
 {{- end }}

@@ -39,6 +39,7 @@ tests:
                 csi.cert-manager.io/issuer-name: my-release-network-enforcer-ca
                 csi.cert-manager.io/issuer-kind: Issuer
                 csi.cert-manager.io/dns-names: ${POD_NAME}.${POD_NAMESPACE}
+                csi.cert-manager.io/fs-group: "65532"
 
   - it: "keeps controller free of gRPC material by default"
     template: templates/controller/deployment.yaml
@@ -69,6 +70,7 @@ tests:
                 csi.cert-manager.io/issuer-name: my-release-network-enforcer-ca
                 csi.cert-manager.io/issuer-kind: Issuer
                 csi.cert-manager.io/dns-names: my-release-network-enforcer-controller
+                csi.cert-manager.io/fs-group: "65532"
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
           content:

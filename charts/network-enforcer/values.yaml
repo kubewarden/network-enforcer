@@ -151,7 +151,12 @@ controller:
   # @schema $ref: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext
   containerSecurityContext:
     # @schema hidden
-    runAsUser: 1000
+    runAsUser: 65532
+    # @schema hidden
+    # The controller mounts the webhook and agent certificates through the
+    # cert-manager CSI driver. The driver writes the files with this group.
+    # runAsGroup must match the fs-group so the non-root process can read them.
+    runAsGroup: 65532
     # @schema hidden
     allowPrivilegeEscalation: false
     # @schema hidden
@@ -282,6 +287,9 @@ agent:
   containerSecurityContext:
     # @schema hidden
     runAsUser: 65532
+    # The agent mounts the webhook and agent certificates through the
+    # cert-manager CSI driver. The driver writes the files with this group.
+    # runAsGroup must match the fs-group so the non-root process can read them.
     # @schema hidden
     runAsGroup: 65532
     # @schema hidden
