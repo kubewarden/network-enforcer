@@ -244,7 +244,7 @@ istioFluentBit:
     repository: fluent/fluent-bit
     # The image tag used by fluent-bit
     # @schema required
-    tag: 5.1.5
+    tag: 5.2.0
   # Registry for the images of this workload.
   # global.imageRegistry replaces it when set.
   imageRegistry: docker.io
