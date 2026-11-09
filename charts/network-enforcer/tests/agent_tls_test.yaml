@@ -1,0 +1,119 @@
+suite: "Agent hop mTLS material issued by the chart CA"
+chart:
+  version: 1.0.0
+  appVersion: 2.0.0
+release:
+  name: my-release
+  namespace: my-namespace
+tests:
+  - it: "mounts agent CSI material when enabled"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+    asserts:
+      - equal:
+          path: kind
+          value: DaemonSet
+      - equal:
+          path: metadata.name
+          value: my-release-network-enforcer-agent
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --grpc-mtls-cert-dir=/etc/network-enforcer/certs
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: grpc-certs
+            mountPath: /etc/network-enforcer/certs
+            readOnly: true
+          count: 1
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: grpc-certs
+            csi:
+              driver: csi.cert-manager.io
+              readOnly: true
+              volumeAttributes:
+                csi.cert-manager.io/issuer-name: my-release-network-enforcer-ca
+                csi.cert-manager.io/issuer-kind: Issuer
+                csi.cert-manager.io/dns-names: ${POD_NAME}.${POD_NAMESPACE}
+
+  - it: "keeps controller free of gRPC material by default"
+    template: templates/controller/deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: grpc-certs
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            mountPath: /etc/network-enforcer/certs
+
+  - it: "issues controller gRPC material when the agent is enabled"
+    template: templates/controller/deployment.yaml
+    set:
+      agent:
+        enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: grpc-certs
+            csi:
+              driver: csi.cert-manager.io
+              readOnly: true
+              volumeAttributes:
+                csi.cert-manager.io/issuer-name: my-release-network-enforcer-ca
+                csi.cert-manager.io/issuer-kind: Issuer
+                csi.cert-manager.io/dns-names: my-release-network-enforcer-controller
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: grpc-certs
+            mountPath: /etc/network-enforcer/certs
+            readOnly: true
+          count: 1
+
+  - it: "renders no agent DaemonSet by default"
+    asserts:
+      - containsDocument:
+          kind: DaemonSet
+          apiVersion: apps/v1
+          name: my-release-network-enforcer-agent
+        not: true
+
+  - it: "the agent runs unprivileged by default"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 65532
+
+  - it: "accepts custom agent security contexts"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        podSecurityContext:
+          runAsNonRoot: true
+        containerSecurityContext:
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 1000

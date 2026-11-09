@@ -410,6 +410,9 @@ Certificate helpers for mTLS (CA issuer and secret share a name).
 {{- define "network-enforcer.caSecretName" -}}
 {{ include "network-enforcer.fullname" . }}-ca
 {{- end -}}
+{{- define "network-enforcer.grpc.certDir" -}}
+/etc/network-enforcer/certs
+{{- end -}}
 
 {{/*
 Values of the workloads
