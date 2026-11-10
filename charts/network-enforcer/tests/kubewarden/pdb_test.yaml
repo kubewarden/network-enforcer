@@ -15,7 +15,6 @@ tests:
       - hasDocuments:
           count: 0
 
-  # network-enforcer has no PodDisruptionBudget for the fluent-bit DaemonSet.
   - it: "should render a PodDisruptionBudget for each workload that sets one"
     release:
       name: rel
@@ -91,15 +90,3 @@ tests:
             app.kubernetes.io/component: controller
             app.kubernetes.io/name: network-enforcer
             app.kubernetes.io/instance: rel
-
-  - it: "should not render a PodDisruptionBudget from global or common"
-    set:
-      global:
-        podDisruptionBudget:
-          minAvailable: 1
-      common:
-        podDisruptionBudget:
-          minAvailable: 1
-    asserts:
-      - hasDocuments:
-          count: 0

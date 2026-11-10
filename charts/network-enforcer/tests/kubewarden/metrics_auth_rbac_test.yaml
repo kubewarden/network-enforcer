@@ -1,0 +1,68 @@
+suite: "Metrics endpoint and RBAC"
+tests:
+  - it: "should render the metrics endpoint and its RBAC"
+    asserts:
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--metrics-bind-address=:8443"
+        template: "templates/controller/deployment.yaml"
+      - containsDocument:
+          kind: ClusterRole
+          apiVersion: rbac.authorization.k8s.io/v1
+          name: RELEASE-NAME-network-enforcer-metrics-reader
+        template: "templates/controller/metrics-reader-rbac.yaml"
+      - containsDocument:
+          kind: ClusterRole
+          apiVersion: rbac.authorization.k8s.io/v1
+          name: RELEASE-NAME-network-enforcer-metrics-auth-role
+        template: "templates/controller/metrics-auth-rbac.yaml"
+        documentSelector:
+          path: kind
+          value: ClusterRole
+      - containsDocument:
+          kind: ClusterRoleBinding
+          apiVersion: rbac.authorization.k8s.io/v1
+          name: RELEASE-NAME-network-enforcer-metrics-auth-rolebinding
+        template: "templates/controller/metrics-auth-rbac.yaml"
+        documentSelector:
+          path: kind
+          value: ClusterRoleBinding
+      - equal:
+          path: roleRef
+          value:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: RELEASE-NAME-network-enforcer-metrics-auth-role
+        template: "templates/controller/metrics-auth-rbac.yaml"
+        documentSelector:
+          path: kind
+          value: ClusterRoleBinding
+      - equal:
+          path: subjects
+          value:
+            - kind: ServiceAccount
+              name: RELEASE-NAME-network-enforcer-controller-manager
+              namespace: NAMESPACE
+        template: "templates/controller/metrics-auth-rbac.yaml"
+        documentSelector:
+          path: kind
+          value: ClusterRoleBinding
+
+  - it: "should render the metrics RBAC subject in namespaceOverride"
+    set:
+      namespaceOverride: other
+    asserts:
+      - equal:
+          path: subjects
+          value:
+            - kind: ServiceAccount
+              name: RELEASE-NAME-network-enforcer-controller-manager
+              namespace: other
+        template: "templates/controller/metrics-auth-rbac.yaml"
+        documentSelector:
+          path: kind
+          value: ClusterRoleBinding
+      - contains:
+          path: "spec.template.spec.containers[0].args"
+          content: "--metrics-bind-address=:8443"
+        template: "templates/controller/deployment.yaml"
