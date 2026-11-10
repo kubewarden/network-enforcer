@@ -9,7 +9,6 @@ package agentv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -72,48 +71,26 @@ func (PolicyMode) EnumDescriptor() ([]byte, []int) {
 	return file_proto_agent_v1_agent_proto_rawDescGZIP(), []int{0}
 }
 
-type PullEventsRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The opaque epoch previously returned by this agent. An empty epoch bootstraps from
-	// the agent's persisted acknowledgement and requires since_seq=0; a nonzero value is
-	// INVALID_ARGUMENT. Bootstrap does not modify the acknowledgement. A nonempty mismatched
-	// epoch ignores since_seq and reads the current epoch after its persisted acknowledgement,
-	// with gap=true in the response.
-	Epoch string `protobuf:"bytes,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	// Cursor the consumer acknowledges. For returned events, it advances only through a
-	// prefix previously accepted into leader buffers for processing; after recording loss,
-	// it may also acknowledge a reported retention gap through the prior response's
-	// acked_seq+dropped. It need not be numerically adjacent to the previous since_seq across
-	// a gap. Temporary enqueue refusal is not acceptance; later filtering of an accepted event
-	// does not undo acceptance.
-	// A consumer may explicitly dispose of a terminally unusable record with observable
-	// accounting before acknowledging it; a temporary processing failure is not terminal.
-	SinceSeq uint64 `protobuf:"varint,2,opt,name=since_seq,json=sinceSeq,proto3" json:"since_seq,omitempty"`
-	// Maximum event count to return. Zero selects the default of 1000; values above 10000
-	// are INVALID_ARGUMENT. Validate this and the empty-epoch/since_seq combination before
-	// mutation. In a matching epoch, since_seq above newest_seq is INVALID_ARGUMENT with no
-	// acknowledgement mutation; otherwise the effective acknowledgement is max(stored ack,
-	// since_seq), so stale requests cannot rewind it. A server may return fewer events to fit
-	// its response byte budget.
-	Limit         uint32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+type ScrapeEventsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *PullEventsRequest) Reset() {
-	*x = PullEventsRequest{}
+func (x *ScrapeEventsRequest) Reset() {
+	*x = ScrapeEventsRequest{}
 	mi := &file_proto_agent_v1_agent_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *PullEventsRequest) String() string {
+func (x *ScrapeEventsRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*PullEventsRequest) ProtoMessage() {}
+func (*ScrapeEventsRequest) ProtoMessage() {}
 
-func (x *PullEventsRequest) ProtoReflect() protoreflect.Message {
+func (x *ScrapeEventsRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_agent_v1_agent_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -125,89 +102,32 @@ func (x *PullEventsRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use PullEventsRequest.ProtoReflect.Descriptor instead.
-func (*PullEventsRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ScrapeEventsRequest.ProtoReflect.Descriptor instead.
+func (*ScrapeEventsRequest) Descriptor() ([]byte, []int) {
 	return file_proto_agent_v1_agent_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *PullEventsRequest) GetEpoch() string {
-	if x != nil {
-		return x.Epoch
-	}
-	return ""
-}
-
-func (x *PullEventsRequest) GetSinceSeq() uint64 {
-	if x != nil {
-		return x.SinceSeq
-	}
-	return 0
-}
-
-func (x *PullEventsRequest) GetLimit() uint32 {
-	if x != nil {
-		return x.Limit
-	}
-	return 0
-}
-
-type PullEventsResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Current opaque epoch. Sequence numbers are stable replay identities only within this
-	// epoch; there is no cross-epoch deduplication guarantee.
-	Epoch string `protobuf:"bytes,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	// Persisted acknowledgement after applying this request, not the last event returned.
-	// Returning events alone never acknowledges them. Valid matching-epoch requests advance
-	// this monotonically; stale requests cannot rewind it. A server must persist an updated
-	// acknowledgement before returning success and must not succeed if persistence fails.
-	AckedSeq uint64 `protobuf:"varint,2,opt,name=acked_seq,json=ackedSeq,proto3" json:"acked_seq,omitempty"`
-	// Highest sequence assigned in this epoch, including when no events remain retained;
-	// zero means no event has ever been assigned in this epoch. Sequences start at 1 and are
-	// consecutive; each stored event receives newest_seq+1, while rejected/unbuffered records
-	// receive no sequence. Retention removes only an oldest prefix, so a nonempty retained
-	// interval is contiguous from oldest_seq through newest_seq.
-	NewestSeq uint64 `protobuf:"varint,3,opt,name=newest_seq,json=newestSeq,proto3" json:"newest_seq,omitempty"`
-	// The oldest consecutive prefix of retained events strictly after acked_seq, in sequence
-	// order; the server must not skip records or return a newer batch first. With gap=false
-	// and a nonempty list, the first seq is acked_seq+1. Count and byte budgets may truncate
-	// only the end; if the next event alone exceeds the transport budget, the call fails with
-	// RESOURCE_EXHAUSTED. A short or empty response does not imply the consumer is caught up:
-	// compare newest_seq.
-	Events []*Event `protobuf:"bytes,4,rep,name=events,proto3" json:"events,omitempty"`
-	// True when dropped is nonzero or a nonempty requested epoch mismatched this response's
-	// epoch. An epoch reset signals unknown loss; it is not included in dropped.
-	Gap bool `protobuf:"varint,5,opt,name=gap,proto3" json:"gap,omitempty"`
-	// Count of sequence numbers in the currently unavailable range after the effective
-	// acknowledgement in this epoch. It is not cumulative or proof of end-to-end loss. If
-	// events are retained, the unavailable boundary is oldest_retained_seq-1; if none are
-	// retained it is newest_seq.
-	// dropped=max(0, boundary-acked_seq). A retention gap remains until explicitly accepted:
-	// request since_seq=first returned seq-1 (or newest_seq when the buffer is empty), then
-	// optionally advance through a prefix of returned events actually accepted by the consumer.
-	// For example, acked_seq=3/newest_seq=8/empty buffer gives dropped=5 and gap=true. A
-	// subsequent matching request with since_seq=8 gives dropped=0 and gap=false. A never-
-	// populated buffer with acked_seq=newest_seq=0 has no gap; an epoch mismatch with no
-	// current retention gap has gap=true and dropped=0. Repeated responses may report the
-	// same unresolved range; consumers must not count repeats as new loss.
-	Dropped       uint64 `protobuf:"varint,6,opt,name=dropped,proto3" json:"dropped,omitempty"`
+type ScrapeEventsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Events        []*Event               `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *PullEventsResponse) Reset() {
-	*x = PullEventsResponse{}
+func (x *ScrapeEventsResponse) Reset() {
+	*x = ScrapeEventsResponse{}
 	mi := &file_proto_agent_v1_agent_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *PullEventsResponse) String() string {
+func (x *ScrapeEventsResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*PullEventsResponse) ProtoMessage() {}
+func (*ScrapeEventsResponse) ProtoMessage() {}
 
-func (x *PullEventsResponse) ProtoReflect() protoreflect.Message {
+func (x *ScrapeEventsResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_agent_v1_agent_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -219,71 +139,28 @@ func (x *PullEventsResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use PullEventsResponse.ProtoReflect.Descriptor instead.
-func (*PullEventsResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use ScrapeEventsResponse.ProtoReflect.Descriptor instead.
+func (*ScrapeEventsResponse) Descriptor() ([]byte, []int) {
 	return file_proto_agent_v1_agent_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *PullEventsResponse) GetEpoch() string {
-	if x != nil {
-		return x.Epoch
-	}
-	return ""
-}
-
-func (x *PullEventsResponse) GetAckedSeq() uint64 {
-	if x != nil {
-		return x.AckedSeq
-	}
-	return 0
-}
-
-func (x *PullEventsResponse) GetNewestSeq() uint64 {
-	if x != nil {
-		return x.NewestSeq
-	}
-	return 0
-}
-
-func (x *PullEventsResponse) GetEvents() []*Event {
+func (x *ScrapeEventsResponse) GetEvents() []*Event {
 	if x != nil {
 		return x.Events
 	}
 	return nil
 }
 
-func (x *PullEventsResponse) GetGap() bool {
-	if x != nil {
-		return x.Gap
-	}
-	return false
-}
-
-func (x *PullEventsResponse) GetDropped() uint64 {
-	if x != nil {
-		return x.Dropped
-	}
-	return 0
-}
-
 type Event struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Consecutive nonzero sequence assigned within the current epoch, starting at 1. Each
-	// stored event receives newest_seq+1; rejected or unbuffered records receive no sequence.
-	Seq uint64 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
-	// Parsed CRI observation timestamp, not receipt or delivery time. Absent when the source
-	// timestamp cannot be parsed or represented; consumers must not interpret absence as zero.
+	// CRI observation time; absent if it cannot be parsed or represented.
 	ObservedAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
-	// Producers set exactly one known event kind. An unknown future kind must not be treated
-	// as either known mode.
-	//
 	// Types that are valid to be assigned to Kind:
 	//
 	//	*Event_Learn
 	//	*Event_Policy
 	Kind isEvent_Kind `protobuf_oneof:"kind"`
-	// Original ztunnel JSON body bytes, excluding the CRI prefix. This does not claim that
-	// the original CRI timestamp is losslessly preserved here.
+	// Original ztunnel JSON body, excluding the CRI prefix.
 	RawRecord     []byte `protobuf:"bytes,5,opt,name=raw_record,json=rawRecord,proto3" json:"raw_record,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -317,13 +194,6 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
 	return file_proto_agent_v1_agent_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *Event) GetSeq() uint64 {
-	if x != nil {
-		return x.Seq
-	}
-	return 0
 }
 
 func (x *Event) GetObservedAt() *timestamppb.Timestamp {
@@ -384,10 +254,10 @@ func (*Event_Policy) isEvent_Kind() {}
 type LearnEvent struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	SourceIdentity string                 `protobuf:"bytes,1,opt,name=source_identity,json=sourceIdentity,proto3" json:"source_identity,omitempty"`
-	// Optional to preserve the distinction between absent/null and present-but-empty fields.
+	// Preserve absent/null versus present-but-empty fields.
 	DestinationName      *string `protobuf:"bytes,2,opt,name=destination_name,json=destinationName,proto3,oneof" json:"destination_name,omitempty"`
 	DestinationNamespace *string `protobuf:"bytes,3,opt,name=destination_namespace,json=destinationNamespace,proto3,oneof" json:"destination_namespace,omitempty"`
-	// Kept as a string to preserve parser output, including an absent or large port value.
+	// Preserve parser output, including absent or large port values.
 	DestinationPort string `protobuf:"bytes,4,opt,name=destination_port,json=destinationPort,proto3" json:"destination_port,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -452,13 +322,12 @@ func (x *LearnEvent) GetDestinationPort() string {
 }
 
 type PolicyEvent struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Producers use MONITOR or PROTECT; UNSPECIFIED is not a valid producer mode.
-	Mode                      PolicyMode `protobuf:"varint,1,opt,name=mode,proto3,enum=agent.v1.PolicyMode" json:"mode,omitempty"`
-	Message                   string     `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	DestinationNamespacedName string     `protobuf:"bytes,3,opt,name=destination_namespaced_name,json=destinationNamespacedName,proto3" json:"destination_namespaced_name,omitempty"`
-	Policy                    string     `protobuf:"bytes,4,opt,name=policy,proto3" json:"policy,omitempty"`
-	SourceAddress             string     `protobuf:"bytes,5,opt,name=source_address,json=sourceAddress,proto3" json:"source_address,omitempty"`
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	Mode                      PolicyMode             `protobuf:"varint,1,opt,name=mode,proto3,enum=agent.v1.PolicyMode" json:"mode,omitempty"`
+	Message                   string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	DestinationNamespacedName string                 `protobuf:"bytes,3,opt,name=destination_namespaced_name,json=destinationNamespacedName,proto3" json:"destination_namespaced_name,omitempty"`
+	Policy                    string                 `protobuf:"bytes,4,opt,name=policy,proto3" json:"policy,omitempty"`
+	SourceAddress             string                 `protobuf:"bytes,5,opt,name=source_address,json=sourceAddress,proto3" json:"source_address,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -564,37 +433,17 @@ func (*GetStatusRequest) Descriptor() ([]byte, []int) {
 	return file_proto_agent_v1_agent_proto_rawDescGZIP(), []int{5}
 }
 
-// GetStatus returns a read-only, consistent snapshot; it never changes the acknowledgement.
+// Read-only snapshot. Counters reset on process restart.
 type GetStatusResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Epoch string                 `protobuf:"bytes,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	// Persisted acknowledgement in the current epoch.
-	AckedSeq uint64 `protobuf:"varint,2,opt,name=acked_seq,json=ackedSeq,proto3" json:"acked_seq,omitempty"`
-	// Highest sequence ever assigned in the current epoch, retained after buffer eviction.
-	NewestSeq uint64 `protobuf:"varint,3,opt,name=newest_seq,json=newestSeq,proto3" json:"newest_seq,omitempty"`
-	// Oldest currently retained event, or zero when no events are retained. Retention removes
-	// only an oldest prefix, so retained events form a contiguous oldest_seq..newest_seq range.
-	OldestSeq uint64 `protobuf:"varint,4,opt,name=oldest_seq,json=oldestSeq,proto3" json:"oldest_seq,omitempty"`
-	// Number of currently retained events, not a cumulative count of received events.
-	BufferedEvents uint64 `protobuf:"varint,5,opt,name=buffered_events,json=bufferedEvents,proto3" json:"buffered_events,omitempty"`
-	// Configured capacity of the agent buffer. This bounds the backlog when the controller
-	// is unavailable or falls behind. Acknowledged events may be purged sooner; unacknowledged
-	// events can still be evicted when this capacity or max_age is exceeded.
-	MaxEvents uint64 `protobuf:"varint,6,opt,name=max_events,json=maxEvents,proto3" json:"max_events,omitempty"`
-	// Configured age limit for agent-side retention, including unacknowledged events.
-	MaxAge *durationpb.Duration `protobuf:"bytes,7,opt,name=max_age,json=maxAge,proto3" json:"max_age,omitempty"`
-	// Cumulative events evicted while not yet acknowledged at eviction, reset only with the
-	// epoch and preserved across same-epoch restarts. This is not PullEventsResponse.dropped
-	// and is not proof of end-to-end loss (an inflight batch may already have been accepted).
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	BufferedEvents uint64                 `protobuf:"varint,5,opt,name=buffered_events,json=bufferedEvents,proto3" json:"buffered_events,omitempty"`
+	MaxEvents      uint64                 `protobuf:"varint,6,opt,name=max_events,json=maxEvents,proto3" json:"max_events,omitempty"`
+	// Cumulative buffer overwrites, not total end-to-end loss.
 	DroppedEvents uint64 `protobuf:"varint,8,opt,name=dropped_events,json=droppedEvents,proto3" json:"dropped_events,omitempty"`
-	// Paths of all log files currently monitored by the tailer, not the configured globs.
-	// Empty when no files are monitored. The list has no duplicates and its order is unspecified.
+	// Latest unique matcher hits; may include unopened paths, omit lost
+	// descriptors, and lag rotation/removal until the next observation.
 	CurrentLogFiles []string `protobuf:"bytes,9,rep,name=current_log_files,json=currentLogFiles,proto3" json:"current_log_files,omitempty"`
-	// Cumulative log records received from the tailer before parsing or filtering, including
-	// records that do not produce an Event or are not admitted to the buffer. Unlike newest_seq,
-	// this counter shows input activity even when no events are stored. Pulls, acknowledgements,
-	// and eviction do not change it. Reset only with the epoch and preserved across same-epoch
-	// restarts, consistently with the read positions.
+	// All raw tailer records, including malformed and filtered records.
 	ReceivedEvents uint64 `protobuf:"varint,10,opt,name=received_events,json=receivedEvents,proto3" json:"received_events,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -630,34 +479,6 @@ func (*GetStatusResponse) Descriptor() ([]byte, []int) {
 	return file_proto_agent_v1_agent_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *GetStatusResponse) GetEpoch() string {
-	if x != nil {
-		return x.Epoch
-	}
-	return ""
-}
-
-func (x *GetStatusResponse) GetAckedSeq() uint64 {
-	if x != nil {
-		return x.AckedSeq
-	}
-	return 0
-}
-
-func (x *GetStatusResponse) GetNewestSeq() uint64 {
-	if x != nil {
-		return x.NewestSeq
-	}
-	return 0
-}
-
-func (x *GetStatusResponse) GetOldestSeq() uint64 {
-	if x != nil {
-		return x.OldestSeq
-	}
-	return 0
-}
-
 func (x *GetStatusResponse) GetBufferedEvents() uint64 {
 	if x != nil {
 		return x.BufferedEvents
@@ -670,13 +491,6 @@ func (x *GetStatusResponse) GetMaxEvents() uint64 {
 		return x.MaxEvents
 	}
 	return 0
-}
-
-func (x *GetStatusResponse) GetMaxAge() *durationpb.Duration {
-	if x != nil {
-		return x.MaxAge
-	}
-	return nil
 }
 
 func (x *GetStatusResponse) GetDroppedEvents() uint64 {
@@ -704,28 +518,18 @@ var File_proto_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_proto_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x1aproto/agent/v1/agent.proto\x12\bagent.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\\\n" +
-	"\x11PullEventsRequest\x12\x14\n" +
-	"\x05epoch\x18\x01 \x01(\tR\x05epoch\x12\x1b\n" +
-	"\tsince_seq\x18\x02 \x01(\x04R\bsinceSeq\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\rR\x05limit\"\xbb\x01\n" +
-	"\x12PullEventsResponse\x12\x14\n" +
-	"\x05epoch\x18\x01 \x01(\tR\x05epoch\x12\x1b\n" +
-	"\tacked_seq\x18\x02 \x01(\x04R\backedSeq\x12\x1d\n" +
-	"\n" +
-	"newest_seq\x18\x03 \x01(\x04R\tnewestSeq\x12'\n" +
-	"\x06events\x18\x04 \x03(\v2\x0f.agent.v1.EventR\x06events\x12\x10\n" +
-	"\x03gap\x18\x05 \x01(\bR\x03gap\x12\x18\n" +
-	"\adropped\x18\x06 \x01(\x04R\adropped\"\xdc\x01\n" +
-	"\x05Event\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12;\n" +
+	"\x1aproto/agent/v1/agent.proto\x12\bagent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x15\n" +
+	"\x13ScrapeEventsRequest\"?\n" +
+	"\x14ScrapeEventsResponse\x12'\n" +
+	"\x06events\x18\x01 \x03(\v2\x0f.agent.v1.EventR\x06events\"\xd5\x01\n" +
+	"\x05Event\x12;\n" +
 	"\vobserved_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"observedAt\x12,\n" +
 	"\x05learn\x18\x03 \x01(\v2\x14.agent.v1.LearnEventH\x00R\x05learn\x12/\n" +
 	"\x06policy\x18\x04 \x01(\v2\x15.agent.v1.PolicyEventH\x00R\x06policy\x12\x1d\n" +
 	"\n" +
 	"raw_record\x18\x05 \x01(\fR\trawRecordB\x06\n" +
-	"\x04kind\"\xf9\x01\n" +
+	"\x04kindJ\x04\b\x01\x10\x02R\x03seq\"\xf9\x01\n" +
 	"\n" +
 	"LearnEvent\x12'\n" +
 	"\x0fsource_identity\x18\x01 \x01(\tR\x0esourceIdentity\x12.\n" +
@@ -740,30 +544,24 @@ const file_proto_agent_v1_agent_proto_rawDesc = "" +
 	"\x1bdestination_namespaced_name\x18\x03 \x01(\tR\x19destinationNamespacedName\x12\x16\n" +
 	"\x06policy\x18\x04 \x01(\tR\x06policy\x12%\n" +
 	"\x0esource_address\x18\x05 \x01(\tR\rsourceAddress\"\x12\n" +
-	"\x10GetStatusRequest\"\xfc\x02\n" +
-	"\x11GetStatusResponse\x12\x14\n" +
-	"\x05epoch\x18\x01 \x01(\tR\x05epoch\x12\x1b\n" +
-	"\tacked_seq\x18\x02 \x01(\x04R\backedSeq\x12\x1d\n" +
-	"\n" +
-	"newest_seq\x18\x03 \x01(\x04R\tnewestSeq\x12\x1d\n" +
-	"\n" +
-	"oldest_seq\x18\x04 \x01(\x04R\toldestSeq\x12'\n" +
+	"\x10GetStatusRequest\"\xa8\x02\n" +
+	"\x11GetStatusResponse\x12'\n" +
 	"\x0fbuffered_events\x18\x05 \x01(\x04R\x0ebufferedEvents\x12\x1d\n" +
 	"\n" +
-	"max_events\x18\x06 \x01(\x04R\tmaxEvents\x122\n" +
-	"\amax_age\x18\a \x01(\v2\x19.google.protobuf.DurationR\x06maxAge\x12%\n" +
+	"max_events\x18\x06 \x01(\x04R\tmaxEvents\x12%\n" +
 	"\x0edropped_events\x18\b \x01(\x04R\rdroppedEvents\x12*\n" +
 	"\x11current_log_files\x18\t \x03(\tR\x0fcurrentLogFiles\x12'\n" +
 	"\x0freceived_events\x18\n" +
-	" \x01(\x04R\x0ereceivedEvents*[\n" +
+	" \x01(\x04R\x0ereceivedEventsJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03J\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\a\x10\bR\x05epochR\tacked_seqR\n" +
+	"newest_seqR\n" +
+	"oldest_seqR\amax_age*[\n" +
 	"\n" +
 	"PolicyMode\x12\x1b\n" +
 	"\x17POLICY_MODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13POLICY_MODE_MONITOR\x10\x01\x12\x17\n" +
-	"\x13POLICY_MODE_PROTECT\x10\x022\x9d\x01\n" +
-	"\fAgentService\x12G\n" +
-	"\n" +
-	"PullEvents\x12\x1b.agent.v1.PullEventsRequest\x1a\x1c.agent.v1.PullEventsResponse\x12D\n" +
+	"\x13POLICY_MODE_PROTECT\x10\x022\xa3\x01\n" +
+	"\fAgentService\x12M\n" +
+	"\fScrapeEvents\x12\x1d.agent.v1.ScrapeEventsRequest\x1a\x1e.agent.v1.ScrapeEventsResponse\x12D\n" +
 	"\tGetStatus\x12\x1a.agent.v1.GetStatusRequest\x1a\x1b.agent.v1.GetStatusResponseB?Z=github.com/kubewarden/network-enforcer/proto/agent/v1;agentv1b\x06proto3"
 
 var (
@@ -782,32 +580,30 @@ var file_proto_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_proto_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_proto_agent_v1_agent_proto_goTypes = []any{
 	(PolicyMode)(0),               // 0: agent.v1.PolicyMode
-	(*PullEventsRequest)(nil),     // 1: agent.v1.PullEventsRequest
-	(*PullEventsResponse)(nil),    // 2: agent.v1.PullEventsResponse
+	(*ScrapeEventsRequest)(nil),   // 1: agent.v1.ScrapeEventsRequest
+	(*ScrapeEventsResponse)(nil),  // 2: agent.v1.ScrapeEventsResponse
 	(*Event)(nil),                 // 3: agent.v1.Event
 	(*LearnEvent)(nil),            // 4: agent.v1.LearnEvent
 	(*PolicyEvent)(nil),           // 5: agent.v1.PolicyEvent
 	(*GetStatusRequest)(nil),      // 6: agent.v1.GetStatusRequest
 	(*GetStatusResponse)(nil),     // 7: agent.v1.GetStatusResponse
 	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 9: google.protobuf.Duration
 }
 var file_proto_agent_v1_agent_proto_depIdxs = []int32{
-	3, // 0: agent.v1.PullEventsResponse.events:type_name -> agent.v1.Event
+	3, // 0: agent.v1.ScrapeEventsResponse.events:type_name -> agent.v1.Event
 	8, // 1: agent.v1.Event.observed_at:type_name -> google.protobuf.Timestamp
 	4, // 2: agent.v1.Event.learn:type_name -> agent.v1.LearnEvent
 	5, // 3: agent.v1.Event.policy:type_name -> agent.v1.PolicyEvent
 	0, // 4: agent.v1.PolicyEvent.mode:type_name -> agent.v1.PolicyMode
-	9, // 5: agent.v1.GetStatusResponse.max_age:type_name -> google.protobuf.Duration
-	1, // 6: agent.v1.AgentService.PullEvents:input_type -> agent.v1.PullEventsRequest
-	6, // 7: agent.v1.AgentService.GetStatus:input_type -> agent.v1.GetStatusRequest
-	2, // 8: agent.v1.AgentService.PullEvents:output_type -> agent.v1.PullEventsResponse
-	7, // 9: agent.v1.AgentService.GetStatus:output_type -> agent.v1.GetStatusResponse
-	8, // [8:10] is the sub-list for method output_type
-	6, // [6:8] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	1, // 5: agent.v1.AgentService.ScrapeEvents:input_type -> agent.v1.ScrapeEventsRequest
+	6, // 6: agent.v1.AgentService.GetStatus:input_type -> agent.v1.GetStatusRequest
+	2, // 7: agent.v1.AgentService.ScrapeEvents:output_type -> agent.v1.ScrapeEventsResponse
+	7, // 8: agent.v1.AgentService.GetStatus:output_type -> agent.v1.GetStatusResponse
+	7, // [7:9] is the sub-list for method output_type
+	5, // [5:7] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_proto_agent_v1_agent_proto_init() }

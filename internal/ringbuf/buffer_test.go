@@ -36,6 +36,20 @@ func TestBufferRecordAndDrain(t *testing.T) {
 	require.Empty(t, records)
 }
 
+func TestDrainReleasesReferences(t *testing.T) {
+	buf := NewWithSize[*string](2)
+	first, second, third := "first", "second", "third"
+	buf.Record(&first)
+	buf.Record(&second)
+	buf.Record(&third)
+
+	require.Equal(t, []*string{&third, &second}, buf.Drain())
+	require.Equal(t, []*string{nil, nil}, buf.buf)
+	require.False(t, buf.Record(&first))
+	require.Equal(t, []*string{&first}, buf.Drain())
+	require.Equal(t, []*string{nil, nil}, buf.buf)
+}
+
 func TestBufferOverwritesOldest(t *testing.T) {
 	size := 100
 	buf := NewWithSize[violation.Observation](size)

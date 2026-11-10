@@ -4,112 +4,42 @@ package agent.v1;
 
 option go_package = "github.com/kubewarden/network-enforcer/proto/agent/v1;agentv1";
 
-import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
-// AgentService is the unary pull API served by one node agent to its logical consumer.
-// A consumer serializes pulls for an agent; this API does not fence multiple consumers
-// or split-brain leaders. To preserve same-epoch replay identities, the server persists
-// the epoch, newest assigned sequence, retained events, read position, acknowledgement,
-// and cumulative status counters consistently across restarts. It restores the
-// same epoch only when that state is recovered consistently; otherwise it creates a new
-// random epoch. Durably commit each event, its sequence, and the epoch/read position before
-// exposing that event or newest_seq; same-epoch recovery must never forget or reuse an
-// exposed identity. A successful response represents a consistent snapshot of state.
+// One logical consumer scrapes each agent. Events are in memory only;
+// restart, overflow, or a lost response can lose events without replay.
 service AgentService {
-  rpc PullEvents(PullEventsRequest) returns (PullEventsResponse);
+  // Drains all retained events before replying, newest-recorded first.
+  rpc ScrapeEvents(ScrapeEventsRequest) returns (ScrapeEventsResponse);
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
 }
 
-message PullEventsRequest {
-  // The opaque epoch previously returned by this agent. An empty epoch bootstraps from
-  // the agent's persisted acknowledgement and requires since_seq=0; a nonzero value is
-  // INVALID_ARGUMENT. Bootstrap does not modify the acknowledgement. A nonempty mismatched
-  // epoch ignores since_seq and reads the current epoch after its persisted acknowledgement,
-  // with gap=true in the response.
-  string epoch = 1;
-  // Cursor the consumer acknowledges. For returned events, it advances only through a
-  // prefix previously accepted into leader buffers for processing; after recording loss,
-  // it may also acknowledge a reported retention gap through the prior response's
-  // acked_seq+dropped. It need not be numerically adjacent to the previous since_seq across
-  // a gap. Temporary enqueue refusal is not acceptance; later filtering of an accepted event
-  // does not undo acceptance.
-  // A consumer may explicitly dispose of a terminally unusable record with observable
-  // accounting before acknowledging it; a temporary processing failure is not terminal.
-  uint64 since_seq = 2;
-  // Maximum event count to return. Zero selects the default of 1000; values above 10000
-  // are INVALID_ARGUMENT. Validate this and the empty-epoch/since_seq combination before
-  // mutation. In a matching epoch, since_seq above newest_seq is INVALID_ARGUMENT with no
-  // acknowledgement mutation; otherwise the effective acknowledgement is max(stored ack,
-  // since_seq), so stale requests cannot rewind it. A server may return fewer events to fit
-  // its response byte budget.
-  uint32 limit = 3;
-}
+message ScrapeEventsRequest {}
 
-message PullEventsResponse {
-  // Current opaque epoch. Sequence numbers are stable replay identities only within this
-  // epoch; there is no cross-epoch deduplication guarantee.
-  string epoch = 1;
-  // Persisted acknowledgement after applying this request, not the last event returned.
-  // Returning events alone never acknowledges them. Valid matching-epoch requests advance
-  // this monotonically; stale requests cannot rewind it. A server must persist an updated
-  // acknowledgement before returning success and must not succeed if persistence fails.
-  uint64 acked_seq = 2;
-  // Highest sequence assigned in this epoch, including when no events remain retained;
-  // zero means no event has ever been assigned in this epoch. Sequences start at 1 and are
-  // consecutive; each stored event receives newest_seq+1, while rejected/unbuffered records
-  // receive no sequence. Retention removes only an oldest prefix, so a nonempty retained
-  // interval is contiguous from oldest_seq through newest_seq.
-  uint64 newest_seq = 3;
-  // The oldest consecutive prefix of retained events strictly after acked_seq, in sequence
-  // order; the server must not skip records or return a newer batch first. With gap=false
-  // and a nonempty list, the first seq is acked_seq+1. Count and byte budgets may truncate
-  // only the end; if the next event alone exceeds the transport budget, the call fails with
-  // RESOURCE_EXHAUSTED. A short or empty response does not imply the consumer is caught up:
-  // compare newest_seq.
-  repeated Event events = 4;
-  // True when dropped is nonzero or a nonempty requested epoch mismatched this response's
-  // epoch. An epoch reset signals unknown loss; it is not included in dropped.
-  bool gap = 5;
-  // Count of sequence numbers in the currently unavailable range after the effective
-  // acknowledgement in this epoch. It is not cumulative or proof of end-to-end loss. If
-  // events are retained, the unavailable boundary is oldest_retained_seq-1; if none are
-  // retained it is newest_seq.
-  // dropped=max(0, boundary-acked_seq). A retention gap remains until explicitly accepted:
-  // request since_seq=first returned seq-1 (or newest_seq when the buffer is empty), then
-  // optionally advance through a prefix of returned events actually accepted by the consumer.
-  // For example, acked_seq=3/newest_seq=8/empty buffer gives dropped=5 and gap=true. A
-  // subsequent matching request with since_seq=8 gives dropped=0 and gap=false. A never-
-  // populated buffer with acked_seq=newest_seq=0 has no gap; an epoch mismatch with no
-  // current retention gap has gap=true and dropped=0. Repeated responses may report the
-  // same unresolved range; consumers must not count repeats as new loss.
-  uint64 dropped = 6;
+message ScrapeEventsResponse {
+  repeated Event events = 1;
 }
 
 message Event {
-  // Consecutive nonzero sequence assigned within the current epoch, starting at 1. Each
-  // stored event receives newest_seq+1; rejected or unbuffered records receive no sequence.
-  uint64 seq = 1;
-  // Parsed CRI observation timestamp, not receipt or delivery time. Absent when the source
-  // timestamp cannot be parsed or represented; consumers must not interpret absence as zero.
+  reserved 1;
+  reserved "seq";
+
+  // CRI observation time; absent if it cannot be parsed or represented.
   google.protobuf.Timestamp observed_at = 2;
-  // Producers set exactly one known event kind. An unknown future kind must not be treated
-  // as either known mode.
   oneof kind {
     LearnEvent learn = 3;
     PolicyEvent policy = 4;
   }
-  // Original ztunnel JSON body bytes, excluding the CRI prefix. This does not claim that
-  // the original CRI timestamp is losslessly preserved here.
+  // Original ztunnel JSON body, excluding the CRI prefix.
   bytes raw_record = 5;
 }
 
 message LearnEvent {
   string source_identity = 1;
-  // Optional to preserve the distinction between absent/null and present-but-empty fields.
+  // Preserve absent/null versus present-but-empty fields.
   optional string destination_name = 2;
   optional string destination_namespace = 3;
-  // Kept as a string to preserve parser output, including an absent or large port value.
+  // Preserve parser output, including absent or large port values.
   string destination_port = 4;
 }
 
@@ -120,7 +50,6 @@ enum PolicyMode {
 }
 
 message PolicyEvent {
-  // Producers use MONITOR or PROTECT; UNSPECIFIED is not a valid producer mode.
   PolicyMode mode = 1;
   string message = 2;
   string destination_namespaced_name = 3;
@@ -130,35 +59,18 @@ message PolicyEvent {
 
 message GetStatusRequest {}
 
-// GetStatus returns a read-only, consistent snapshot; it never changes the acknowledgement.
+// Read-only snapshot. Counters reset on process restart.
 message GetStatusResponse {
-  string epoch = 1;
-  // Persisted acknowledgement in the current epoch.
-  uint64 acked_seq = 2;
-  // Highest sequence ever assigned in the current epoch, retained after buffer eviction.
-  uint64 newest_seq = 3;
-  // Oldest currently retained event, or zero when no events are retained. Retention removes
-  // only an oldest prefix, so retained events form a contiguous oldest_seq..newest_seq range.
-  uint64 oldest_seq = 4;
-  // Number of currently retained events, not a cumulative count of received events.
+  reserved 1, 2, 3, 4, 7;
+  reserved "epoch", "acked_seq", "newest_seq", "oldest_seq", "max_age";
+
   uint64 buffered_events = 5;
-  // Configured capacity of the agent buffer. This bounds the backlog when the controller
-  // is unavailable or falls behind. Acknowledged events may be purged sooner; unacknowledged
-  // events can still be evicted when this capacity or max_age is exceeded.
   uint64 max_events = 6;
-  // Configured age limit for agent-side retention, including unacknowledged events.
-  google.protobuf.Duration max_age = 7;
-  // Cumulative events evicted while not yet acknowledged at eviction, reset only with the
-  // epoch and preserved across same-epoch restarts. This is not PullEventsResponse.dropped
-  // and is not proof of end-to-end loss (an inflight batch may already have been accepted).
+  // Cumulative buffer overwrites, not total end-to-end loss.
   uint64 dropped_events = 8;
-  // Paths of all log files currently monitored by the tailer, not the configured globs.
-  // Empty when no files are monitored. The list has no duplicates and its order is unspecified.
+  // Latest unique matcher hits; may include unopened paths, omit lost
+  // descriptors, and lag rotation/removal until the next observation.
   repeated string current_log_files = 9;
-  // Cumulative log records received from the tailer before parsing or filtering, including
-  // records that do not produce an Event or are not admitted to the buffer. Unlike newest_seq,
-  // this counter shows input activity even when no events are stored. Pulls, acknowledgements,
-  // and eviction do not change it. Reset only with the epoch and preserved across same-epoch
-  // restarts, consistently with the read positions.
+  // All raw tailer records, including malformed and filtered records.
   uint64 received_events = 10;
 }

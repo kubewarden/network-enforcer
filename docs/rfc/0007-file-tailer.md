@@ -41,7 +41,12 @@ security updates when the tailing method has a vulnerability.
 
 ## Criteria
 
-Hard criteria. Each option must meet all of them:
+The following criteria were used to evaluate tailer capabilities, including optional
+checkpoint persistence. The revised [agent architecture](0006-istio-agent.md) does not
+enable persistence or promise restart replay; its delivery contract is best effort.
+The evaluation results below remain applicable when a checkpoint store is configured.
+
+Hard criteria for the evaluation. Each option must meet all of them:
 
 - No line loss on log rotation (rename and create).
 - No line loss on truncation (`copytruncate`).
@@ -73,7 +78,8 @@ Informational metrics: binary or image size, module count, idle CPU, CPU at
 ## Context
 
 - The tailer runs in a per-node DaemonSet.
-- Offsets are stored in a `hostPath` directory.
+- The tailer supports optional offset persistence. The current agent leaves it disabled
+  and starts at the end of existing files after each restart.
 - The agent code uses a small internal interface. The tailer implementation sits
   behind it, so the project can replace it later.
 
@@ -287,10 +293,11 @@ measured cost of option 1 is acceptable for this agent: about 1 % of one core,
 interface.**
 
 `fileconsumer` reads lines through a raw `emit.Callback`. The agent configures
-it with `force_flush_period: 0`, `on_truncate: read_new` and `start_at: end`,
-and supplies an `operator.Persister` backed by the `hostPath` offset directory.
-It tracks files by fingerprint, keeps each descriptor open across a rename and
-saves offsets after each poll, so it gives at-least-once delivery.
+it with `force_flush_period: 0`, `on_truncate: read_new` and `start_at: end`.
+It tracks files by fingerprint and keeps each descriptor open across a rename.
+Standalone tailer callers can supply a checkpoint file for offset recovery, but the
+agent does not persist offsets under the revised RFC 0006. A later restart-replay
+feature would need to define how checkpoints relate to event scraping.
 
 The project tracks the OTel release cadence for security fixes and pins the
 module set. The internal tailer interface keeps the dependency behind one
@@ -330,7 +337,7 @@ The items the agent must still own on top of `fileconsumer`:
 - Read the CRI partial flag (`P`) and join partial records. `fileconsumer`
   returns raw lines; the CRI parse sits above it.
 - Limit the line size.
-- Remove the checkpoints of deleted pods from the persister store.
+- When persistence is enabled, remove the checkpoints of deleted pods from the persister store.
 - Read a rotated file to EOF before the kubelet compresses or removes it. The
   kubelet leaves only the newest rotated file uncompressed, and it removes the
   oldest rotated file first. A tailer that lags more than one rotation, or that
@@ -380,8 +387,8 @@ implement itself:
 - `fileconsumer` exposes a low-level `emit.Callback`. It is not a stable public
   API, so an upgrade can need code changes. The internal tailer interface limits
   the blast radius.
-- The design assumes at-least-once delivery. We may need to redesign if we want
-  exactly-once delivery.
+- The checkpointed tailer was evaluated for at-least-once delivery. The current
+  agent deliberately offers only best-effort delivery, as described in RFC 0006.
 
 # Alternatives
 

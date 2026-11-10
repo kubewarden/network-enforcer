@@ -11,12 +11,14 @@
 Istio events reach the controller by push today: a log shipper on every node sends
 ztunnel's connection log to a Service that fronts every controller replica, while only
 the elected leader listens. Most shipments land on a pod that refuses them, so events are
-delayed and eventually lost. We replace push with pull: an agent on every node buffers
-what it parses, and the leader reads from each agent at its own pace, from a cursor the
-agent can honour.
+delayed and eventually lost. We replace push with pull: an agent on every node keeps
+classified events in an in-memory ring buffer, and the leader periodically drains it.
+Enrichment and OTel emission remain in the controller.
 
-This records the parts that are expensive to reverse: the split of work, the cursor,
-what delivery actually means, and which side of the hop holds the certificate.
+This records the split of work, the best-effort delivery contract, and which side of the
+hop holds the certificate. Following the [review of #640](https://github.com/kubewarden/network-enforcer/issues/640#issuecomment-6743660947),
+the design uses runtime-enforcer's simple ring-buffer approach instead of durable state,
+resumable cursors, or maximum-age retention.
 
 ## Context
 
@@ -28,8 +30,8 @@ has four problems; the last one has a different cause from the rest:
   random pod. Loss is a matter of luck, per node, per batch.
 - Every node ships to a single pod, whatever the replica count. Adding replicas does not
   add capacity, and the failure gets worse as the cluster grows.
-- The failure is loss, not corruption. For a product whose monitor and protect modes are
-  the product, silence is the worst outcome.
+- The failure is loss, not corruption. Avoidable routing loss makes learning and
+  violation reporting less useful, even though policy enforcement remains in place.
 - The shipper matches any container log whose pod name contains "ztunnel" in any
   namespace, so a tenant can write lines we would treat as learned traffic.
 
@@ -41,13 +43,14 @@ consistency argument runtime-enforcer already made.
 
 ## Decision
 
-Push is replaced by pull. A per-node agent tails ztunnel's log, classifies events,
-buffers them briefly and serves them to the leader. The leader discovers agents, keeps a
-cursor per agent, and does every Kubernetes lookup itself.
+Push is replaced by pull. A per-node agent tails ztunnel's log, classifies events, and
+keeps the most recent 10,000 events in memory. The leader discovers agents, drains their
+buffers, and does every Kubernetes lookup itself. There is no persisted agent event
+state, cursor, or acknowledgement protocol.
 
 ### What the agent owns
 
-Tailing, classification, a bounded buffer, and a small read API with health, metrics and
+Tailing, classification, a capacity-bounded ring buffer, and a scrape API with health, metrics and
 graceful shutdown. It has no Kubernetes client and no service account token: it reads the
 node's log directory and serves what it parsed. It runs as root with the node's log
 directories mounted read-only, which puts it outside the restricted Pod Security
@@ -55,77 +58,76 @@ Standard; the chart says so rather than claiming compatibility.
 
 ### What the controller owns
 
-Discovery, one puller per agent, enrichment and attribution. A broken agent is a
-per-agent problem and must never be fatal to the leader; zero agents discovered is normal
-during a rollout, not an error. Enrichment stays here because resolving peer addresses to
-workloads and correlating flows to policies needs the informer caches the controller
-already runs, and RFC 0005 puts attribution in one place. Replicating those caches onto
-every node would multiply API watch traffic to feed a single leader.
+Discovery, one scraper per agent, enrichment, attribution, OTel emission, and CRD status
+updates. A broken agent is a per-agent problem and must never be fatal to the leader;
+zero agents discovered is normal during a rollout, not an error. Enrichment stays here
+because resolving peer addresses to workloads and correlating flows to policies needs
+the informer caches the controller already runs, and RFC 0005 puts attribution in one
+place. Replicating those caches onto every node would multiply API watch traffic to feed
+a single leader. Unlike runtime-enforcer, the network-enforcer agent does not emit OTel
+logs itself; the controller emits the enriched events.
 
-The consequence is that enrichment runs when an event is processed, not when it was
-observed, so a recycled peer address can resolve to the workload that replaced it. The
-replay window bounds that, and inside the window the misattribution is accepted rather
-than detected.
+Enrichment runs when an event is processed, not when it was observed, so a recycled peer
+address can resolve to the workload that replaced it. There is no age limit: on a quiet
+node, an event can remain buffered until the next scrape regardless of its age. This
+misattribution risk is accepted rather than detected.
 
-### The cursor
+### Buffer and scraping
 
-Every event gets a sequence number. The buffer also has an epoch: a random identifier for
-the buffer instance. Buffer, sequence, read position and the agent-side cursor live in the
-same volume, so a container restart continues the same sequence and resumes where it
-stopped, while a new pod starts a new one. Using the pod identity as the epoch was
-rejected because a container restart keeps the pod identity and resets the counter, which
-would leave the controller's cursor ahead of the agent.
+The agent reuses `internal/ringbuf`, the same Record/Drain approach used by
+runtime-enforcer. The buffer holds up to 10,000 classified events. Recording into a full
+buffer overwrites the oldest record; there is no maximum age or durable spool.
 
-Pulls are unary. Each pull carries the acknowledgement for the previous batch and returns
-events after the last one acknowledged; the agent keeps the highest acknowledged sequence
-so a new leader can resume from the agent instead of from its own memory. Advancing the
-cursor only after the status write succeeded was considered and rejected: one flapping
-policy would then pin every node's cursor. Acknowledging at pull time was rejected: a
-response lost in flight, or a batch whose last event the consumer refused, would then be
-skipped by the next leader, which is the silent skip this design exists to remove.
+`ScrapeEvents` is a unary RPC with an empty request. It drains all buffered events under
+a lock and returns them newest-recorded first. Records arriving after the drain belong
+to the next scrape. Draining happens before the response is sent, not after delivery or
+processing is confirmed. There are no event sequences, epochs, resumable cursors, or
+acknowledgements. One logical consumer scrapes each agent; concurrent consumers would
+split the events rather than each receive a copy.
 
-"Acknowledged" means accepted into the leader's buffers, not written to the API. A
-leader that dies in between loses what it held, and a handover looks like a death from
-the agent's side. That is the exposure, and it is bounded by one leader's memory rather
-than by the cluster.
+`GetStatus` reports the number currently buffered, capacity, cumulative raw input and
+overwrite counts, and the latest observed matching log paths. The counters reset when
+the agent process restarts. The overwrite counter does not measure transport loss,
+restart loss, or failed controller processing. There are no gap or epoch-reset counters.
 
-If a pull asks for a cursor older than the buffer still holds, the agent reports the gap
-and how much it dropped instead of pretending. Gaps, drops and epoch resets are counted
-on both sides and exported per node, because a node falling behind is an operational
-signal, not noise.
+The agent starts at the end of existing log files on each process start and tails new
+lines without persisting offsets. No writable state volume is required. The standalone
+tailer can still checkpoint offsets, but the agent does not enable that functionality.
+Restart replay using a persisted read/scrape marker is a possible future improvement,
+not part of this iteration.
 
 ### Delivery
 
-At least once, from the agent's buffer to the leader's buffers, while the buffer holds
-the event. Everything above and below that is weaker, and deliberately stated:
+Delivery is best effort. We accept losing some learning and monitoring observations;
+these modes are intended for policy preparation rather than production enforcement.
+Losing a violation report is more serious, but does not disable the underlying policy
+protection. Consistency with runtime-enforcer and a small implementation take priority
+over durable delivery for this iteration.
 
 | Hop | Guarantee | Bound |
 | --- | --- | --- |
-| ztunnel log to agent buffer | at least once while retained | 10k events / 5 minutes on disk |
-| agent buffer to leader buffers | at least once while retained; the leader acknowledges what it accepted | one batch per pull |
-| leader buffers to policy status | best effort, duplicates suppressed by event identity | bounded buffer, periodic drain |
-| leader buffers to learned proposals | idempotent, the same rule applied twice is the same rule | bounded channel, then a queue |
+| ztunnel log to agent buffer | best effort; new lines only, no restart replay | 10k events in memory |
+| agent buffer to leader | destructive scrape, no replay after drain | all retained events per scrape |
+| leader to OTel and policy status | best effort; no agent retry of drained events | controller buffers and processing |
+| leader to learned proposals | idempotent rule application after receipt | bounded channel, then a queue |
 
-What that leaves out:
+Loss is possible when:
 
-- A container restart loses nothing: the unread buffer is on the same volume as the
-  checkpoint. A pod replacement loses it unless the volume is a host path or a persistent
-  volume, which also survives upgrades at the cost of node-local state to clean up. What
-  rotation removed before either is gone, and an epoch change is the only signal.
-- A leader that dies between accepting a batch and writing status loses that batch.
-  Rewinding on a failed write was rejected: one policy's write conflict would replay every
-  node's events, and a flapping policy would never make progress.
-- A slow consumer shows up as loss. If the leader's violation buffer fills, it overwrites
-  its oldest entries; the alternative is unbounded memory. Pull fixes where events are
-  lost on the wire, not how fast the leader consumes them.
-- Duplicates are suppressed by the identity of the observed event, not by re-deriving the
-  record and comparing it: enrichment changes between a first delivery and a replay, the
-  acknowledgement history is capped, and record timestamps can be rewritten. That
-  suppression lives in the leader's memory and is lost with it.
-- Persisting the buffer on the agent does not fix the leader-crash caveat, and no volume
-  can: the leader acknowledges on acceptance, so its successor starts after a batch it
-  never wrote. Fixing that means acknowledging after the write, which is the rejected
-  option above.
+- A full agent ring buffer overwrites its oldest entries.
+- An agent restarts or its pod is replaced: all buffered events are lost, and existing
+  log history is skipped on startup.
+- A scrape response is lost, cancelled after the drain, or rejected by transport limits:
+  the drained batch is not restored. The transport must accommodate a full scrape;
+  the event-count capacity is not a response-byte budget.
+- The leader fails after scraping but before enriching, emitting OTel logs, or updating
+  status. Its successor can scrape events still in the agent, but cannot recover the
+  already-drained batch.
+- Source log rotation removes unread lines, or a bounded controller queue overflows.
+
+A successful drain will not return the same buffered record on a later scrape, but this
+is not an end-to-end exactly-once or deduplication guarantee. Repeated source records and
+downstream retries can still produce duplicates. Enforcement is independent of this
+reporting pipeline.
 
 ### TLS
 
@@ -174,7 +176,7 @@ in which every node already serves:
 2. **Cutover.** The controller starts pulling and stops listening in the same release,
    and the shipper and its receiving Service are removed with it. The agents already
    exist and are ready, so the only window is the controller rollout itself, which the
-   agents cover.
+   agents can absorb up to their capacity, provided the agent processes stay alive.
 
 A pre-upgrade check that refuses the cutover while the agent is not fully available is
 the cheap guard. It has to stay quiet on a fresh install, where both components are
@@ -189,17 +191,25 @@ back both. The task breakdown for the work lives in #637 to #649.
 
 ## Consequences
 
-The good part is that loss stops being random: a node that falls behind is visible, and a
-controller replica count no longer decides whether events arrive.
+The controller replica count no longer decides whether an event shipment reaches the
+leader. Capacity drops are visible, and the agent remains a small in-memory component.
+Restart and in-flight scrape loss are deliberately accepted; they are not made durable
+or fully measurable by this design.
 
 The costs are real. We add a second binary to build, sign and ship, running as root on
 every node and listening on the network. Users who pointed their own collector at the
 controller lose that integration, and users relying on a shared Secret lose per-pod
 authentication. The release that introduces the agent carries a component nobody reads
-yet, and an operator who skips it cannot cut over. And the delivery guarantee becomes a
-sentence with exceptions, which is worse than the sentence people would like to read.
+yet, and an operator who skips it cannot cut over. Reports can be incomplete after a
+restart, overflow, or failed scrape even while enforcement continues normally.
 
 ## Alternatives
+
+The earlier durable-buffer design coupled events, tail offsets, sequence numbers and
+acknowledgements in an atomic snapshot, with a five-minute retention limit. It offered
+stronger replay guarantees but required substantially more persistence and recovery code.
+That design is superseded by this RFC revision. It is not required for enforcement, and
+we prefer the simpler runtime-enforcer buffer semantics.
 
 Streaming from agent to leader was the closest alternative. It keeps the controller as the
 TLS server and avoids per-pod server certificates, but it needs leader discovery and
@@ -210,9 +220,9 @@ problem.
 Fixing only the Service removes the connection lottery and leaves the fan-in, which is the
 part that limits scaling.
 
-Running ingestion on every replica with leader-bound writes is possible later on the same
-cursor design if the leader is still the ceiling. It reintroduces cross-replica
-coordination, so it is not the first move.
+Running ingestion on every replica would require explicit ownership of each agent:
+destructive scrapes cannot independently feed multiple consumers. This would add
+cross-replica coordination and is not part of this design.
 
 Enriching on the agent would remove the leader from the read path and put the cluster-wide
 indexes on every node, splitting attribution across two implementations.

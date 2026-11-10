@@ -25,24 +25,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kubewarden/network-enforcer/internal/agentbuffer"
 	"github.com/kubewarden/network-enforcer/internal/tailer"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	// Tail the pod log directory, not the "/var/log/containers" symlinks. The
-	// symlinks only point to the active file, so a file that the kubelet rotates
-	// while the agent is down would be missed on restart. The pod directory also
-	// holds the retained rotated files, so recovery can drain their unread tail.
-	// The default matches the ztunnel pod in the "istio-system" namespace. Pass
-	// -log-glob to tail a different namespace, pod or path.
+	// Include retained rotations so their unread tails can be drained while running.
 	glob := flag.String("log-glob", "/var/log/pods/istio-system_ztunnel*/*/*.log*",
 		"glob for the container log files to tail")
 	poll := flag.Duration("poll-interval", 200*time.Millisecond,
 		"file poll period")
-	statePath := flag.String("checkpoint-file", "",
-		"path to the JSON checkpoint file; empty disables persistence")
 	flag.Parse()
 
 	cfg := tailer.Config{
@@ -52,14 +46,13 @@ func main() {
 		// live container logs.
 		Exclude:      []string{"**/*.gz", "**/*.tmp"},
 		PollInterval: *poll,
-		StatePath:    *statePath,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
 	logger.Info("Starting agent")
 	exitCode := 0
-	if err := run(ctx, cfg, printLine(logger), logger); err != nil {
+	if err := runAgent(ctx, cfg, agentbuffer.New(), logger); err != nil {
 		logger.Error("Agent failed", "err", err)
 		exitCode = 1
 	}
@@ -83,11 +76,4 @@ func run(ctx context.Context, cfg tailer.Config, h tailer.Handler, logger *slog.
 	<-ctx.Done()
 	logger.InfoContext(ctx, "Stopping tailer")
 	return t.Stop()
-}
-
-// printLine returns a handler that prints each line through the logger.
-func printLine(logger *slog.Logger) tailer.Handler {
-	return func(l tailer.Line) {
-		logger.Info("Flow log", "line", string(l.Raw))
-	}
 }
