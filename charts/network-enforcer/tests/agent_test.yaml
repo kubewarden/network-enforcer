@@ -173,3 +173,52 @@ tests:
     asserts:
       - notExists:
           path: spec.template.spec.containers[0].env
+
+  - it: "renders agent.resources on the DaemonSet"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        resources:
+          limits:
+            cpu: 250m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 250m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 64Mi
+
+  - it: "renders agent topologySpreadConstraints on the DaemonSet"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+    asserts:
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].maxSkew
+          value: 1
+
+  - it: "renders agent extraEnvFrom as envFrom on the DaemonSet"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        extraEnvFrom:
+          - secretRef:
+              name: agent-env
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom
+          value:
+            - secretRef:
+                name: agent-env

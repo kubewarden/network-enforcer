@@ -22,6 +22,12 @@
                         "tag"
                     ],
                     "properties": {
+                        "pullPolicy": {
+                            "type": "string"
+                        },
+                        "registry": {
+                            "type": "string"
+                        },
                         "repository": {
                             "type": "string"
                         },
@@ -30,11 +36,12 @@
                         }
                     }
                 },
-                "imageRegistry": {
-                    "type": "string"
-                },
                 "podSecurityContext": {
                     "$ref": "#/$defs/_definitions.json/definitions/io.k8s.api.core.v1.PodSecurityContext",
+                    "type": "object"
+                },
+                "resources": {
+                    "$ref": "#/$defs/_definitions.json/definitions/io.k8s.api.core.v1.ResourceRequirements",
                     "type": "object"
                 }
             }

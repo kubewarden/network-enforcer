@@ -249,11 +249,25 @@ agent:
     # The image tag used by agent
     # @schema required
     tag: v0.4.0
-  # Registry for the images of this workload.
-  # global.imageRegistry replaces it when set.
-  imageRegistry: ghcr.io
+    # Registry for the image. global.imageRegistry replaces it when set.
+    registry: ghcr.io
+    # Pull policy for the image. If it is empty, the chart uses common.imagePullPolicy, then global.imagePullPolicy.
+    pullPolicy: ""
   # Extra command-line arguments for the agent.
   args: []
+  # To make the Pods "Guaranteed" (evicted last under node pressure), kubelet requires
+  # requests and limits are specified for all the containers and they are equal.
+  # Please refer to https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#pod-selection-for-kubelet-eviction
+  # @schema $ref: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
+  resources:
+    # @schema hidden
+    limits:
+      cpu: 100m
+      memory: 256Mi
+    # @schema hidden
+    requests:
+      cpu: 100m
+      memory: 256Mi
   # The agent runs unprivileged with the user baked into its image.
   # Node log files under /var/log/pods are usually readable only by root.
   # Set runAsNonRoot: false and runAsUser: 0 below if the agent must read them.

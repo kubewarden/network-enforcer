@@ -23,6 +23,7 @@ spec:
       {{- with include "network-enforcer.tolerations" $ctx }}{{ . | nindent 6 }}{{ end }}
       {{- with include "network-enforcer.nodeSelector" $ctx }}{{ . | nindent 6 }}{{ end }}
       {{- with include "network-enforcer.affinity" $ctx }}{{ . | nindent 6 }}{{ end }}
+      {{- with include "network-enforcer.topologySpreadConstraints" $ctx }}{{ . | nindent 6 }}{{ end }}
       {{- with $a.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
@@ -38,9 +39,14 @@ spec:
         env:
         {{- . | nindent 8 }}
         {{- end }}
+        {{- with include "network-enforcer.extraEnvFrom" $ctx }}{{ . | nindent 8 }}{{ end }}
         image: '{{ template "system_default_registry" $ctx }}{{ $a.image.repository }}:{{ $a.image.tag }}'
         imagePullPolicy: {{ include "network-enforcer.imagePullPolicy" $ctx }}
         name: agent
+        {{- with $a.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         {{- with $a.containerSecurityContext }}
         securityContext:
           {{- toYaml . | nindent 10 }}
