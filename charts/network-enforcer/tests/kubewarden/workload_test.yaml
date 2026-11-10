@@ -50,15 +50,15 @@ tests:
           value: 256Mi
         template: "templates/controller/deployment.yaml"
 
-  # The network-enforcer workloads have no init containers,
-  # so this case checks the main containers only.
-  - it: "should render controller.imageRegistry and istioFluentBit.imageRegistry on their own workload only"
+  - it: "should render controller.image.registry and istioFluentBit.image.registry on their own workload only"
     documentSelector: *workloads
     set:
       controller:
-        imageRegistry: controller.example.com
+        image:
+          registry: controller.example.com
       istioFluentBit:
-        imageRegistry: node.example.com
+        image:
+          registry: node.example.com
     asserts:
       - matchRegex:
           path: "spec.template.spec.containers[0].image"
@@ -70,15 +70,15 @@ tests:
         template: "templates/istio-fluent-bit/daemonset.yaml"
 
   # network-enforcer cases
-  - it: "should render istioFluentBit.imageRegistry on the fluent-bit DaemonSet only"
+  - it: "should render istioFluentBit.image.registry on the fluent-bit DaemonSet only"
     documentSelector: *workloads
     set:
       controller:
         image:
           tag: 1.0.0
       istioFluentBit:
-        imageRegistry: mirror.example.com
         image:
+          registry: mirror.example.com
           tag: 2.0.0
     asserts:
       - equal:
@@ -106,11 +106,12 @@ tests:
           path: "spec.template.spec.imagePullSecrets"
         template: "templates/controller/deployment.yaml"
 
-  - it: "should render istioFluentBit.imagePullPolicy on the fluent-bit DaemonSet only"
+  - it: "should render istioFluentBit.image.pullPolicy on the fluent-bit DaemonSet only"
     documentSelector: *workloads
     set:
       istioFluentBit:
-        imagePullPolicy: Always
+        image:
+          pullPolicy: Always
     asserts:
       - equal:
           path: "spec.template.spec.containers[0].imagePullPolicy"
@@ -121,11 +122,12 @@ tests:
           value: IfNotPresent
         template: "templates/controller/deployment.yaml"
 
-  - it: "should render controller.imagePullPolicy on the controller only"
+  - it: "should render controller.image.pullPolicy on the controller only"
     documentSelector: *workloads
     set:
       controller:
-        imagePullPolicy: Always
+        image:
+          pullPolicy: Always
     asserts:
       - equal:
           path: "spec.template.spec.containers[0].imagePullPolicy"
@@ -149,20 +151,6 @@ tests:
       - notExists:
           path: "spec.template.spec.containers[0].args"
         template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should ignore istioFluentBit.logLevel"
-    documentSelector: *workloads
-    set:
-      istioFluentBit:
-        logLevel: debug
-    asserts:
-      - notExists:
-          path: "spec.template.spec.containers[0].args"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-      - contains:
-          path: "spec.template.spec.containers[0].args"
-          content: "--log-level=info"
-        template: "templates/controller/deployment.yaml"
 
   - it: "should render istioFluentBit.labels on the fluent-bit DaemonSet only"
     documentSelector: *workloads

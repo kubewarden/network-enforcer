@@ -210,24 +210,23 @@ tests:
             name: OTEL_EXPORTER_OTLP_ENDPOINT
             value: "http://chart:4317"
 
-  # network-enforcer has no NATS subchart and no init containers,
-  # so this case does not set global.image.registry and checks the main container only.
-  - it: "should prefer global.imageRegistry over the workload imageRegistry"
+  - it: "should prefer global.imageRegistry over the workload image.registry"
     set:
       global:
         imageRegistry: global.example.com
       controller:
-        imageRegistry: mirror.example.com
+        image:
+          registry: mirror.example.com
     asserts:
       - matchRegex:
           path: "spec.template.spec.containers[0].image"
           pattern: "^global\\.example\\.com/kubewarden/network-enforcer/"
 
-  # network-enforcer has no init containers, so this case checks the main container only.
-  - it: "should use the workload imageRegistry when global.imageRegistry is empty"
+  - it: "should use the workload image.registry when global.imageRegistry is empty"
     set:
       controller:
-        imageRegistry: mirror.example.com
+        image:
+          registry: mirror.example.com
     asserts:
       - matchRegex:
           path: "spec.template.spec.containers[0].image"
@@ -300,9 +299,11 @@ tests:
         imagePullPolicy: ""
       controller:
         logLevel: ""
-        imagePullPolicy: ""
+        image:
+          pullPolicy: ""
       istioFluentBit:
-        imagePullPolicy: ""
+        image:
+          pullPolicy: ""
     asserts:
       - contains:
           path: "spec.template.spec.containers[0].args"
@@ -311,6 +312,46 @@ tests:
       - equal:
           path: "spec.template.spec.containers[0].imagePullPolicy"
           value: Never
+
+  - it: "should prefer the workload image.pullPolicy over common and global"
+    documentSelector: *workloads
+    set:
+      global:
+        imagePullPolicy: Never
+      common:
+        imagePullPolicy: IfNotPresent
+      controller:
+        image:
+          pullPolicy: Always
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].imagePullPolicy"
+          value: Always
+        template: "templates/controller/deployment.yaml"
+      - equal:
+          path: "spec.template.spec.containers[0].imagePullPolicy"
+          value: IfNotPresent
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should prefer istioFluentBit.image.pullPolicy over common and global"
+    documentSelector: *workloads
+    set:
+      global:
+        imagePullPolicy: Never
+      common:
+        imagePullPolicy: IfNotPresent
+      istioFluentBit:
+        image:
+          pullPolicy: Always
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].imagePullPolicy"
+          value: Always
+        template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal:
+          path: "spec.template.spec.containers[0].imagePullPolicy"
+          value: IfNotPresent
+        template: "templates/controller/deployment.yaml"
 
   # istioFluentBit.tolerations has a default that wins over common.
   # This case clears it, so the fluent-bit DaemonSet falls back to common.
@@ -788,12 +829,12 @@ tests:
     documentSelector: *workloads
     set:
       controller:
-        imageRegistry: ""
         image:
+          registry: ""
           tag: 1.0.0
       istioFluentBit:
-        imageRegistry: ""
         image:
+          registry: ""
           tag: 2.0.0
     asserts:
       - equal:

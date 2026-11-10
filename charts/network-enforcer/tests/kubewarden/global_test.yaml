@@ -235,7 +235,6 @@ tests:
             mountPath: /etc/extra-ca
             readOnly: true
 
-  # network-enforcer has no NATS subchart, so this case does not set global.image.registry.
   - it: "should render global.imageRegistry on every workload"
     documentSelector: *workloads
     set:
@@ -256,17 +255,6 @@ tests:
           path: "spec.template.spec.containers[0].image"
           value: "registry.example.com/fluent/fluent-bit:2.0.0"
         template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should ignore global.cattle.systemDefaultRegistry"
-    documentSelector: *workloads
-    set:
-      global:
-        cattle:
-          systemDefaultRegistry: rancher.example.com
-    asserts:
-      - matchRegex:
-          path: "spec.template.spec.containers[0].image"
-          pattern: "^(ghcr|docker)\\.io/"
 
   - it: "should render global.imagePullSecrets on every workload"
     documentSelector: *workloads

@@ -165,7 +165,7 @@ func netEnforcerHelmOpts(testCfg suiteConfig) []helm.Option {
 		helm.WithArgs("--create-namespace"),
 		// The e2e image is a full reference with the registry,
 		// so the chart must not add its own registry.
-		helm.WithArgs("--set", "controller.imageRegistry="),
+		helm.WithArgs("--set", "controller.image.registry="),
 		helm.WithArgs("--set", fmt.Sprintf("controller.image.repository=%s", controllerRepo)),
 		helm.WithArgs("--set", fmt.Sprintf("controller.image.tag=%s", controllerTag)),
 		helm.WithArgs("--set", "controller.logLevel=debug"),

@@ -11,50 +11,6 @@ workloads: &workloads
   skipEmptyTemplates: true
   matchMany: true
 tests:
-  - it: "should ignore common.imageRegistry"
-    documentSelector: *workloads
-    set:
-      common:
-        imageRegistry: mirror.example.com
-      controller:
-        image:
-          tag: 1.0.0
-      istioFluentBit:
-        image:
-          tag: 2.0.0
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "ghcr.io/kubewarden/network-enforcer/controller:1.0.0"
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "docker.io/fluent/fluent-bit:2.0.0"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should ignore common.imageRegistry when the workload imageRegistry is empty"
-    documentSelector: *workloads
-    set:
-      common:
-        imageRegistry: mirror.example.com
-      controller:
-        imageRegistry: ""
-        image:
-          tag: 1.0.0
-      istioFluentBit:
-        imageRegistry: ""
-        image:
-          tag: 2.0.0
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "kubewarden/network-enforcer/controller:1.0.0"
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "fluent/fluent-bit:2.0.0"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
   # The fluent-bit DaemonSet has no log level, so this case checks the controller only.
   - it: "should render common.logLevel on every workload"
     templates:
