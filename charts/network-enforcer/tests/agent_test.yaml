@@ -222,3 +222,33 @@ tests:
           value:
             - secretRef:
                 name: agent-env
+
+  - it: "tolerates all taints by default so it runs where ztunnel runs"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.tolerations
+          value:
+            - operator: Exists
+
+  - it: "lets agent tolerations override the default"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        tolerations:
+          - key: dedicated
+            operator: Equal
+            value: logging
+            effect: NoSchedule
+    asserts:
+      - equal:
+          path: spec.template.spec.tolerations
+          value:
+            - key: dedicated
+              operator: Equal
+              value: logging
+              effect: NoSchedule

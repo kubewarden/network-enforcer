@@ -130,9 +130,10 @@ The controller serves a validating admission webhook for
 ### Scheduling
 
 The `global` block sets `tolerations`, `nodeSelector`, `affinity`, and the
-other scheduling keys for all workloads. The `controller` and `istioFluentBit`
-blocks accept the same keys. A value in a workload block replaces the value in
-`global`. `controller` and `istioFluentBit` also have their own `resources` key.
+other scheduling keys for all workloads. The `controller`, `agent`, and
+`istioFluentBit` blocks accept the same keys. A value in a workload block
+replaces the value in `global`. `controller`, `agent`, and `istioFluentBit`
+also have their own `resources` key.
 
 The `istio-fluent-bit` DaemonSet must run on every node that runs the Istio
 ambient `ztunnel` DaemonSet. This includes nodes with taints, for example
@@ -146,6 +147,15 @@ this default replaces `global.tolerations`. If you set
 that is also empty, fluent-bit no longer tolerates any taint. The fluent-bit
 pod is then missing from each tainted node that `ztunnel` still runs on. The
 chart does not collect logs from `ztunnel` on those nodes.
+
+The `agent` DaemonSet reads `ztunnel` logs from the node's filesystem as well.
+It has the same scheduling requirement as `istio-fluent-bit`.
+`agent.tolerations` uses the same default (`- operator: Exists`), and this
+default replaces `global.tolerations`. If you set `agent.tolerations` to `[]`,
+the agent uses `global.tolerations`. If that is also empty, the agent no longer
+tolerates any taint. The agent pod is then missing from each tainted node that
+`ztunnel` still runs on. The chart does not collect logs from `ztunnel` on those
+nodes.
 
 The `controller` Deployment has no tolerations by default. Set
 `controller.tolerations` or `global.tolerations` to schedule it onto tainted

@@ -290,6 +290,14 @@ agent:
     capabilities:
       drop:
       - ALL
+  # The agent must run on every node where ztunnel runs, including
+  # tainted ones (e.g. control-plane). ztunnel itself tolerates all
+  # taints, so this default does the same.
+  # This value replaces common.tolerations and global.tolerations.
+  # Set it to [] to use common.tolerations or global.tolerations instead.
+  # @schema itemRef: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration; item:object
+  tolerations:
+    - operator: Exists
 
 # The fluent-bit DaemonSet that ships ztunnel logs to the controller.
 # The chart deploys it only when controller.provider.name is istio.

@@ -43,6 +43,18 @@
                 "resources": {
                     "$ref": "#/$defs/_definitions.json/definitions/io.k8s.api.core.v1.ResourceRequirements",
                     "type": "object"
+                },
+                "tolerations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/_definitions.json/definitions/io.k8s.api.core.v1.Toleration",
+                        "type": "object",
+                        "properties": {
+                            "operator": {
+                                "type": "string"
+                            }
+                        }
+                    }
                 }
             }
         },
