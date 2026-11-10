@@ -7,13 +7,11 @@ COPY internal/ /src/internal
 COPY proto/ /src/proto
 COPY go.mod go.sum /src/
 COPY Makefile /src/
-RUN mkdir -p /agent-state && chown 65532:65532 /agent-state
 RUN make agent
 
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /src/bin/agent /agent
-COPY --from=builder --chown=65532:65532 /agent-state /var/lib/network-enforcer/agent
 
 USER 65532:65532
 ENTRYPOINT ["/agent"]

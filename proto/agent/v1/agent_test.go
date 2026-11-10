@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -23,8 +22,8 @@ func TestAgentServiceDescriptor(t *testing.T) {
 	require.Equal(t, 2, service.Methods().Len())
 
 	methods := map[protoreflect.Name][2]protoreflect.Name{
-		"PullEvents": {"PullEventsRequest", "PullEventsResponse"},
-		"GetStatus":  {"GetStatusRequest", "GetStatusResponse"},
+		"ScrapeEvents": {"ScrapeEventsRequest", "ScrapeEventsResponse"},
+		"GetStatus":    {"GetStatusRequest", "GetStatusResponse"},
 	}
 	for name, types := range methods {
 		method := service.Methods().ByName(name)
@@ -38,24 +37,25 @@ func TestAgentServiceDescriptor(t *testing.T) {
 	assert.Empty(t, AgentService_ServiceDesc.Streams)
 }
 
-func TestPullAndStatusFieldDescriptors(t *testing.T) {
+func TestScrapeAndStatusFieldDescriptors(t *testing.T) {
 	file := File_proto_agent_v1_agent_proto
-	request := file.Messages().ByName("PullEventsRequest")
-	assertField(t, request, "epoch", 1, protoreflect.StringKind)
-	assertField(t, request, "since_seq", 2, protoreflect.Uint64Kind)
-	assertField(t, request, "limit", 3, protoreflect.Uint32Kind)
+	request := file.Messages().ByName("ScrapeEventsRequest")
+	require.NotNil(t, request)
+	assert.Zero(t, request.Fields().Len())
 
-	response := file.Messages().ByName("PullEventsResponse")
-	assertField(t, response, "acked_seq", 2, protoreflect.Uint64Kind)
-	assertField(t, response, "newest_seq", 3, protoreflect.Uint64Kind)
-	events := assertField(t, response, "events", 4, protoreflect.MessageKind)
+	response := file.Messages().ByName("ScrapeEventsResponse")
+	events := assertField(t, response, "events", 1, protoreflect.MessageKind)
 	assert.Equal(t, protoreflect.Repeated, events.Cardinality())
-	assertField(t, response, "gap", 5, protoreflect.BoolKind)
-	assertField(t, response, "dropped", 6, protoreflect.Uint64Kind)
+	assert.Equal(t, 1, response.Fields().Len())
 
 	status := file.Messages().ByName("GetStatusResponse")
-	assertField(t, status, "oldest_seq", 4, protoreflect.Uint64Kind)
-	assertField(t, status, "newest_seq", 3, protoreflect.Uint64Kind)
+	for _, name := range []protoreflect.Name{"epoch", "acked_seq", "newest_seq", "oldest_seq", "max_age"} {
+		assert.Nil(t, status.Fields().ByName(name))
+		assert.True(t, status.ReservedNames().Has(name))
+	}
+	for _, number := range []protoreflect.FieldNumber{1, 2, 3, 4, 7} {
+		assert.True(t, status.ReservedRanges().Has(number))
+	}
 	assertField(t, status, "buffered_events", 5, protoreflect.Uint64Kind)
 	assertField(t, status, "max_events", 6, protoreflect.Uint64Kind)
 	assertField(t, status, "dropped_events", 8, protoreflect.Uint64Kind)
@@ -63,8 +63,6 @@ func TestPullAndStatusFieldDescriptors(t *testing.T) {
 	assert.Equal(t, protoreflect.Repeated, logFiles.Cardinality())
 	received := assertField(t, status, "received_events", 10, protoreflect.Uint64Kind)
 	assert.Equal(t, protoreflect.Optional, received.Cardinality())
-	maxAge := assertField(t, status, "max_age", 7, protoreflect.MessageKind)
-	assert.Equal(t, protoreflect.FullName("google.protobuf.Duration"), maxAge.Message().FullName())
 }
 
 func TestEventFieldAndOneofDescriptors(t *testing.T) {
@@ -74,7 +72,9 @@ func TestEventFieldAndOneofDescriptors(t *testing.T) {
 	observedAt := assertField(t, event, "observed_at", 2, protoreflect.MessageKind)
 	assert.Equal(t, protoreflect.FullName("google.protobuf.Timestamp"), observedAt.Message().FullName())
 	assert.True(t, observedAt.HasPresence())
-	assertField(t, event, "seq", 1, protoreflect.Uint64Kind)
+	assert.Nil(t, event.Fields().ByName("seq"))
+	assert.True(t, event.ReservedNames().Has("seq"))
+	assert.True(t, event.ReservedRanges().Has(1))
 	assertField(t, event, "raw_record", 5, protoreflect.BytesKind)
 
 	kind := event.Oneofs().ByName("kind")
@@ -134,7 +134,6 @@ func TestLearnEventBinaryRoundTrip(t *testing.T) {
 	observedAt := time.Date(2026, time.November, 2, 12, 34, 56, 789000000, time.UTC)
 	emptyName := ""
 	original := &Event{
-		Seq:        17,
 		ObservedAt: timestamppb.New(observedAt),
 		Kind: &Event_Learn{Learn: &LearnEvent{
 			SourceIdentity:       "spiffe://cluster.local/ns/source/sa/client",
@@ -161,7 +160,6 @@ func TestLearnEventBinaryRoundTrip(t *testing.T) {
 
 func TestPolicyEventBinaryRoundTripWithoutTimestamp(t *testing.T) {
 	original := &Event{
-		Seq: 9,
 		Kind: &Event_Policy{Policy: &PolicyEvent{
 			Mode:                      PolicyMode_POLICY_MODE_PROTECT,
 			Message:                   "deny policy match",
@@ -191,18 +189,13 @@ func TestStatusBinaryRoundTrip(t *testing.T) {
 	}{
 		{
 			name:   "no input or monitored files",
-			status: &GetStatusResponse{Epoch: "empty", MaxEvents: 10_000},
+			status: &GetStatusResponse{MaxEvents: 10_000},
 		},
 		{
 			name: "multiple monitored files with retained events",
 			status: &GetStatusResponse{
-				Epoch:          "active",
-				AckedSeq:       12,
-				NewestSeq:      17,
-				OldestSeq:      15,
 				BufferedEvents: 3,
 				MaxEvents:      10_000,
-				MaxAge:         durationpb.New(5 * time.Minute),
 				DroppedEvents:  2,
 				CurrentLogFiles: []string{
 					"/var/log/containers/ztunnel-a_istio-system_ztunnel-first.log",
@@ -214,18 +207,14 @@ func TestStatusBinaryRoundTrip(t *testing.T) {
 		{
 			name: "input received without producing events",
 			status: &GetStatusResponse{
-				Epoch:           "filtered",
 				MaxEvents:       10_000,
 				CurrentLogFiles: []string{"/var/log/containers/ztunnel.log"},
 				ReceivedEvents:  42,
 			},
 		},
 		{
-			name: "received total retained after acknowledged events are purged",
+			name: "received total retained after scraping",
 			status: &GetStatusResponse{
-				Epoch:          "drained",
-				AckedSeq:       17,
-				NewestSeq:      17,
 				MaxEvents:      10_000,
 				ReceivedEvents: 42,
 			},

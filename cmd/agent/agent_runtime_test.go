@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,63 +14,109 @@ import (
 
 	"github.com/kubewarden/network-enforcer/internal/agentbuffer"
 	"github.com/kubewarden/network-enforcer/internal/tailer"
+	agentv1 "github.com/kubewarden/network-enforcer/proto/agent/v1"
 )
 
-func TestRunAgentWritesParsedEventsToDurableBuffer(t *testing.T) {
-	root := t.TempDir()
-	logs := filepath.Join(root, "logs")
-	require.NoError(t, os.Mkdir(logs, 0o700))
-	logPath := filepath.Join(logs, "0.log")
-	require.NoError(t, os.WriteFile(logPath, nil, 0o600))
-	stateDir := filepath.Join(root, "state")
-	cfg := tailer.Config{Include: []string{filepath.Join(logs, "*.log")}, PollInterval: 15 * time.Millisecond}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	ctx, cancel := context.WithCancel(context.Background())
+func startTestAgent(t *testing.T, cfg tailer.Config, buffer *agentbuffer.Buffer) func() {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { done <- runAgent(ctx, cfg, stateDir, logger) }()
+	logger := slog.New(slog.DiscardHandler)
+	go func() { done <- runAgent(ctx, cfg, buffer, logger) }()
+	var once sync.Once
+	stop := func() {
+		t.Helper()
+		once.Do(func() {
+			cancel()
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(3 * time.Second):
+				t.Fatal("agent did not stop after cancellation")
+			}
+		})
+	}
+	t.Cleanup(stop)
+	return stop
+}
 
-	time.Sleep(80 * time.Millisecond)
-	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0o600)
+func appendAgentLine(t *testing.T, path, body string) {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	require.NoError(t, err)
-	_, err = fmt.Fprintln(
-		file,
-		`2026-11-02T00:00:00.123Z stdout F {"message":"deny policy match","policy":"ns/deny","proxy":{"wl":"ns/pod"},"inbound":{"peer":"10.0.0.1:1234"}}`,
-	)
+	_, err = fmt.Fprintln(file, "2026-11-02T00:00:00Z stdout F "+body)
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
+}
 
-	type stateSummary struct {
-		NewestSeq uint64 `json:"newestSeq"`
-	}
-	type envelopeSummary struct {
-		State json.RawMessage `json:"state"`
-	}
+func waitForAgentInput(t *testing.T, path string, buffer *agentbuffer.Buffer) {
+	t.Helper()
 	require.Eventually(t, func() bool {
-		raw, readErr := os.ReadFile(filepath.Join(stateDir, "agent-state.json"))
-		if readErr != nil {
-			return false
+		status, err := buffer.GetStatus(t.Context(), nil)
+		require.NoError(t, err)
+		if status.GetReceivedEvents() > 0 {
+			return true
 		}
-		var envelope envelopeSummary
-		if json.Unmarshal(raw, &envelope) != nil {
-			return false
-		}
-		var state stateSummary
-		return json.Unmarshal(envelope.State, &state) == nil && state.NewestSeq == 1
+		appendAgentLine(t, path, `{"message":"ignored readiness record"}`)
+		return false
 	}, 3*time.Second, 15*time.Millisecond)
-	cancel()
-	select {
-	case runErr := <-done:
-		require.NoError(t, runErr)
-	case <-time.After(3 * time.Second):
-		t.Fatal("agent did not stop after cancellation")
-	}
+}
 
-	buffer, recovered, err := agentbuffer.Open(stateDir, agentbuffer.Config{})
+func TestRunAgentTailsOnlyNewLinesWithoutPersistentState(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "0.log")
+	require.NoError(t, os.WriteFile(path, nil, 0o600))
+	appendAgentLine(t, path, `{"message":"deny policy match","policy":"history"}`)
+	cfg := tailer.Config{
+		Include: []string{filepath.Join(root, "*.log")}, PollInterval: 15 * time.Millisecond,
+		StatePath: filepath.Join(root, "unused-checkpoint.json"), StartAt: "beginning",
+	}
+	buffer := agentbuffer.New()
+	stop := startTestAgent(t, cfg, buffer)
+	waitForAgentInput(t, path, buffer)
+	empty, err := buffer.ScrapeEvents(t.Context(), nil)
 	require.NoError(t, err)
-	require.True(t, recovered)
-	status, err := buffer.GetStatus(context.Background(), nil)
+	require.Empty(t, empty.GetEvents(), "existing log history must not be replayed")
+
+	appendAgentLine(t, path, `{"message":"deny policy match","policy":"new","proxy":{"wl":"ns/pod"}}`)
+	require.Eventually(t, func() bool {
+		status, statusErr := buffer.GetStatus(t.Context(), nil)
+		return statusErr == nil && status.GetBufferedEvents() == 1
+	}, 3*time.Second, 15*time.Millisecond)
+	stop()
+	response, err := buffer.ScrapeEvents(t.Context(), &agentv1.ScrapeEventsRequest{})
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), status.GetNewestSeq())
-	require.Equal(t, uint64(1), status.GetReceivedEvents())
-	require.NoError(t, buffer.Close())
+	require.Len(t, response.GetEvents(), 1)
+	require.Equal(t, "new", response.GetEvents()[0].GetPolicy().GetPolicy())
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "agent must not write checkpoints or snapshots")
+
+	restarted := agentbuffer.New()
+	stopRestarted := startTestAgent(t, cfg, restarted)
+	waitForAgentInput(t, path, restarted)
+	stopRestarted()
+	response, err = restarted.ScrapeEvents(t.Context(), nil)
+	require.NoError(t, err)
+	require.Empty(t, response.GetEvents(), "restart must not replay old events")
+}
+
+func TestRunAgentObservesMatchingFiles(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "0.log")
+	require.NoError(t, os.WriteFile(path, nil, 0o600))
+	buffer := agentbuffer.New()
+	stop := startTestAgent(t, tailer.Config{
+		Include: []string{filepath.Join(root, "*.log")}, PollInterval: 15 * time.Millisecond,
+	}, buffer)
+	require.Eventually(t, func() bool {
+		status, err := buffer.GetStatus(t.Context(), nil)
+		return err == nil && len(status.GetCurrentLogFiles()) == 1 && status.GetCurrentLogFiles()[0] == path
+	}, 3*time.Second, 15*time.Millisecond)
+	require.NoError(t, os.Rename(path, path+".1"))
+	require.Eventually(t, func() bool {
+		status, err := buffer.GetStatus(t.Context(), nil)
+		return err == nil && len(status.GetCurrentLogFiles()) == 0
+	}, 3*time.Second, 15*time.Millisecond)
+	stop()
 }

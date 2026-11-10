@@ -42,21 +42,12 @@ type Config struct {
 	Exclude []string
 	// PollInterval is the file poll period. The default is 200 ms.
 	PollInterval time.Duration
-	// StartAt is "end" (default) or "beginning". The agent uses end on a fresh
-	// state and beginning when reopening any existing state to avoid skipping
-	// available history if an offset checkpoint is missing.
+	// StartAt is "end" (default) or "beginning".
 	StartAt string
 	// OnTruncate controls copytruncate handling. The default is "read_new".
 	OnTruncate string
-	// StatePath is the standalone JSON checkpoint file. When empty, the tailer
-	// keeps no offsets and starts fresh on every run. It cannot be combined with
-	// CheckpointStore.
+	// StatePath is the optional standalone JSON checkpoint file.
 	StatePath string
-	// CheckpointStore optionally atomically commits staged handler events with
-	// stanza's knownFiles checkpoint. Standalone callers may leave it nil.
-	CheckpointStore operator.Persister
-	// PersistenceError reports latched failures hidden by stanza's poll logger.
-	PersistenceError func() error
 	// OnFilesObserved receives paths matching the configured criteria, rather than
 	// the glob patterns. The paths are a live matcher observation, not open fds.
 	OnFilesObserved func([]string)
@@ -76,15 +67,13 @@ func (c *Config) applyDefaults() {
 
 // Tailer reads CRI log files and emits each raw line to a handler.
 type Tailer struct {
-	mgr            *fileconsumer.Manager
-	per            *filePersister
-	store          operator.Persister
-	persistenceErr func() error
-	filesMatcher   *matcher.Matcher
-	pollInterval   time.Duration
-	onFiles        func([]string)
-	obsCancel      context.CancelFunc
-	obsWG          sync.WaitGroup
+	mgr          *fileconsumer.Manager
+	per          *filePersister
+	filesMatcher *matcher.Matcher
+	pollInterval time.Duration
+	onFiles      func([]string)
+	obsCancel    context.CancelFunc
+	obsWG        sync.WaitGroup
 }
 
 // New builds a tailer. It returns an error when Include is empty, the handler
@@ -97,9 +86,6 @@ func New(cfg Config, h Handler) (*Tailer, error) {
 		return nil, errors.New("tailer: Handler is required")
 	}
 	cfg.applyDefaults()
-	if cfg.CheckpointStore != nil && cfg.StatePath != "" {
-		return nil, errors.New("tailer: StatePath and CheckpointStore cannot both be set")
-	}
 	filesMatcher, err := matcher.New(matcher.Criteria{Include: cfg.Include, Exclude: cfg.Exclude})
 	if err != nil {
 		return nil, fmt.Errorf("tailer: build file matcher: %w", err)
@@ -110,10 +96,6 @@ func New(cfg Config, h Handler) (*Tailer, error) {
 	fcCfg.PollInterval = cfg.PollInterval
 	fcCfg.StartAt = cfg.StartAt
 	fcCfg.OnTruncate = cfg.OnTruncate
-	// The agent transaction seam persists only the exact knownFiles checkpoint.
-	// Never enable archive keys or partial-batch poll exits on this path.
-	fcCfg.PollsToArchive = 0
-	fcCfg.MaxBatches = 0
 	// Emit each line as soon as it completes. The default flush period holds a
 	// partial line for 500 ms, which can emit an incomplete record.
 	fcCfg.FlushPeriod = 0
@@ -142,7 +124,7 @@ func New(cfg Config, h Handler) (*Tailer, error) {
 	}
 
 	t := &Tailer{
-		mgr: mgr, store: cfg.CheckpointStore, persistenceErr: cfg.PersistenceError,
+		mgr:          mgr,
 		filesMatcher: filesMatcher, pollInterval: cfg.PollInterval, onFiles: cfg.OnFilesObserved,
 	}
 	if cfg.StatePath != "" {
@@ -159,9 +141,6 @@ func New(cfg Config, h Handler) (*Tailer, error) {
 // tailer keeps no offsets. It must not return a typed-nil pointer, because the
 // manager treats any non-nil interface as a real store.
 func (t *Tailer) persister() operator.Persister {
-	if t.store != nil {
-		return t.store
-	}
 	if t.per == nil {
 		return nil
 	}
@@ -174,10 +153,6 @@ func (t *Tailer) Start() error {
 	if err == nil {
 		t.startFileObserver()
 		return nil
-	}
-	// An injected transaction store must fail closed on malformed nested offsets.
-	if t.store != nil {
-		return fmt.Errorf("tailer: start: %w", err)
 	}
 	// Without a checkpoint store the error cannot be a bad payload.
 	if t.per == nil {
@@ -225,14 +200,6 @@ func (t *Tailer) startFileObserver() {
 	})
 }
 
-// Err reports durability errors that the stanza manager logs but suppresses.
-func (t *Tailer) Err() error {
-	if t.persistenceErr == nil {
-		return nil
-	}
-	return t.persistenceErr()
-}
-
 // Stop ends the poll loop and flushes the final offsets.
 func (t *Tailer) Stop() error {
 	stopErr := t.mgr.Stop()
@@ -242,9 +209,6 @@ func (t *Tailer) Stop() error {
 	}
 	if stopErr != nil {
 		return fmt.Errorf("tailer: stop: %w", stopErr)
-	}
-	if err := t.Err(); err != nil {
-		return fmt.Errorf("tailer: persistence: %w", err)
 	}
 	return nil
 }

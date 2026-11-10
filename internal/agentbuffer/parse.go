@@ -11,17 +11,14 @@ import (
 	agentv1 "github.com/kubewarden/network-enforcer/proto/agent/v1"
 )
 
-// parseLine uses ztunnel.Parse as the classifier and field validator. Only a
-// successfully parsed event receives a sequence; all other tailer records are
-// still counted by StageLine as received activity.
-func parseLine(line []byte) (*agentv1.Event, *timestamppb.Timestamp, bool) {
+func parseLine(line []byte) (*agentv1.Event, bool) {
 	parsed, classified, err := ztunnel.Parse(line)
 	if err != nil || !classified {
-		return nil, nil, false
+		return nil, false
 	}
 	body, ok := rawJSONBody(line)
 	if !ok {
-		return nil, nil, false
+		return nil, false
 	}
 	event := &agentv1.Event{
 		ObservedAt: parseObservedAt(parsed.Timestamp),
@@ -33,9 +30,9 @@ func parseLine(line []byte) (*agentv1.Event, *timestamppb.Timestamp, bool) {
 	case types.EventTypeMonitor, types.EventTypeProtect:
 		event.Kind = &agentv1.Event_Policy{Policy: toPolicyEvent(parsed)}
 	default:
-		return nil, nil, false
+		return nil, false
 	}
-	return event, event.GetObservedAt(), true
+	return event, true
 }
 
 func toLearnEvent(parsed ztunnel.Event) *agentv1.LearnEvent {

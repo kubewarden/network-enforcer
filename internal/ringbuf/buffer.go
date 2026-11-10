@@ -59,6 +59,8 @@ func (b *Buffer[T]) Drain() []T {
 	for i := range n {
 		idx := (b.pos - 1 - i) % b.capacity
 		records = append(records, b.buf[idx])
+		var zero T
+		b.buf[idx] = zero
 	}
 
 	b.pos = 0

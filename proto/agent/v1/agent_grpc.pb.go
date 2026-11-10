@@ -19,25 +19,19 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentService_PullEvents_FullMethodName = "/agent.v1.AgentService/PullEvents"
-	AgentService_GetStatus_FullMethodName  = "/agent.v1.AgentService/GetStatus"
+	AgentService_ScrapeEvents_FullMethodName = "/agent.v1.AgentService/ScrapeEvents"
+	AgentService_GetStatus_FullMethodName    = "/agent.v1.AgentService/GetStatus"
 )
 
 // AgentServiceClient is the client API for AgentService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// AgentService is the unary pull API served by one node agent to its logical consumer.
-// A consumer serializes pulls for an agent; this API does not fence multiple consumers
-// or split-brain leaders. To preserve same-epoch replay identities, the server persists
-// the epoch, newest assigned sequence, retained events, read position, acknowledgement,
-// and cumulative status counters consistently across restarts. It restores the
-// same epoch only when that state is recovered consistently; otherwise it creates a new
-// random epoch. Durably commit each event, its sequence, and the epoch/read position before
-// exposing that event or newest_seq; same-epoch recovery must never forget or reuse an
-// exposed identity. A successful response represents a consistent snapshot of state.
+// One logical consumer scrapes each agent. Events are in memory only;
+// restart, overflow, or a lost response can lose events without replay.
 type AgentServiceClient interface {
-	PullEvents(ctx context.Context, in *PullEventsRequest, opts ...grpc.CallOption) (*PullEventsResponse, error)
+	// Drains all retained events before replying, newest-recorded first.
+	ScrapeEvents(ctx context.Context, in *ScrapeEventsRequest, opts ...grpc.CallOption) (*ScrapeEventsResponse, error)
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
 }
 
@@ -49,10 +43,10 @@ func NewAgentServiceClient(cc grpc.ClientConnInterface) AgentServiceClient {
 	return &agentServiceClient{cc}
 }
 
-func (c *agentServiceClient) PullEvents(ctx context.Context, in *PullEventsRequest, opts ...grpc.CallOption) (*PullEventsResponse, error) {
+func (c *agentServiceClient) ScrapeEvents(ctx context.Context, in *ScrapeEventsRequest, opts ...grpc.CallOption) (*ScrapeEventsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(PullEventsResponse)
-	err := c.cc.Invoke(ctx, AgentService_PullEvents_FullMethodName, in, out, cOpts...)
+	out := new(ScrapeEventsResponse)
+	err := c.cc.Invoke(ctx, AgentService_ScrapeEvents_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -73,17 +67,11 @@ func (c *agentServiceClient) GetStatus(ctx context.Context, in *GetStatusRequest
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
 //
-// AgentService is the unary pull API served by one node agent to its logical consumer.
-// A consumer serializes pulls for an agent; this API does not fence multiple consumers
-// or split-brain leaders. To preserve same-epoch replay identities, the server persists
-// the epoch, newest assigned sequence, retained events, read position, acknowledgement,
-// and cumulative status counters consistently across restarts. It restores the
-// same epoch only when that state is recovered consistently; otherwise it creates a new
-// random epoch. Durably commit each event, its sequence, and the epoch/read position before
-// exposing that event or newest_seq; same-epoch recovery must never forget or reuse an
-// exposed identity. A successful response represents a consistent snapshot of state.
+// One logical consumer scrapes each agent. Events are in memory only;
+// restart, overflow, or a lost response can lose events without replay.
 type AgentServiceServer interface {
-	PullEvents(context.Context, *PullEventsRequest) (*PullEventsResponse, error)
+	// Drains all retained events before replying, newest-recorded first.
+	ScrapeEvents(context.Context, *ScrapeEventsRequest) (*ScrapeEventsResponse, error)
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
@@ -95,8 +83,8 @@ type AgentServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAgentServiceServer struct{}
 
-func (UnimplementedAgentServiceServer) PullEvents(context.Context, *PullEventsRequest) (*PullEventsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method PullEvents not implemented")
+func (UnimplementedAgentServiceServer) ScrapeEvents(context.Context, *ScrapeEventsRequest) (*ScrapeEventsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ScrapeEvents not implemented")
 }
 func (UnimplementedAgentServiceServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
@@ -122,20 +110,20 @@ func RegisterAgentServiceServer(s grpc.ServiceRegistrar, srv AgentServiceServer)
 	s.RegisterService(&AgentService_ServiceDesc, srv)
 }
 
-func _AgentService_PullEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PullEventsRequest)
+func _AgentService_ScrapeEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScrapeEventsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AgentServiceServer).PullEvents(ctx, in)
+		return srv.(AgentServiceServer).ScrapeEvents(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AgentService_PullEvents_FullMethodName,
+		FullMethod: AgentService_ScrapeEvents_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AgentServiceServer).PullEvents(ctx, req.(*PullEventsRequest))
+		return srv.(AgentServiceServer).ScrapeEvents(ctx, req.(*ScrapeEventsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -166,8 +154,8 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*AgentServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "PullEvents",
-			Handler:    _AgentService_PullEvents_Handler,
+			MethodName: "ScrapeEvents",
+			Handler:    _AgentService_ScrapeEvents_Handler,
 		},
 		{
 			MethodName: "GetStatus",
