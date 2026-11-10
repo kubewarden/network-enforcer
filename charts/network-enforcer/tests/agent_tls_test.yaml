@@ -117,3 +117,59 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].securityContext.runAsUser
           value: 1000
+
+  - it: "appends custom agent args after the default gRPC flag"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        args:
+          - --grpc-mtls-enabled=false
+          - --log-level=debug
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value:
+            - --grpc-mtls-cert-dir=/etc/network-enforcer/certs
+            - --grpc-mtls-enabled=false
+            - --log-level=debug
+
+  - it: "renders agent extra environment variables under env"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        extraEnv:
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: LOG_FORMAT
+            value: json
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LOG_FORMAT
+            value: json
+      - notContains:
+          path: spec.template.spec.containers[0].command
+          content:
+            name: LOG_FORMAT
+            value: json
+
+  - it: "omits env when no agent extra environment variables are set"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env
