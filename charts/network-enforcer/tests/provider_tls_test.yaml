@@ -129,6 +129,7 @@ tests:
                 csi.cert-manager.io/issuer-kind: ClusterIssuer
                 csi.cert-manager.io/issuer-group: cert-manager.io
                 csi.cert-manager.io/dns-names: network-enforcer.hubble-relay.cilium.io
+                csi.cert-manager.io/fs-group: "65532"
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
           content:
@@ -194,6 +195,7 @@ tests:
                 csi.cert-manager.io/issuer-kind: Issuer
                 csi.cert-manager.io/issuer-group: cert-manager.io
                 csi.cert-manager.io/dns-names: my-release-network-enforcer-istio-otlp,my-release-network-enforcer-istio-otlp.my-namespace,my-release-network-enforcer-istio-otlp.my-namespace.svc,my-release-network-enforcer-istio-otlp.my-namespace.svc.cluster.local
+                csi.cert-manager.io/fs-group: "65532"
 
   - it: "mounts CSI certs for issuer mode with a custom issuer"
     set:
@@ -220,6 +222,7 @@ tests:
                 csi.cert-manager.io/issuer-kind: Issuer
                 csi.cert-manager.io/issuer-group: cert-manager.io
                 csi.cert-manager.io/dns-names: my-release-network-enforcer-istio-otlp,my-release-network-enforcer-istio-otlp.my-namespace,my-release-network-enforcer-istio-otlp.my-namespace.svc,my-release-network-enforcer-istio-otlp.my-namespace.svc.cluster.local
+                csi.cert-manager.io/fs-group: "65532"
 
   - it: "keeps controller-manager DNS names for a provider without dedicated names"
     set:
@@ -244,6 +247,7 @@ tests:
                 csi.cert-manager.io/issuer-kind: Issuer
                 csi.cert-manager.io/issuer-group: cert-manager.io
                 csi.cert-manager.io/dns-names: my-release-network-enforcer-controller-manager
+                csi.cert-manager.io/fs-group: "65532"
 
   - it: "mounts a same-namespace existingSecret"
     set:

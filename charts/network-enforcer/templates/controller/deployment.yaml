@@ -94,6 +94,11 @@ spec:
         - mountPath: /tmp/k8s-webhook-server/serving-certs
           name: webhook-certs
           readOnly: true
+        {{- if .Values.agent.enabled }}
+        - mountPath: {{ include "network-enforcer.grpc.certDir" . }}
+          name: grpc-certs
+          readOnly: true
+        {{- end }}
         {{- with include "network-enforcer.otelVolumeMounts" $ctx }}{{ . | nindent 8 }}{{ end }}
         {{- with include "network-enforcer.extraVolumeMounts" $ctx }}{{ . | nindent 8 }}{{ end }}
       volumes:
@@ -109,6 +114,22 @@ spec:
             csi.cert-manager.io/issuer-name: {{ include "network-enforcer.caIssuerName" . }}
             csi.cert-manager.io/issuer-kind: Issuer
             csi.cert-manager.io/dns-names: {{ include "network-enforcer.webhookServiceName" . }}.{{ include "network-enforcer.namespace" . }}.svc
+            {{- with (default dict $w.containerSecurityContext).runAsGroup }}
+            csi.cert-manager.io/fs-group: {{ . | quote }}
+            {{- end }}
+      {{- if .Values.agent.enabled }}
+      - name: grpc-certs
+        csi:
+          driver: csi.cert-manager.io
+          readOnly: true
+          volumeAttributes:
+            csi.cert-manager.io/issuer-name: {{ include "network-enforcer.caIssuerName" . }}
+            csi.cert-manager.io/issuer-kind: Issuer
+            csi.cert-manager.io/dns-names: {{ include "network-enforcer.fullname" . }}-controller
+            {{- with (default dict $w.containerSecurityContext).runAsGroup }}
+            csi.cert-manager.io/fs-group: {{ . | quote }}
+            {{- end }}
+      {{- end }}
       {{- with include "network-enforcer.otelVolumes" $ctx }}{{ . | nindent 6 }}{{ end }}
       {{- with include "network-enforcer.extraVolumes" $ctx }}{{ . | nindent 6 }}{{ end }}
       {{- with $w.podSecurityContext }}

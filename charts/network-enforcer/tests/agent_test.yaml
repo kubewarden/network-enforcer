@@ -1,0 +1,256 @@
+suite: "Agent hop mTLS material issued by the chart CA"
+chart:
+  version: 1.0.0
+  appVersion: 2.0.0
+release:
+  name: my-release
+  namespace: my-namespace
+tests:
+  - it: "mounts agent CSI material when enabled"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+    asserts:
+      - equal:
+          path: kind
+          value: DaemonSet
+      - equal:
+          path: metadata.name
+          value: my-release-network-enforcer-agent
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --grpc-mtls-cert-dir=/etc/network-enforcer/certs
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: grpc-certs
+            mountPath: /etc/network-enforcer/certs
+            readOnly: true
+          count: 1
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: grpc-certs
+            csi:
+              driver: csi.cert-manager.io
+              readOnly: true
+              volumeAttributes:
+                csi.cert-manager.io/issuer-name: my-release-network-enforcer-ca
+                csi.cert-manager.io/issuer-kind: Issuer
+                csi.cert-manager.io/dns-names: ${POD_NAME}.${POD_NAMESPACE}
+                csi.cert-manager.io/fs-group: "65532"
+
+  - it: "keeps controller free of gRPC material by default"
+    template: templates/controller/deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: grpc-certs
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            mountPath: /etc/network-enforcer/certs
+
+  - it: "issues controller gRPC material when the agent is enabled"
+    template: templates/controller/deployment.yaml
+    set:
+      agent:
+        enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: grpc-certs
+            csi:
+              driver: csi.cert-manager.io
+              readOnly: true
+              volumeAttributes:
+                csi.cert-manager.io/issuer-name: my-release-network-enforcer-ca
+                csi.cert-manager.io/issuer-kind: Issuer
+                csi.cert-manager.io/dns-names: my-release-network-enforcer-controller
+                csi.cert-manager.io/fs-group: "65532"
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: grpc-certs
+            mountPath: /etc/network-enforcer/certs
+            readOnly: true
+          count: 1
+
+  - it: "renders no agent DaemonSet by default"
+    asserts:
+      - containsDocument:
+          kind: DaemonSet
+          apiVersion: apps/v1
+          name: my-release-network-enforcer-agent
+        not: true
+
+  - it: "the agent runs unprivileged by default"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 65532
+
+  - it: "accepts custom agent security contexts"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        podSecurityContext:
+          runAsNonRoot: true
+        containerSecurityContext:
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 1000
+
+  - it: "appends custom agent args after the default gRPC flag"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        args:
+          - --grpc-mtls-enabled=false
+          - --log-level=debug
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value:
+            - --grpc-mtls-cert-dir=/etc/network-enforcer/certs
+            - --grpc-mtls-enabled=false
+            - --log-level=debug
+
+  - it: "renders agent extra environment variables under env"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        extraEnv:
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: LOG_FORMAT
+            value: json
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LOG_FORMAT
+            value: json
+      - notContains:
+          path: spec.template.spec.containers[0].command
+          content:
+            name: LOG_FORMAT
+            value: json
+
+  - it: "omits env when no agent extra environment variables are set"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env
+
+  - it: "renders agent.resources on the DaemonSet"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        resources:
+          limits:
+            cpu: 250m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 250m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 64Mi
+
+  - it: "renders agent topologySpreadConstraints on the DaemonSet"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+    asserts:
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].maxSkew
+          value: 1
+
+  - it: "renders agent extraEnvFrom as envFrom on the DaemonSet"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        extraEnvFrom:
+          - secretRef:
+              name: agent-env
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom
+          value:
+            - secretRef:
+                name: agent-env
+
+  - it: "tolerates all taints by default so it runs where ztunnel runs"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.tolerations
+          value:
+            - operator: Exists
+
+  - it: "lets agent tolerations override the default"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        tolerations:
+          - key: dedicated
+            operator: Equal
+            value: logging
+            effect: NoSchedule
+    asserts:
+      - equal:
+          path: spec.template.spec.tolerations
+          value:
+            - key: dedicated
+              operator: Equal
+              value: logging
+              effect: NoSchedule

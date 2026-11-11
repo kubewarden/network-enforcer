@@ -2,6 +2,62 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
+        "agent": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "array"
+                },
+                "containerSecurityContext": {
+                    "$ref": "#/$defs/_definitions.json/definitions/io.k8s.api.core.v1.SecurityContext",
+                    "type": "object"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "image": {
+                    "type": "object",
+                    "required": [
+                        "repository",
+                        "tag"
+                    ],
+                    "properties": {
+                        "pullPolicy": {
+                            "type": "string"
+                        },
+                        "registry": {
+                            "type": "string"
+                        },
+                        "repository": {
+                            "type": "string"
+                        },
+                        "tag": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "podSecurityContext": {
+                    "$ref": "#/$defs/_definitions.json/definitions/io.k8s.api.core.v1.PodSecurityContext",
+                    "type": "object"
+                },
+                "resources": {
+                    "$ref": "#/$defs/_definitions.json/definitions/io.k8s.api.core.v1.ResourceRequirements",
+                    "type": "object"
+                },
+                "tolerations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/_definitions.json/definitions/io.k8s.api.core.v1.Toleration",
+                        "type": "object",
+                        "properties": {
+                            "operator": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "controller": {
             "type": "object",
             "properties": {

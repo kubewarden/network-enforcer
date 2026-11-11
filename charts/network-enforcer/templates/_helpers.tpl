@@ -351,6 +351,9 @@ Volumes for provider TLS material.
       csi.cert-manager.io/issuer-group: {{ $issuer.group }}
       {{- end }}
       csi.cert-manager.io/dns-names: {{ include "network-enforcer.provider.tls.dnsNames" . }}
+      {{- with (default dict .Values.controller.containerSecurityContext).runAsGroup }}
+      csi.cert-manager.io/fs-group: {{ . | quote }}
+      {{- end }}
 {{- else if and (eq $mode "existingSecret") $secret.name (not $secret.namespace) }}
 - name: provider-tls
   secret:
@@ -409,6 +412,9 @@ Certificate helpers for mTLS (CA issuer and secret share a name).
 {{- end -}}
 {{- define "network-enforcer.caSecretName" -}}
 {{ include "network-enforcer.fullname" . }}-ca
+{{- end -}}
+{{- define "network-enforcer.grpc.certDir" -}}
+/etc/network-enforcer/certs
 {{- end -}}
 
 {{/*

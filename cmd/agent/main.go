@@ -27,6 +27,7 @@ import (
 
 	"github.com/kubewarden/network-enforcer/internal/agentbuffer"
 	"github.com/kubewarden/network-enforcer/internal/tailer"
+	"github.com/kubewarden/network-enforcer/internal/tlsutil"
 )
 
 func main() {
@@ -37,7 +38,18 @@ func main() {
 		"glob for the container log files to tail")
 	poll := flag.Duration("poll-interval", 200*time.Millisecond,
 		"file poll period")
+	grpcTLSEnabled := flag.Bool("grpc-mtls-enabled", true,
+		"enable mutual TLS between the agent server and clients")
+	grpcCertDir := flag.String("grpc-mtls-cert-dir", "",
+		"path to the directory holding the agent certificate, key and CA")
 	flag.Parse()
+
+	// Check the mounted material before the agent serves anything.
+	// ref: https://github.com/kubewarden/network-enforcer/issues/641
+	if err := validateGRPCTLS(*grpcTLSEnabled, *grpcCertDir); err != nil {
+		logger.Error("Invalid gRPC mTLS material", "err", err)
+		os.Exit(1)
+	}
 
 	cfg := tailer.Config{
 		Include: []string{*glob},
@@ -76,4 +88,14 @@ func run(ctx context.Context, cfg tailer.Config, h tailer.Handler, logger *slog.
 	<-ctx.Done()
 	logger.InfoContext(ctx, "Stopping tailer")
 	return t.Stop()
+}
+
+// validateGRPCTLS checks the certificate directory the agent serves with.
+// Disabled mode skips the check and serves in plaintext. Use it only for
+// local development.
+func validateGRPCTLS(enabled bool, certDir string) error {
+	if !enabled {
+		return nil
+	}
+	return tlsutil.ValidateCertDir(certDir)
 }

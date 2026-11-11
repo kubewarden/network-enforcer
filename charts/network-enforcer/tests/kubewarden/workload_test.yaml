@@ -5,6 +5,9 @@ templates:
   # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
   # The documentSelector below keeps the assertions on the Deployment and the DaemonSet.
   - "templates/istio-fluent-bit/configmap.yaml"
+  # The agent DaemonSet renders only when agent.enabled is true. The agent
+  # tests below set it. skipEmptyTemplates keeps the other tests unaffected.
+  - "templates/agent/daemonset.yaml"
 workloads: &workloads
   path: apiVersion
   value: apps/v1
@@ -411,6 +414,80 @@ tests:
             name: OTEL_EXPORTER_OTLP_ENDPOINT
             value: "http://controller-collector:4317"
         template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  # Agent DaemonSet workload-only keys. The agent renders only when enabled.
+  - it: "should render agent.resources on the agent DaemonSet only"
+    documentSelector: *workloads
+    set:
+      agent:
+        enabled: true
+        resources:
+          limits:
+            memory: 4Gi
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].resources.limits.memory"
+          value: 4Gi
+        template: "templates/agent/daemonset.yaml"
+      - equal:
+          path: "spec.template.spec.containers[0].resources.limits.memory"
+          value: 256Mi
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render agent.topologySpreadConstraints on the agent DaemonSet only"
+    documentSelector: *workloads
+    set:
+      agent:
+        enabled: true
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+    asserts:
+      - equal:
+          path: "spec.template.spec.topologySpreadConstraints[0].maxSkew"
+          value: 1
+        template: "templates/agent/daemonset.yaml"
+      - notExists:
+          path: "spec.template.spec.topologySpreadConstraints"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render agent.extraEnvFrom as envFrom on the agent DaemonSet only"
+    documentSelector: *workloads
+    set:
+      agent:
+        enabled: true
+        extraEnvFrom:
+          - secretRef:
+              name: agent-env
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].envFrom"
+          value:
+            - secretRef:
+                name: agent-env
+        template: "templates/agent/daemonset.yaml"
+      - notExists:
+          path: "spec.template.spec.containers[0].envFrom"
+        template: "templates/controller/deployment.yaml"
+
+  - it: "should render agent.image.registry on the agent DaemonSet only"
+    documentSelector: *workloads
+    set:
+      agent:
+        enabled: true
+        image:
+          registry: agent.example.com
+          tag: 3.0.0
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].image"
+          value: "agent.example.com/kubewarden/network-enforcer/agent:3.0.0"
+        template: "templates/agent/daemonset.yaml"
+      - matchRegex:
+          path: "spec.template.spec.containers[0].image"
+          pattern: "^ghcr\\.io/kubewarden/network-enforcer/controller:"
+        template: "templates/controller/deployment.yaml"
 ---
 suite: "Values contract: fluent-bit DaemonSet only for the Istio provider"
 templates:

@@ -1,0 +1,79 @@
+{{- if .Values.agent.enabled }}
+{{- $ctx := dict "root" $ "workload" "agent" "component" "agent" }}
+{{- $a := .Values.agent }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "network-enforcer.fullname" . }}-agent
+  namespace: {{ include "network-enforcer.namespace" . | quote }}
+  {{- include "network-enforcer.workloadLabels" $ctx | nindent 2 }}
+  {{- with include "network-enforcer.workloadAnnotations" $ctx }}{{ . | nindent 2 }}{{ end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: agent
+      {{- include "network-enforcer.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- include "network-enforcer.podLabels" $ctx | nindent 6 }}
+      {{- with include "network-enforcer.podAnnotations" $ctx }}{{ . | nindent 6 }}{{ end }}
+    spec:
+      {{- with include "network-enforcer.priorityClassName" $ctx }}{{ . | nindent 6 }}{{ end }}
+      {{- with include "network-enforcer.imagePullSecrets" $ctx }}{{ . | nindent 6 }}{{ end }}
+      {{- with include "network-enforcer.tolerations" $ctx }}{{ . | nindent 6 }}{{ end }}
+      {{- with include "network-enforcer.nodeSelector" $ctx }}{{ . | nindent 6 }}{{ end }}
+      {{- with include "network-enforcer.affinity" $ctx }}{{ . | nindent 6 }}{{ end }}
+      {{- with include "network-enforcer.topologySpreadConstraints" $ctx }}{{ . | nindent 6 }}{{ end }}
+      {{- with $a.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - --grpc-mtls-cert-dir={{ include "network-enforcer.grpc.certDir" . }}
+        {{- with $a.args }}{{ toYaml . | nindent 8 }}{{ end }}
+        command:
+        - /agent
+        {{- with include "network-enforcer.extraEnv" $ctx }}
+        env:
+        {{- . | nindent 8 }}
+        {{- end }}
+        {{- with include "network-enforcer.extraEnvFrom" $ctx }}{{ . | nindent 8 }}{{ end }}
+        image: '{{ template "system_default_registry" $ctx }}{{ $a.image.repository }}:{{ $a.image.tag }}'
+        imagePullPolicy: {{ include "network-enforcer.imagePullPolicy" $ctx }}
+        name: agent
+        {{- with $a.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with $a.containerSecurityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - name: varlog
+          mountPath: /var/log
+          readOnly: true
+        - name: grpc-certs
+          mountPath: {{ include "network-enforcer.grpc.certDir" . }}
+          readOnly: true
+        {{- with include "network-enforcer.extraVolumeMounts" $ctx }}{{ . | nindent 8 }}{{ end }}
+      volumes:
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: grpc-certs
+        csi:
+          driver: csi.cert-manager.io
+          readOnly: true
+          volumeAttributes:
+            csi.cert-manager.io/issuer-name: {{ include "network-enforcer.caIssuerName" . }}
+            csi.cert-manager.io/issuer-kind: Issuer
+            csi.cert-manager.io/dns-names: ${POD_NAME}.${POD_NAMESPACE}
+            {{- with (default dict $a.containerSecurityContext).runAsGroup }}
+            csi.cert-manager.io/fs-group: {{ . | quote }}
+            {{- end }}
+      {{- with include "network-enforcer.extraVolumes" $ctx }}{{ . | nindent 6 }}{{ end }}
+      terminationGracePeriodSeconds: 10
+{{- end }}
