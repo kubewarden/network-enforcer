@@ -102,11 +102,35 @@ func ServerCredentialsFromPEM(caPEM, certPEM, keyPEM []byte) (credentials.Transp
 	return credentials.NewTLS(tlsConfig), nil
 }
 
+// ServerOption configures [ServerCredentials].
+type ServerOption func(*serverOptions)
+
+type serverOptions struct {
+	expectedClientSAN string
+}
+
+// WithExpectedClientSAN pins the identity the client certificate must carry.
+// The client leaf must present san as a DNS SAN; a certificate that only
+// chains to the CA is rejected. An empty san keeps chain-only verification.
+//
+// RFC 0006 requires the agent to verify the controller's identity, not only
+// that its certificate chains to the CA.
+func WithExpectedClientSAN(san string) ServerOption {
+	return func(o *serverOptions) {
+		o.expectedClientSAN = san
+	}
+}
+
 // ServerCredentials creates gRPC transport credentials for server-side mTLS.
 // The server certificate, key, and CA under certDir are re-read on every
 // handshake so cert-manager CSI (and Secret) rotation works without restarting
 // the process.
-func ServerCredentials(certDir string) (credentials.TransportCredentials, error) {
+func ServerCredentials(certDir string, opts ...ServerOption) (credentials.TransportCredentials, error) {
+	var cfg serverOptions
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	if err := ValidateCertDir(certDir); err != nil {
 		return nil, fmt.Errorf("invalid cert dir: %w", err)
 	}
@@ -118,6 +142,8 @@ func ServerCredentials(certDir string) (credentials.TransportCredentials, error)
 	if _, err := LoadCACertPool(caPath); err != nil {
 		return nil, err
 	}
+
+	verifyClientSAN := clientSANVerifier(cfg.expectedClientSAN)
 
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS13,
@@ -132,14 +158,36 @@ func ServerCredentials(certDir string) (credentials.TransportCredentials, error)
 				return nil, err
 			}
 			return &tls.Config{
-				MinVersion:   tls.VersionTLS13,
-				ClientAuth:   tls.RequireAndVerifyClientCert,
-				ClientCAs:    caPool,
-				Certificates: []tls.Certificate{serverCert},
+				MinVersion:       tls.VersionTLS13,
+				ClientAuth:       tls.RequireAndVerifyClientCert,
+				ClientCAs:        caPool,
+				Certificates:     []tls.Certificate{serverCert},
+				VerifyConnection: verifyClientSAN,
 			}, nil
 		},
 	}
 	return credentials.NewTLS(tlsConfig), nil
+}
+
+// clientSANVerifier returns a [tls.Config.VerifyConnection] callback that checks
+// the client leaf carries expectedSAN as a DNS SAN. It returns nil when
+// expectedSAN is empty, which keeps chain-only verification. VerifyConnection
+// also runs on resumed sessions, so the identity check is not bypassed.
+// See RFC 0006.
+func clientSANVerifier(expectedSAN string) func(tls.ConnectionState) error {
+	if expectedSAN == "" {
+		return nil
+	}
+	return func(state tls.ConnectionState) error {
+		if len(state.VerifiedChains) == 0 || len(state.VerifiedChains[0]) == 0 {
+			return errors.New("no verified client certificate chain")
+		}
+		leaf := state.VerifiedChains[0][0]
+		if err := leaf.VerifyHostname(expectedSAN); err != nil {
+			return fmt.Errorf("client certificate identity %q not allowed: %w", expectedSAN, err)
+		}
+		return nil
+	}
 }
 
 // ClientCredentialsFromPEM creates gRPC transport credentials for client-side

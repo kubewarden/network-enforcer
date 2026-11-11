@@ -19,13 +19,16 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/kubewarden/network-enforcer/internal/agentbuffer"
+	"github.com/kubewarden/network-enforcer/internal/grpcexporter"
 	"github.com/kubewarden/network-enforcer/internal/tailer"
 	"github.com/kubewarden/network-enforcer/internal/tlsutil"
 )
@@ -38,10 +41,14 @@ func main() {
 		"glob for the container log files to tail")
 	poll := flag.Duration("poll-interval", 200*time.Millisecond,
 		"file poll period")
+	grpcPort := flag.Int("grpc-port", 50052,
+		"TCP port the agent gRPC server listens on")
 	grpcTLSEnabled := flag.Bool("grpc-mtls-enabled", true,
 		"enable mutual TLS between the agent server and clients")
 	grpcCertDir := flag.String("grpc-mtls-cert-dir", "",
 		"path to the directory holding the agent certificate, key and CA")
+	grpcExpectedClientSAN := flag.String("grpc-expected-client-san", "",
+		"DNS SAN the controller client must present; empty keeps chain-only verification")
 	flag.Parse()
 
 	// Check the mounted material before the agent serves anything.
@@ -60,12 +67,31 @@ func main() {
 		PollInterval: *poll,
 	}
 
+	buffer := agentbuffer.New()
+	server, err := grpcexporter.NewServer(grpcexporter.ServerConfig{
+		Port:              *grpcPort,
+		MTLSEnabled:       *grpcTLSEnabled,
+		CertDirPath:       *grpcCertDir,
+		ExpectedClientSAN: *grpcExpectedClientSAN,
+	}, buffer, logger)
+	if err != nil {
+		logger.Error("Failed to build agent gRPC server", "err", err)
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+
+	listenConfig := net.ListenConfig{}
+	listener, err := listenConfig.Listen(ctx, "tcp", fmt.Sprintf(":%d", *grpcPort))
+	if err != nil {
+		logger.Error("Failed to listen for the agent gRPC server", "err", err, "port", *grpcPort)
+		os.Exit(1)
+	}
 
 	logger.Info("Starting agent")
 	exitCode := 0
-	if err := runAgent(ctx, cfg, agentbuffer.New(), logger); err != nil {
-		logger.Error("Agent failed", "err", err)
+	if runErr := runAgent(ctx, cfg, buffer, server, listener, logger); runErr != nil {
+		logger.Error("Agent failed", "err", runErr)
 		exitCode = 1
 	}
 	logger.Info("Stopped agent")

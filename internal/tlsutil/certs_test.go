@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/credentials"
 )
 
 func TestServerCredentialsReloadsMaterialOnHandshake(t *testing.T) {
@@ -62,6 +63,73 @@ func TestServerCredentialsReloadsMaterialOnHandshake(t *testing.T) {
 	require.NoError(t, clientHandshake(t, addr, clientDir),
 		"handshake after rotating mounted certs should succeed without restarting the server")
 	require.NoError(t, <-handshakeCh)
+}
+
+func TestServerCredentialsPinsClientSAN(t *testing.T) {
+	t.Parallel()
+
+	const expected = "network-enforcer-controller"
+	cases := []struct {
+		name        string
+		clientSAN   []string
+		expectedSAN string
+		wantErr     bool
+	}{
+		{name: "matching SAN accepted", clientSAN: []string{expected}, expectedSAN: expected, wantErr: false},
+		{name: "wrong SAN rejected", clientSAN: []string{"someone-else"}, expectedSAN: expected, wantErr: true},
+		{name: "missing SAN rejected", clientSAN: nil, expectedSAN: expected, wantErr: true},
+		{name: "empty expected stays chain-only", clientSAN: nil, expectedSAN: "", wantErr: false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			serverDir := t.TempDir()
+			clientDir := t.TempDir()
+
+			ca, server, _ := generateMTLSMaterial(t, 1)
+			client := issueLeaf(t, ca, 999,
+				[]x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, c.clientSAN, nil)
+			writeCertDir(t, serverDir, ca.caPEM, server.certPEM, server.keyPEM)
+			writeCertDir(t, clientDir, ca.caPEM, client.certPEM, client.keyPEM)
+
+			creds, err := ServerCredentials(serverDir, WithExpectedClientSAN(c.expectedSAN))
+			require.NoError(t, err)
+
+			serverErr := serverSideHandshake(t, creds, clientDir)
+			if c.wantErr {
+				require.Error(t, serverErr)
+				return
+			}
+			require.NoError(t, serverErr)
+		})
+	}
+}
+
+// serverSideHandshake runs one mTLS handshake and returns the server-side
+// handshake error. The client dials with the material under clientDir.
+func serverSideHandshake(t *testing.T, creds credentials.TransportCredentials, clientDir string) error {
+	t.Helper()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = lis.Close() })
+
+	handshakeCh := make(chan error, 1)
+	go func() {
+		conn, acceptErr := lis.Accept()
+		if acceptErr != nil {
+			handshakeCh <- acceptErr
+			return
+		}
+		_, _, hsErr := creds.ServerHandshake(conn)
+		_ = conn.Close()
+		handshakeCh <- hsErr
+	}()
+
+	_ = clientHandshake(t, lis.Addr().String(), clientDir)
+	return <-handshakeCh
 }
 
 func clientHandshake(t *testing.T, addr, clientDir string) error {
