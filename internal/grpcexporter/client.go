@@ -52,7 +52,11 @@ func NewAgentClientFactory(conf AgentFactoryConfig) (*AgentClientFactory, error)
 		timeout = defaultScrapeTimeout
 	}
 	if conf.MTLSEnabled {
-		if err := tlsutil.ValidateCertDir(conf.CertDirPath); err != nil {
+		// Build the credentials once so the CA certificate is validated too,
+		// not only the key pair. A bad mount then fails fast at startup. The
+		// server name is irrelevant to loading the material, so it is empty
+		// here; the real agent name is supplied on each dial.
+		if _, err := tlsutil.ClientCredentials(conf.CertDirPath, ""); err != nil {
 			return nil, fmt.Errorf("invalid agent client cert dir: %w", err)
 		}
 	}
