@@ -59,6 +59,27 @@ tests:
                 csi.cert-manager.io/fs-group: "2000"
           count: 1
 
+  - it: "renders without fs-group when containerSecurityContext is null"
+    # A null containerSecurityContext removes the chart defaults so the Pod
+    # inherits image or platform security settings. The template must not
+    # dereference the missing map.
+    set:
+      controller:
+        containerSecurityContext: null
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: webhook-certs
+            csi:
+              driver: csi.cert-manager.io
+              readOnly: true
+              volumeAttributes:
+                csi.cert-manager.io/issuer-name: my-release-network-enforcer-ca
+                csi.cert-manager.io/issuer-kind: Issuer
+                csi.cert-manager.io/dns-names: my-release-network-enforcer-controller-webhook.my-namespace.svc
+          count: 1
+
   - it: "uses custom log level"
     set:
       controller:

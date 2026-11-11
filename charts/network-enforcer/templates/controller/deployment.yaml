@@ -114,7 +114,7 @@ spec:
             csi.cert-manager.io/issuer-name: {{ include "network-enforcer.caIssuerName" . }}
             csi.cert-manager.io/issuer-kind: Issuer
             csi.cert-manager.io/dns-names: {{ include "network-enforcer.webhookServiceName" . }}.{{ include "network-enforcer.namespace" . }}.svc
-            {{- with $w.containerSecurityContext.runAsGroup }}
+            {{- with (default dict $w.containerSecurityContext).runAsGroup }}
             csi.cert-manager.io/fs-group: {{ . | quote }}
             {{- end }}
       {{- if .Values.agent.enabled }}
@@ -126,7 +126,7 @@ spec:
             csi.cert-manager.io/issuer-name: {{ include "network-enforcer.caIssuerName" . }}
             csi.cert-manager.io/issuer-kind: Issuer
             csi.cert-manager.io/dns-names: {{ include "network-enforcer.fullname" . }}-controller
-            {{- with $w.containerSecurityContext.runAsGroup }}
+            {{- with (default dict $w.containerSecurityContext).runAsGroup }}
             csi.cert-manager.io/fs-group: {{ . | quote }}
             {{- end }}
       {{- end }}

@@ -351,7 +351,7 @@ Volumes for provider TLS material.
       csi.cert-manager.io/issuer-group: {{ $issuer.group }}
       {{- end }}
       csi.cert-manager.io/dns-names: {{ include "network-enforcer.provider.tls.dnsNames" . }}
-      {{- with .Values.controller.containerSecurityContext.runAsGroup }}
+      {{- with (default dict .Values.controller.containerSecurityContext).runAsGroup }}
       csi.cert-manager.io/fs-group: {{ . | quote }}
       {{- end }}
 {{- else if and (eq $mode "existingSecret") $secret.name (not $secret.namespace) }}
