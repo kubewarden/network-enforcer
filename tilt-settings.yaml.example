@@ -10,3 +10,6 @@ clusters:
 controller:
   image: controller
   providerName: "istio"
+
+agent:
+  image: agent
