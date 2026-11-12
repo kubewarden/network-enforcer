@@ -89,6 +89,35 @@ func TestServerServesPlaintextWhenMTLSDisabled(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestServerShutdownNotBlockedByPendingConnection(t *testing.T) {
+	t.Parallel()
+
+	srv, err := NewServer(ServerConfig{MTLSEnabled: false}, stubService{}, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ctx, lis) }()
+
+	// Open a raw connection and send nothing. The connection stays in the
+	// handshake, so a stop that waits on it would block past the budget.
+	raw, err := net.Dial("tcp", lis.Addr().String())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = raw.Close() })
+
+	cancel()
+
+	select {
+	case err = <-serveErr:
+		require.NoError(t, err)
+	case <-time.After(gracefulStopTimeout + 5*time.Second):
+		t.Fatal("Serve did not return within the shutdown budget")
+	}
+}
+
 func startTestServer(t *testing.T, conf ServerConfig) string {
 	t.Helper()
 

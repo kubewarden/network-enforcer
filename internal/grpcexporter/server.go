@@ -106,8 +106,15 @@ func (s *Server) stop(ctx context.Context, grpcServer *grpc.Server) {
 }
 
 func (s *Server) serverOptions() ([]grpc.ServerOption, error) {
+	// ConnectionTimeout bounds how long a new connection can stay in the
+	// handshake or HTTP/2 preface. Both GracefulStop and Stop wait for these
+	// connections. Without a bound, a client that opens a socket and sends
+	// nothing keeps shutdown blocked past the pod termination grace period. The
+	// bound applies to the TLS handshake and the plaintext preface.
+	opts := []grpc.ServerOption{grpc.ConnectionTimeout(gracefulStopTimeout)}
+
 	if !s.conf.MTLSEnabled {
-		return nil, nil
+		return opts, nil
 	}
 	creds, err := tlsutil.ServerCredentials(
 		s.conf.CertDirPath,
@@ -116,5 +123,5 @@ func (s *Server) serverOptions() ([]grpc.ServerOption, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load agent server credentials: %w", err)
 	}
-	return []grpc.ServerOption{grpc.Creds(creds)}, nil
+	return append(opts, grpc.Creds(creds)), nil
 }
