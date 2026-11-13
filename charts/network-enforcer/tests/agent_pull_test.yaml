@@ -52,6 +52,10 @@ tests:
           path: spec.template.spec.containers[0].args
           content: --grpc-port=50123
         template: templates/agent/daemonset.yaml
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --grpc-mtls-enabled=true
+        template: templates/agent/daemonset.yaml
 
   - it: honors release, name and namespace overrides in the discovery selector
     template: templates/controller/deployment.yaml

@@ -262,7 +262,7 @@ agent:
     registry: ghcr.io
     # Pull policy for the image. If it is empty, the chart uses common.imagePullPolicy, then global.imagePullPolicy.
     pullPolicy: ""
-  # Extra command-line arguments for the agent.
+  # Extra agent arguments, excluding the chart-managed --grpc-mtls-enabled flag.
   args: []
   # To make the Pods "Guaranteed" (evicted last under node pressure), kubelet requires
   # requests and limits are specified for all the containers and they are equal.

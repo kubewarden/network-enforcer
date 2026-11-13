@@ -1,6 +1,11 @@
 {{- if .Values.agent.enabled }}
 {{- $ctx := dict "root" $ "workload" "agent" "component" "agent" }}
 {{- $a := .Values.agent }}
+{{- range $a.args }}
+{{- if regexMatch "^-{1,2}grpc-mtls-enabled(=|$)" . }}
+{{- fail "agent.args must not override --grpc-mtls-enabled; the chart requires mTLS between the controller and agent" }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -32,6 +37,7 @@ spec:
       containers:
       - args:
         - --grpc-port={{ $a.grpcPort }}
+        - --grpc-mtls-enabled=true
         - --grpc-mtls-cert-dir={{ include "network-enforcer.grpc.certDir" . }}
         - --grpc-expected-client-san={{ include "network-enforcer.fullname" . }}-controller
         {{- with $a.args }}{{ toYaml . | nindent 8 }}{{ end }}

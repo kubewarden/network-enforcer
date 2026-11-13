@@ -129,17 +129,49 @@ tests:
       agent:
         enabled: true
         args:
-          - --grpc-mtls-enabled=false
           - --log-level=debug
     asserts:
       - equal:
           path: spec.template.spec.containers[0].args
           value:
             - --grpc-port=50052
+            - --grpc-mtls-enabled=true
             - --grpc-mtls-cert-dir=/etc/network-enforcer/certs
             - --grpc-expected-client-san=my-release-network-enforcer-controller
-            - --grpc-mtls-enabled=false
             - --log-level=debug
+
+  - it: "rejects disabling mTLS through agent args"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        args:
+          - --grpc-mtls-enabled=false
+    asserts:
+      - failedTemplate:
+          errorMessage: "agent.args must not override --grpc-mtls-enabled; the chart requires mTLS between the controller and agent"
+
+  - it: "rejects the single-dash numeric mTLS override"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        args:
+          - -grpc-mtls-enabled=0
+    asserts:
+      - failedTemplate:
+          errorMessage: "agent.args must not override --grpc-mtls-enabled; the chart requires mTLS between the controller and agent"
+
+  - it: "rejects a bare chart-managed mTLS flag"
+    template: templates/agent/daemonset.yaml
+    set:
+      agent:
+        enabled: true
+        args:
+          - --grpc-mtls-enabled
+    asserts:
+      - failedTemplate:
+          errorMessage: "agent.args must not override --grpc-mtls-enabled; the chart requires mTLS between the controller and agent"
 
   - it: "renders agent extra environment variables under env"
     template: templates/agent/daemonset.yaml
