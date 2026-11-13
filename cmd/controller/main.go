@@ -54,6 +54,7 @@ import (
 	"github.com/kubewarden/network-enforcer/internal/controller"
 	"github.com/kubewarden/network-enforcer/internal/events"
 	"github.com/kubewarden/network-enforcer/internal/flowdumper"
+	"github.com/kubewarden/network-enforcer/internal/grpcexporter"
 	"github.com/kubewarden/network-enforcer/internal/istio"
 	"github.com/kubewarden/network-enforcer/internal/ringbuf"
 	"github.com/kubewarden/network-enforcer/internal/scraper"
@@ -124,6 +125,14 @@ func (p *providerConfig) certSourceConfig() certsource.Config {
 	}
 }
 
+// agentConfig holds the controller client TLS flags for the agent hop.
+// The agent is the gRPC server; the controller dials it. The client
+// certificate is mounted as a directory. See RFC 0006 and ADR 0001.
+type agentConfig struct {
+	mtlsEnabled bool
+	certDirPath string
+}
+
 type config struct {
 	metrics              metricsConf
 	enableLeaderElection bool
@@ -132,6 +141,7 @@ type config struct {
 	enableHTTP2          bool
 	logLevel             string
 	provider             providerConfig
+	agent                agentConfig
 	flowDumper           flowdumper.Config
 	otel                 otelConf
 	tlsOpts              []func(*tls.Config)
@@ -170,6 +180,20 @@ func newProviderCertSource(mgr manager.Manager, conf *config) (certsource.Source
 		return nil, fmt.Errorf("unable to create provider TLS cert source: %w", err)
 	}
 	return source, nil
+}
+
+// newAgentClientFactory builds the controller client for the agent hop.
+// The client certificate is loaded from a mounted directory and reloaded on
+// each dial for rotation. The factory is not yet wired into the reconciler.
+func newAgentClientFactory(conf *config) (*grpcexporter.AgentClientFactory, error) {
+	factory, err := grpcexporter.NewAgentClientFactory(grpcexporter.AgentFactoryConfig{
+		MTLSEnabled: conf.agent.mtlsEnabled,
+		CertDirPath: conf.agent.certDirPath,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to create agent client factory: %w", err)
+	}
+	return factory, nil
 }
 
 // validateCalicoTLSMode rejects plaintext; Goldmane requires mTLS.
@@ -377,6 +401,12 @@ func run(logger *slog.Logger, conf *config) error {
 		return fmt.Errorf("unable to set up pod IP indexer: %w", err)
 	}
 
+	// Build the agent-hop client now so a bad cert dir fails fast.
+	// Wiring it into the scrape loop is deferred. See RFC 0006.
+	if _, err = newAgentClientFactory(conf); err != nil {
+		return fmt.Errorf("unable to set up agent client factory: %w", err)
+	}
+
 	// Violations are correlated to their WNP by (targetRef, direction).
 	if err = controller.SetupWNPIndexer(ctx, mgr); err != nil {
 		return fmt.Errorf("unable to set up WorkloadNetworkPolicy target indexer: %w", err)
@@ -569,6 +599,11 @@ func main() {
 	flag.StringVar(&conf.provider.tlsServerName, "provider-tls-server-name", "",
 		"Optional TLS server name verified against the provider's server certificate. "+
 			"Defaults to the host part of --provider-endpoint.")
+	flag.BoolVar(&conf.agent.mtlsEnabled, "agent-grpc-mtls-enabled", false,
+		"Enable mutual TLS when the controller dials the agent gRPC server.")
+	flag.StringVar(&conf.agent.certDirPath, "agent-grpc-mtls-cert-dir", "",
+		"Directory holding tls.crt, tls.key, and ca.crt for the agent hop client. "+
+			"Required when --agent-grpc-mtls-enabled is set.")
 	flag.DurationVar(&conf.wnpStatusSyncConfig.UpdateInterval,
 		"wnp-status-reconciler-update-interval",
 		defaultWnpStatusUpdateInterval,

@@ -188,3 +188,42 @@ func TestNewProviderCertSource(t *testing.T) {
 		})
 	}
 }
+
+func TestNewAgentClientFactory(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		conf    *config
+		wantErr bool
+	}{
+		{
+			name: "mTLS disabled returns plaintext factory",
+			conf: &config{
+				agent: agentConfig{mtlsEnabled: false},
+			},
+		},
+		{
+			name: "mTLS enabled rejects a missing cert dir",
+			conf: &config{
+				agent: agentConfig{mtlsEnabled: true, certDirPath: "/does/not/exist"},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			factory, err := newAgentClientFactory(tc.conf)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Nil(t, factory)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, factory)
+		})
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,8 +12,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/kubewarden/network-enforcer/internal/agentbuffer"
+	"github.com/kubewarden/network-enforcer/internal/grpcexporter"
 	"github.com/kubewarden/network-enforcer/internal/tailer"
 	agentv1 "github.com/kubewarden/network-enforcer/proto/agent/v1"
 )
@@ -22,7 +26,7 @@ func startTestAgent(t *testing.T, cfg tailer.Config, buffer *agentbuffer.Buffer)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	logger := slog.New(slog.DiscardHandler)
-	go func() { done <- runAgent(ctx, cfg, buffer, logger) }()
+	go func() { done <- runAgent(ctx, cfg, buffer, nil, nil, logger) }()
 	var once sync.Once
 	stop := func() {
 		t.Helper()
@@ -99,6 +103,51 @@ func TestRunAgentTailsOnlyNewLinesWithoutPersistentState(t *testing.T) {
 	response, err = restarted.ScrapeEvents(t.Context(), nil)
 	require.NoError(t, err)
 	require.Empty(t, response.GetEvents(), "restart must not replay old events")
+}
+
+func TestRunAgentServesBufferedEventsOverGRPC(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "0.log")
+	require.NoError(t, os.WriteFile(path, nil, 0o600))
+	cfg := tailer.Config{
+		Include: []string{filepath.Join(root, "*.log")}, PollInterval: 15 * time.Millisecond,
+	}
+	buffer := agentbuffer.New()
+	logger := slog.New(slog.DiscardHandler)
+
+	srv, err := grpcexporter.NewServer(grpcexporter.ServerConfig{MTLSEnabled: false}, buffer, logger)
+	require.NoError(t, err)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- runAgent(ctx, cfg, buffer, srv, lis, logger) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case runErr := <-done:
+			require.NoError(t, runErr)
+		case <-time.After(3 * time.Second):
+			t.Fatal("agent did not stop after cancellation")
+		}
+	})
+
+	waitForAgentInput(t, path, buffer)
+	appendAgentLine(t, path, `{"message":"deny policy match","policy":"new","proxy":{"wl":"ns/pod"}}`)
+	require.Eventually(t, func() bool {
+		status, statusErr := buffer.GetStatus(t.Context(), nil)
+		return statusErr == nil && status.GetBufferedEvents() == 1
+	}, 3*time.Second, 15*time.Millisecond)
+
+	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	resp, err := agentv1.NewAgentServiceClient(conn).ScrapeEvents(ctx, &agentv1.ScrapeEventsRequest{})
+	require.NoError(t, err)
+	require.Len(t, resp.GetEvents(), 1)
+	require.Equal(t, "new", resp.GetEvents()[0].GetPolicy().GetPolicy())
 }
 
 func TestRunAgentObservesMatchingFiles(t *testing.T) {
