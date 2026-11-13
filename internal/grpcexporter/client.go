@@ -2,6 +2,7 @@ package grpcexporter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -9,12 +10,17 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/kubewarden/network-enforcer/internal/certsource"
 	"github.com/kubewarden/network-enforcer/internal/tlsutil"
 	agentv1 "github.com/kubewarden/network-enforcer/proto/agent/v1"
 )
 
-// defaultScrapeTimeout bounds a single scrape RPC.
-const defaultScrapeTimeout = 30 * time.Second
+const (
+	// defaultScrapeTimeout bounds a single scrape RPC.
+	defaultScrapeTimeout = 30 * time.Second
+	// DefaultAgentMaxRecvMsgSize bounds one drained response, not total process memory.
+	DefaultAgentMaxRecvMsgSize = 16 * 1024 * 1024
+)
 
 // AgentClientAPI is the controller's view of one agent. It allows mocking the
 // client in tests.
@@ -34,14 +40,17 @@ type AgentFactoryConfig struct {
 	CertDirPath string
 	// Timeout bounds a single scrape RPC. Zero uses [defaultScrapeTimeout].
 	Timeout time.Duration
+	// MaxRecvMsgSize limits each response. Zero uses [DefaultAgentMaxRecvMsgSize].
+	MaxRecvMsgSize int
 }
 
 // AgentClientFactory creates agent clients. It rebuilds transport credentials
 // on every dial so the controller picks up certificate rotation.
 type AgentClientFactory struct {
-	mtlsEnabled bool
-	certDirPath string
-	timeout     time.Duration
+	mtlsEnabled    bool
+	timeout        time.Duration
+	maxRecvMsgSize int
+	source         *certsource.DirSource
 }
 
 // NewAgentClientFactory returns a factory for conf. It checks the cert
@@ -51,31 +60,54 @@ func NewAgentClientFactory(conf AgentFactoryConfig) (*AgentClientFactory, error)
 	if timeout == 0 {
 		timeout = defaultScrapeTimeout
 	}
+	maxRecvMsgSize := conf.MaxRecvMsgSize
+	if maxRecvMsgSize == 0 {
+		maxRecvMsgSize = DefaultAgentMaxRecvMsgSize
+	}
+	if maxRecvMsgSize < 0 {
+		return nil, errors.New("agent gRPC maximum receive message size must be positive")
+	}
+	var source *certsource.DirSource
 	if conf.MTLSEnabled {
-		// Build the credentials once so the CA certificate is validated too,
-		// not only the key pair. A bad mount then fails fast at startup. The
-		// server name is irrelevant to loading the material, so it is empty
-		// here; the real agent name is supplied on each dial.
-		if _, err := tlsutil.ClientCredentials(conf.CertDirPath, ""); err != nil {
+		var err error
+		source, err = certsource.NewDirSource(conf.CertDirPath)
+		if err != nil {
+			return nil, fmt.Errorf("invalid agent client cert dir: %w", err)
+		}
+		// Validate the real certificate, key and CA at startup. Dial reloads
+		// the directory so CSI rotations take effect on the next poll.
+		caPEM, certPEM, keyPEM, err := source.Get(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("invalid agent client cert dir: %w", err)
+		}
+		if _, err = tlsutil.ClientCredentialsFromPEM(caPEM, certPEM, keyPEM, ""); err != nil {
 			return nil, fmt.Errorf("invalid agent client cert dir: %w", err)
 		}
 	}
 	return &AgentClientFactory{
-		mtlsEnabled: conf.MTLSEnabled,
-		certDirPath: conf.CertDirPath,
-		timeout:     timeout,
+		mtlsEnabled:    conf.MTLSEnabled,
+		timeout:        timeout,
+		maxRecvMsgSize: maxRecvMsgSize,
+		source:         source,
 	}, nil
 }
 
-// Dial connects to the agent at endpoint. serverName is the agent's expected
-// TLS identity, used for SNI and certificate hostname verification.
-func (f *AgentClientFactory) Dial(_ context.Context, endpoint, serverName string) (*AgentClient, error) {
-	creds, err := f.connCredentials(serverName)
+// Dial connects to the agent at endpoint. authority is the expected agent
+// identity and is used by gRPC for TLS verification and HTTP/2 authority.
+func (f *AgentClientFactory) Dial(ctx context.Context, endpoint, authority string) (*AgentClient, error) {
+	creds, err := f.connCredentials(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
+	opts := []grpc.DialOption{
+		grpc.WithTransportCredentials(creds),
+		grpc.WithAuthority(authority),
+	}
+	if f.maxRecvMsgSize > 0 {
+		opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(f.maxRecvMsgSize)))
+	}
+	conn, err := grpc.NewClient(endpoint, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent client for %s: %w", endpoint, err)
 	}
@@ -87,12 +119,17 @@ func (f *AgentClientFactory) Dial(_ context.Context, endpoint, serverName string
 }
 
 // connCredentials reloads the certificate directory on every dial so the
-// controller picks up certificate rotation.
-func (f *AgentClientFactory) connCredentials(serverName string) (credentials.TransportCredentials, error) {
+// controller picks up certificate rotation. The server name is intentionally
+// blank; Dial supplies the Pod DNS identity through grpc.WithAuthority.
+func (f *AgentClientFactory) connCredentials(ctx context.Context) (credentials.TransportCredentials, error) {
 	if !f.mtlsEnabled {
 		return insecure.NewCredentials(), nil
 	}
-	return tlsutil.ClientCredentials(f.certDirPath, serverName)
+	caPEM, certPEM, keyPEM, err := f.source.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return tlsutil.ClientCredentialsFromPEM(caPEM, certPEM, keyPEM, "")
 }
 
 // AgentClient scrapes one agent over gRPC.

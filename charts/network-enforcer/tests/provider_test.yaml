@@ -8,7 +8,7 @@ release:
   name: my-release
   namespace: my-namespace
 tests:
-  - it: "uses istio default endpoint when empty"
+  - it: "renders Istio agent discovery settings and ignores the legacy endpoint"
     set:
       controller:
         provider:
@@ -16,24 +16,29 @@ tests:
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
+          content: --agent-namespace=my-namespace
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-port=50052
+      - notContains:
+          path: spec.template.spec.containers[0].args
           content: --provider-endpoint=4317
-      - equal:
-          path: spec.template.spec.containers[0].ports[0].containerPort
-          value: 4317
+      - notExists:
+          path: spec.template.spec.containers[0].ports
 
-  - it: "uses istio custom endpoint override"
+  - it: "does not pass the custom legacy Istio endpoint to the controller"
     set:
       controller:
         provider:
           istio:
             endpoint: 5555
     asserts:
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --provider-endpoint=5555
-      - equal:
-          path: spec.template.spec.containers[0].ports[0].containerPort
-          value: 5555
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-namespace=my-namespace
 
   - it: "uses cilium default endpoint when empty"
     set:
