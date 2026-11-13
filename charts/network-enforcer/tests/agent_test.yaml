@@ -135,6 +135,7 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].args
           value:
+            - --grpc-port=50052
             - --grpc-mtls-cert-dir=/etc/network-enforcer/certs
             - --grpc-expected-client-san=my-release-network-enforcer-controller
             - --grpc-mtls-enabled=false

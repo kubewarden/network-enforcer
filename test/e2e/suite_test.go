@@ -87,10 +87,14 @@ func TestMain(m *testing.M) {
 
 	// Cluster creation + image loading — skipped when reusing an existing cluster.
 	if !testSuiteConf.useExistingCluster {
-		setupFuncs = append([]env.Func{
+		imageLoads := []env.Func{
 			envfuncs.CreateClusterWithConfig(kind.NewProvider(), clusterName, testSuiteConf.kindConfigPath),
 			envfuncs.LoadImageToCluster(clusterName, testSuiteConf.controllerImage),
-		}, setupFuncs...)
+		}
+		if testSuiteConf.IsIstioProvider() {
+			imageLoads = append(imageLoads, envfuncs.LoadImageToCluster(clusterName, testSuiteConf.agentImage))
+		}
+		setupFuncs = append(imageLoads, setupFuncs...)
 	}
 
 	// Optional dependencies, controlled by E2E_DEPENDENCIES.
@@ -181,6 +185,18 @@ func netEnforcerHelmOpts(testCfg suiteConfig) []helm.Option {
 	if testCfg.HasE2EDependency("cert-manager") && testCfg.IsIstioProvider() {
 		helmOpts = append(helmOpts, helm.WithArgs("--set", "controller.provider.istio.tls.mode=issuer"))
 	}
+	if testCfg.IsIstioProvider() {
+		agentRepo, agentTag := parseImage(testCfg.agentImage)
+		helmOpts = append(helmOpts,
+			helm.WithArgs("--set", "agent.enabled=true"),
+			helm.WithArgs("--set", "agent.image.registry="),
+			helm.WithArgs("--set", fmt.Sprintf("agent.image.repository=%s", agentRepo)),
+			helm.WithArgs("--set", fmt.Sprintf("agent.image.tag=%s", agentTag)),
+			// Reading ztunnel logs on Kind requires the agent to run as root.
+			helm.WithArgs("--set", "agent.podSecurityContext.runAsNonRoot=false"),
+			helm.WithArgs("--set", "agent.containerSecurityContext.runAsUser=0"),
+		)
+	}
 	return helmOpts
 }
 
@@ -214,18 +230,16 @@ func waitForNetEnforcerReady(
 	}
 
 	if testCfg.IsIstioProvider() {
-		// the istio-fluent-bit DaemonSet tails ztunnel access logs and forwards
-		// them via OTLP to the controller's istio scraper (the learning source).
-		logger.InfoContext(ctx, "⏲️ waiting for istio fluent-bit")
+		logger.InfoContext(ctx, "⏲️ waiting for Istio agent")
 		if err := wait.For(
 			conditions.New(r).DaemonSetReady(
 				&appsv1.DaemonSet{
-					Name:      "network-enforcer-istio-fluent-bit",
+					Name:      testCfg.releaseName + "-agent",
 					Namespace: testCfg.releaseNS,
 				}),
 			wait.WithTimeout(defaultOperationTimeout),
 		); err != nil {
-			return fmt.Errorf("wait istio fluent-bit daemonset ready: %w", err)
+			return fmt.Errorf("wait Istio agent daemonset ready: %w", err)
 		}
 	}
 	return nil

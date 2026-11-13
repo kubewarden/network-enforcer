@@ -8,21 +8,22 @@ release:
   name: my-release
   namespace: my-namespace
 tests:
-  - it: "defaults to issuer for istio"
+  - it: "does not pass legacy Istio TLS settings to the controller"
     set:
       controller:
         provider:
           name: istio
     asserts:
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --provider-tls-mode=issuer
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --provider-tls-cert-dir=/etc/provider/certs
       - notContains:
-          path: spec.template.spec.containers[0].args
-          content: --provider-tls-server-name=ui.hubble-relay.cilium.io
+          path: spec.template.spec.volumes
+          content:
+            name: provider-tls
 
   - it: "defaults calico to Goldmane's own key pair in calico-system"
     set:
@@ -163,7 +164,7 @@ tests:
       - failedTemplate:
           errorMessage: controller.provider.cilium.tls.serverName is not accepted when controller.provider.cilium.tls.mode=insecure
 
-  - it: "mounts CSI certs for Istio issuer mode with the chart CA and istio-otlp DNS names"
+  - it: "ignores legacy Istio issuer TLS settings on the controller"
     set:
       controller:
         provider:
@@ -171,33 +172,18 @@ tests:
             tls:
               mode: issuer
     asserts:
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --provider-tls-mode=issuer
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --provider-tls-cert-dir=/etc/provider/certs
-      - contains:
-          path: spec.template.spec.containers[0].volumeMounts
-          content:
-            name: provider-tls
-            mountPath: /etc/provider/certs
-            readOnly: true
-      - contains:
+      - notContains:
           path: spec.template.spec.volumes
           content:
             name: provider-tls
-            csi:
-              driver: csi.cert-manager.io
-              readOnly: true
-              volumeAttributes:
-                csi.cert-manager.io/issuer-name: my-release-network-enforcer-ca
-                csi.cert-manager.io/issuer-kind: Issuer
-                csi.cert-manager.io/issuer-group: cert-manager.io
-                csi.cert-manager.io/dns-names: my-release-network-enforcer-istio-otlp,my-release-network-enforcer-istio-otlp.my-namespace,my-release-network-enforcer-istio-otlp.my-namespace.svc,my-release-network-enforcer-istio-otlp.my-namespace.svc.cluster.local
-                csi.cert-manager.io/fs-group: "65532"
 
-  - it: "mounts CSI certs for issuer mode with a custom issuer"
+  - it: "does not use a custom legacy Istio provider issuer for the controller"
     set:
       controller:
         provider:
@@ -207,22 +193,16 @@ tests:
               issuerRef:
                 name: my-issuer
     asserts:
-      - contains:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-mode=issuer
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --provider-tls-cert-dir=/etc/provider/certs
-      - contains:
+      - notContains:
           path: spec.template.spec.volumes
           content:
             name: provider-tls
-            csi:
-              driver: csi.cert-manager.io
-              readOnly: true
-              volumeAttributes:
-                csi.cert-manager.io/issuer-name: my-issuer
-                csi.cert-manager.io/issuer-kind: Issuer
-                csi.cert-manager.io/issuer-group: cert-manager.io
-                csi.cert-manager.io/dns-names: my-release-network-enforcer-istio-otlp,my-release-network-enforcer-istio-otlp.my-namespace,my-release-network-enforcer-istio-otlp.my-namespace.svc,my-release-network-enforcer-istio-otlp.my-namespace.svc.cluster.local
-                csi.cert-manager.io/fs-group: "65532"
 
   - it: "keeps controller-manager DNS names for a provider without dedicated names"
     set:
@@ -249,7 +229,7 @@ tests:
                 csi.cert-manager.io/dns-names: my-release-network-enforcer-controller-manager
                 csi.cert-manager.io/fs-group: "65532"
 
-  - it: "mounts a same-namespace existingSecret"
+  - it: "does not mount an Istio legacy provider Secret on the controller"
     set:
       controller:
         provider:
@@ -259,25 +239,32 @@ tests:
               existingSecret:
                 name: my-provider-certs
     asserts:
-      - contains:
+      - notContains:
           path: spec.template.spec.volumes
           content:
             name: provider-tls
-            secret:
-              secretName: my-provider-certs
 
-  - it: "fails existingSecret mode without a Secret name"
+  - it: "does not pass the ignored Istio Secret identity to the controller"
     set:
       controller:
         provider:
           istio:
             tls:
               mode: existingSecret
+              existingSecret: {}
     asserts:
-      - failedTemplate:
-          errorMessage: controller.provider.istio.tls.existingSecret.name is required when controller.provider.istio.tls.mode=existingSecret
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-mode=existingSecret
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-cert-secret=
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: provider-tls
 
-  - it: "fails a cross-namespace existingSecret for Istio"
+  - it: "does not pass the legacy Istio provider Secret namespace to the controller"
     set:
       controller:
         provider:
@@ -288,8 +275,16 @@ tests:
                 name: provider-tls-certs
                 namespace: other-namespace
     asserts:
-      - failedTemplate:
-          errorMessage: controller.provider.istio.tls.existingSecret.namespace cannot be set when controller.provider.name=istio; the Istio scraper is a TLS server and needs tls.crt/tls.key mounted in the pod
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-mode=existingSecret
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-cert-secret=other-namespace/provider-tls-certs
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: provider-tls
 
   - it: "passes a cross-namespace existingSecret as flags"
     set:

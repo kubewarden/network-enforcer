@@ -26,7 +26,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -129,8 +128,15 @@ func (p *providerConfig) certSourceConfig() certsource.Config {
 // The agent is the gRPC server; the controller dials it. The client
 // certificate is mounted as a directory. See RFC 0006 and ADR 0001.
 type agentConfig struct {
-	mtlsEnabled bool
-	certDirPath string
+	mtlsEnabled    bool
+	certDirPath    string
+	namespace      string
+	labelSelector  string
+	grpcPort       int
+	pollInterval   time.Duration
+	scrapeTimeout  time.Duration
+	maxInFlight    int
+	maxRecvMsgSize int
 }
 
 type config struct {
@@ -142,6 +148,7 @@ type config struct {
 	logLevel             string
 	provider             providerConfig
 	agent                agentConfig
+	legacyIstioFlags     []string
 	flowDumper           flowdumper.Config
 	otel                 otelConf
 	tlsOpts              []func(*tls.Config)
@@ -154,19 +161,6 @@ func parseLogLevel(level string) (slog.Level, error) {
 		return 0, fmt.Errorf("invalid log level %q: %w", level, err)
 	}
 	return parsed, nil
-}
-
-// istioTLSCertDir returns the cert directory for the Istio OTLP server.
-// Non-insecure modes require a mounted cert dir because the scraper loads
-// material from files (CSI / volume), not from a Secret API source.
-func istioTLSCertDir(tlsMode, tlsCertDir string) (string, error) {
-	if certsource.Mode(tlsMode) != certsource.ModeInsecure && tlsCertDir == "" {
-		return "", fmt.Errorf(
-			"istio provider TLS mode %q requires --provider-tls-cert-dir",
-			tlsMode,
-		)
-	}
-	return tlsCertDir, nil
 }
 
 // Reads through GetAPIReader so a cross-namespace Secret does not start a cluster-wide informer.
@@ -184,16 +178,37 @@ func newProviderCertSource(mgr manager.Manager, conf *config) (certsource.Source
 
 // newAgentClientFactory builds the controller client for the agent hop.
 // The client certificate is loaded from a mounted directory and reloaded on
-// each dial for rotation. The factory is not yet wired into the reconciler.
+// each dial for rotation.
 func newAgentClientFactory(conf *config) (*grpcexporter.AgentClientFactory, error) {
 	factory, err := grpcexporter.NewAgentClientFactory(grpcexporter.AgentFactoryConfig{
-		MTLSEnabled: conf.agent.mtlsEnabled,
-		CertDirPath: conf.agent.certDirPath,
+		MTLSEnabled:    conf.agent.mtlsEnabled,
+		CertDirPath:    conf.agent.certDirPath,
+		Timeout:        conf.agent.scrapeTimeout,
+		MaxRecvMsgSize: conf.agent.maxRecvMsgSize,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to create agent client factory: %w", err)
 	}
 	return factory, nil
+}
+
+func explicitlySetProviderFlags(fs *flag.FlagSet) []string {
+	legacy := map[string]bool{
+		"provider-endpoint":          true,
+		"provider-tls-mode":          true,
+		"provider-tls-cert-dir":      true,
+		"provider-tls-cert-secret":   true,
+		"provider-tls-ca-configmap":  true,
+		"provider-tls-ca-bundle-key": true,
+		"provider-tls-server-name":   true,
+	}
+	var explicitlySet []string
+	fs.Visit(func(f *flag.Flag) {
+		if legacy[f.Name] {
+			explicitlySet = append(explicitlySet, f.Name)
+		}
+	})
+	return explicitlySet
 }
 
 // validateCalicoTLSMode rejects plaintext; Goldmane requires mTLS.
@@ -221,11 +236,7 @@ func setupProviderScraper(
 	logger.InfoContext(ctx, "Configuring scraper", "provider", providerName)
 	switch providerName {
 	case types.ProviderIstio:
-		otelPort, err := strconv.Atoi(conf.provider.endpoint)
-		if err != nil {
-			return fmt.Errorf("istio provider: invalid OTEL port %q: %w", conf.provider.endpoint, err)
-		}
-		tlsCertDir, err := istioTLSCertDir(conf.provider.tlsMode, conf.provider.tlsCertDir)
+		factory, err := newAgentClientFactory(conf)
 		if err != nil {
 			return err
 		}
@@ -234,10 +245,21 @@ func setupProviderScraper(
 			EnqueueLearningEvent: learningEnqueueFunc,
 			ViolationOtelLogger:  eventLogger,
 			Logger:               logger.With("component", "istio-scraper"),
-			OtelPort:             otelPort,
 			Enricher:             istio.NewEnricher(mgr.GetClient()),
 			FlowDumperBuffer:     flowDumperBuffer,
-			TLSCertDir:           tlsCertDir,
+		})
+		istioScraper.ConfigurePulling(scraper.IstioPullConfig{
+			Cache:  mgr.GetCache(),
+			Reader: mgr.GetCache(),
+			DialAgent: func(ctx context.Context, endpoint, authority string) (grpcexporter.AgentClientAPI, error) {
+				return factory.Dial(ctx, endpoint, authority)
+			},
+			Namespace:     conf.agent.namespace,
+			LabelSelector: conf.agent.labelSelector,
+			GRPCPort:      conf.agent.grpcPort,
+			PollInterval:  conf.agent.pollInterval,
+			ScrapeTimeout: conf.agent.scrapeTimeout,
+			MaxInFlight:   conf.agent.maxInFlight,
 		})
 		if err = mgr.Add(istioScraper); err != nil {
 			return fmt.Errorf("unable to add istio scraper to manager: %w", err)
@@ -376,9 +398,35 @@ func setupFlowDumper(
 	return flowDumperBuffer, nil
 }
 
+func validateProviderConfiguration(logger *slog.Logger, conf *config) error {
+	if types.Provider(conf.provider.name) != types.ProviderIstio {
+		if err := certsource.Validate(conf.provider.certSourceConfig()); err != nil {
+			return fmt.Errorf("invalid provider TLS flags: %w", err)
+		}
+		return nil
+	}
+	if err := scraper.ValidateIstioPullOptions(
+		conf.agent.namespace,
+		conf.agent.labelSelector,
+		conf.agent.grpcPort,
+		conf.agent.pollInterval,
+		conf.agent.scrapeTimeout,
+		conf.agent.maxInFlight,
+	); err != nil {
+		return err
+	}
+	if conf.agent.maxRecvMsgSize <= 0 {
+		return errors.New("--agent-grpc-max-recv-msg-size must be positive")
+	}
+	for _, name := range conf.legacyIstioFlags {
+		logger.Warn("Istio provider flag is deprecated and ignored; use the agent pull settings", "flag", "--"+name)
+	}
+	return nil
+}
+
 func run(logger *slog.Logger, conf *config) error {
-	if err := certsource.Validate(conf.provider.certSourceConfig()); err != nil {
-		return fmt.Errorf("invalid provider TLS flags: %w", err)
+	if err := validateProviderConfiguration(logger, conf); err != nil {
+		return err
 	}
 
 	ctx := ctrl.SetupSignalHandler()
@@ -399,12 +447,6 @@ func run(logger *slog.Logger, conf *config) error {
 	// register the pod status.podIP index before the cache starts.
 	if err = controller.SetupPodIPIndexer(ctx, mgr); err != nil {
 		return fmt.Errorf("unable to set up pod IP indexer: %w", err)
-	}
-
-	// Build the agent-hop client now so a bad cert dir fails fast.
-	// Wiring it into the scrape loop is deferred. See RFC 0006.
-	if _, err = newAgentClientFactory(conf); err != nil {
-		return fmt.Errorf("unable to set up agent client factory: %w", err)
 	}
 
 	// Violations are correlated to their WNP by (targetRef, direction).
@@ -604,11 +646,27 @@ func main() {
 	flag.StringVar(&conf.agent.certDirPath, "agent-grpc-mtls-cert-dir", "",
 		"Directory holding tls.crt, tls.key, and ca.crt for the agent hop client. "+
 			"Required when --agent-grpc-mtls-enabled is set.")
+	flag.StringVar(&conf.agent.namespace, "agent-namespace", "",
+		"Required namespace for Istio agent Pod discovery.")
+	flag.StringVar(&conf.agent.labelSelector, "agent-label-selector",
+		scraper.DefaultAgentLabelSelector,
+		"Label selector used to discover Istio agent Pods.")
+	flag.IntVar(&conf.agent.grpcPort, "agent-grpc-port", scraper.DefaultAgentGRPCPort,
+		"TCP port the Istio agent gRPC server listens on.")
+	flag.DurationVar(&conf.agent.pollInterval, "agent-poll-interval", scraper.DefaultAgentPollInterval,
+		"Successful Istio agent scrape interval; permit wait, scrape, and processing add to the effective interval.")
+	flag.DurationVar(&conf.agent.scrapeTimeout, "agent-scrape-timeout", scraper.DefaultAgentScrapeTimeout,
+		"Timeout for one Istio agent scrape RPC.")
+	flag.IntVar(&conf.agent.maxInFlight, "agent-max-in-flight", scraper.DefaultAgentMaxInFlight,
+		"Maximum concurrent agent scrapes and event processing across all discovered Istio agents.")
+	flag.IntVar(&conf.agent.maxRecvMsgSize, "agent-grpc-max-recv-msg-size", grpcexporter.DefaultAgentMaxRecvMsgSize,
+		"Maximum size in bytes of one agent gRPC response; oversized drained responses are lost.")
 	flag.DurationVar(&conf.wnpStatusSyncConfig.UpdateInterval,
 		"wnp-status-reconciler-update-interval",
 		defaultWnpStatusUpdateInterval,
 		"The interval at which WorkloadNetworkPolicy status is synced.")
 	flag.Parse()
+	conf.legacyIstioFlags = explicitlySetProviderFlags(flag.CommandLine)
 	// The OpenTelemetry SDK reads the other OTEL_EXPORTER_OTLP_* variables itself.
 	conf.otel.Endpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	conf.otel.Protocol = os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")

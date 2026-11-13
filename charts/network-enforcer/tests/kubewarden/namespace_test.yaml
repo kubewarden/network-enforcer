@@ -187,22 +187,14 @@ namespacedTemplates: &namespacedAsserts
       path: "metadata.annotations[\"cert-manager.io/inject-ca-from\"]"
       value: other/rel-network-enforcer-ca
     template: "templates/controller/webhook.yaml"
-  # The default Istio provider mounts its TLS certificate first, so the webhook certificate is the second volume.
+  # The active Istio controller only mounts its webhook and (when enabled) agent-hop certificates.
   - equal:
-      path: "spec.template.spec.volumes[1].name"
+      path: "spec.template.spec.volumes[0].name"
       value: webhook-certs
     template: "templates/controller/deployment.yaml"
   - equal:
-      path: "spec.template.spec.volumes[1].csi.volumeAttributes[\"csi.cert-manager.io/dns-names\"]"
-      value: rel-network-enforcer-controller-webhook.other.svc
-    template: "templates/controller/deployment.yaml"
-  - equal:
-      path: "spec.template.spec.volumes[0].name"
-      value: provider-tls
-    template: "templates/controller/deployment.yaml"
-  - equal:
       path: "spec.template.spec.volumes[0].csi.volumeAttributes[\"csi.cert-manager.io/dns-names\"]"
-      value: "rel-network-enforcer-istio-otlp,rel-network-enforcer-istio-otlp.other,rel-network-enforcer-istio-otlp.other.svc,rel-network-enforcer-istio-otlp.other.svc.cluster.local"
+      value: rel-network-enforcer-controller-webhook.other.svc
     template: "templates/controller/deployment.yaml"
 
 tests:
@@ -226,12 +218,8 @@ tests:
           value: release-ns/rel-network-enforcer-ca
         template: "templates/controller/webhook.yaml"
       - equal:
-          path: "spec.template.spec.volumes[1].csi.volumeAttributes[\"csi.cert-manager.io/dns-names\"]"
-          value: rel-network-enforcer-controller-webhook.release-ns.svc
-        template: "templates/controller/deployment.yaml"
-      - equal:
           path: "spec.template.spec.volumes[0].csi.volumeAttributes[\"csi.cert-manager.io/dns-names\"]"
-          value: "rel-network-enforcer-istio-otlp,rel-network-enforcer-istio-otlp.release-ns,rel-network-enforcer-istio-otlp.release-ns.svc,rel-network-enforcer-istio-otlp.release-ns.svc.cluster.local"
+          value: rel-network-enforcer-controller-webhook.release-ns.svc
         template: "templates/controller/deployment.yaml"
 
   - it: "should apply namespaceOverride to every namespaced resource and reference"

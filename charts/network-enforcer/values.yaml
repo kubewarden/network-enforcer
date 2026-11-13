@@ -174,11 +174,11 @@ controller:
     # and other knobs are applied; values under inactive providers are ignored.
     name: istio
     istio:
-      # OTLP listen port for the Istio scraper.
+      # Legacy OTLP port retained for Fluent Bit migration resources. The controller ignores this value and has no OTLP listener.
       # @schema type: [integer, string]
       endpoint: 4317
       tls:
-        # Istio is a TLS server on the OTLP hop. Default issues a cert via CSI.
+        # Legacy provider/Fluent Bit TLS settings retained for chart migration. The controller uses agent-hop mTLS instead.
         # @schema enum: [issuer, existingSecret, insecure]
         mode: issuer
         issuerRef:
@@ -243,10 +243,14 @@ controller:
 
 # The agent pod that serves gRPC mTLS to the controller.
 # cert-manager issues its certificate through the CSI volumes of the chart CA Issuer.
-# NOTE: the enabled switch is temporary. It will be removed later,
-# and the chart will always render the agent pod.
+# This branch still defaults the agent to disabled; enable it for Istio ingestion.
+# Issue #649 must land before a release cutover because this controller no longer accepts OTLP.
 agent:
   enabled: false
+  # TCP port used by the agent and the controller's Pod-IP pull client.
+  # @schema minimum: 1
+  # @schema maximum: 65535
+  grpcPort: 50052
   image:
     # The image path used by agent, without the registry.
     # @schema required
@@ -273,9 +277,8 @@ agent:
     requests:
       cpu: 100m
       memory: 256Mi
-  # The agent runs unprivileged with the user baked into its image.
-  # Node log files under /var/log/pods are usually readable only by root.
-  # Set runAsNonRoot: false and runAsUser: 0 below if the agent must read them.
+  # The image runs as a baked-in non-root user by default. Node logs under /var/log/pods may require root.
+  # For an opt-in root override set podSecurityContext.runAsNonRoot=false and containerSecurityContext.runAsUser=0.
   # @schema $ref: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext
   podSecurityContext:
     # @schema hidden
@@ -307,10 +310,9 @@ agent:
   tolerations:
     - operator: Exists
 
-# The fluent-bit DaemonSet that ships ztunnel logs to the controller.
-# The chart deploys it only when controller.provider.name is istio.
-# It has no log level and does not export telemetry,
-# so logLevel and otel have no effect on it.
+# Legacy Fluent Bit OTLP resources retained temporarily for the #649 chart migration.
+# The controller no longer receives their events; these settings are not an active Istio ingestion path.
+# The chart still deploys the resources only when controller.provider.name is istio.
 istioFluentBit:
   image:
     # The image path used by fluent-bit, without the registry.

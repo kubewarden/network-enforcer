@@ -1,0 +1,103 @@
+suite: Istio agent pull configuration
+templates:
+  - templates/controller/deployment.yaml
+  - templates/agent/daemonset.yaml
+chart:
+  version: 1.0.0
+release:
+  name: network-enforcer
+  namespace: network-enforcer
+tests:
+  - it: renders discovery configuration for Istio even when agents are disabled
+    template: templates/controller/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-namespace=network-enforcer
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-label-selector=app.kubernetes.io/name=network-enforcer,app.kubernetes.io/instance=network-enforcer,app.kubernetes.io/component=agent
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-port=50052
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-mtls-enabled=true
+      - notExists:
+          path: spec.template.spec.containers[0].ports
+
+  - it: configures matching agent and controller ports and mTLS when enabled
+    set:
+      agent:
+        enabled: true
+        grpcPort: 50123
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-port=50123
+        template: templates/controller/deployment.yaml
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-mtls-enabled=true
+        template: templates/controller/deployment.yaml
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-mtls-cert-dir=/etc/network-enforcer/certs
+        template: templates/controller/deployment.yaml
+      - equal:
+          path: spec.template.spec.volumes[1].name
+          value: grpc-certs
+        template: templates/controller/deployment.yaml
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --grpc-port=50123
+        template: templates/agent/daemonset.yaml
+
+  - it: honors release, name and namespace overrides in the discovery selector
+    template: templates/controller/deployment.yaml
+    release:
+      name: blue-installation
+      namespace: release-namespace
+    set:
+      nameOverride: custom-name
+      namespaceOverride: agent-namespace
+      agent:
+        enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-namespace=agent-namespace
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-label-selector=app.kubernetes.io/name=custom-name,app.kubernetes.io/instance=blue-installation,app.kubernetes.io/component=agent
+        template: templates/controller/deployment.yaml
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/component: agent
+            app.kubernetes.io/name: custom-name
+            app.kubernetes.io/instance: blue-installation
+        template: templates/agent/daemonset.yaml
+
+  - it: keeps agent pull flags out of non-Istio providers
+    template: templates/controller/deployment.yaml
+    set:
+      controller:
+        provider:
+          name: cilium
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-namespace=network-enforcer
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-port=50052
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-mtls-enabled=true
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-endpoint=hubble-relay.kube-system.svc:443
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --provider-tls-mode=existingSecret
