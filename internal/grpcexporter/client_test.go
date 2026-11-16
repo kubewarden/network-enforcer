@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/kubewarden/network-enforcer/internal/tlsutil"
 	agentv1 "github.com/kubewarden/network-enforcer/proto/agent/v1"
@@ -123,49 +125,46 @@ func TestAgentClientFactoryValidatesReceiveLimit(t *testing.T) {
 	require.ErrorContains(t, err, "maximum receive message size must be positive")
 }
 
-func TestAgentClientFactoryAcceptsRepresentativeFullBatch(t *testing.T) {
+func TestAgentClientFactoryScrapesPlaintext(t *testing.T) {
 	t.Parallel()
-	addr := startLargeResponseTestServer(t, 10_000, 1024)
-	factory, err := NewAgentClientFactory(AgentFactoryConfig{})
-	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	client, err := factory.Dial(ctx, addr, "agent-pod")
-	require.NoError(t, err)
-	defer client.Close()
-	events, err := client.ScrapeEvents(ctx)
-	require.NoError(t, err)
-	assert.Len(t, events, 10_000)
-	assert.Len(t, events[0].GetRawRecord(), 1024)
-}
-
-func TestAgentClientFactoryRejectsResponseAboveConfiguredLimit(t *testing.T) {
-	t.Parallel()
-	addr := startLargeResponseTestServer(t, 1, 2*1024*1024)
-	factory, err := NewAgentClientFactory(AgentFactoryConfig{MaxRecvMsgSize: 1024 * 1024})
-	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	client, err := factory.Dial(ctx, addr, "agent-pod")
-	require.NoError(t, err)
-	defer client.Close()
-	_, err = client.ScrapeEvents(ctx)
-	require.Error(t, err)
-}
-
-func TestAgentClientFactoryScrapesPlaintextWhenInsecure(t *testing.T) {
-	t.Parallel()
-	addr := startTestServer(t, ServerConfig{MTLSEnabled: false})
-	factory, err := NewAgentClientFactory(AgentFactoryConfig{MTLSEnabled: false})
-	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	client, err := factory.Dial(ctx, addr, "agent-pod")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = client.Close() })
-	events, err := client.ScrapeEvents(ctx)
-	require.NoError(t, err)
-	assert.Len(t, events, 1)
+	cases := []struct {
+		name           string
+		eventCount     int
+		rawSize        int
+		maxRecvMsgSize int
+		wantCode       codes.Code
+	}{
+		{name: "insecure client", eventCount: 1, rawSize: 128},
+		{name: "representative full batch", eventCount: 10_000, rawSize: 1024},
+		{
+			name: "response exceeds configured limit", eventCount: 1, rawSize: 2 * 1024 * 1024,
+			maxRecvMsgSize: 1024 * 1024, wantCode: codes.ResourceExhausted,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			addr := startLargeResponseTestServer(t, tc.eventCount, tc.rawSize)
+			factory, err := NewAgentClientFactory(AgentFactoryConfig{
+				MTLSEnabled: false, MaxRecvMsgSize: tc.maxRecvMsgSize,
+			})
+			require.NoError(t, err)
+			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+			defer cancel()
+			client, err := factory.Dial(ctx, addr, "agent-pod")
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = client.Close() })
+			events, err := client.ScrapeEvents(ctx)
+			if tc.wantCode != codes.OK {
+				require.Error(t, err)
+				require.Equal(t, tc.wantCode, status.Code(err))
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, events, tc.eventCount)
+			assert.Len(t, events[0].GetRawRecord(), tc.rawSize)
+		})
+	}
 }
 
 func TestNewAgentClientFactoryValidatesCA(t *testing.T) {

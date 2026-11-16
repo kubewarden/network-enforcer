@@ -37,7 +37,6 @@ spec:
         - --health-probe-bind-address=:{{ include "network-enforcer.controller.probePort" . }}
         - --provider-name={{ $w.provider.name }}
         {{- if eq $w.provider.name "istio" }}
-        - --agent-namespace={{ include "network-enforcer.namespace" . }}
         - --agent-label-selector=app.kubernetes.io/name={{ include "network-enforcer.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=agent
         - --agent-grpc-port={{ .Values.agent.grpcPort }}
         {{- if .Values.agent.enabled }}

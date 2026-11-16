@@ -14,7 +14,7 @@ tests:
         provider:
           name: istio
     asserts:
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --agent-namespace=my-namespace
       - contains:
@@ -36,7 +36,7 @@ tests:
       - notContains:
           path: spec.template.spec.containers[0].args
           content: --provider-endpoint=5555
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --agent-namespace=my-namespace
 

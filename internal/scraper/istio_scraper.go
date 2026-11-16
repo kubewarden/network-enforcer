@@ -12,6 +12,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	agentv1 "github.com/kubewarden/network-enforcer/proto/agent/v1"
 
@@ -65,7 +66,7 @@ func NewIstioScraper(conf IstioScraperConfig) *IstioScraper {
 	}
 	return &IstioScraper{
 		IstioScraperConfig: conf,
-		jitter:             randomDelay,
+		jitter:             wait.Jitter,
 		wait:               waitForDelay,
 	}
 }
@@ -141,6 +142,7 @@ func (s *IstioScraper) enqueueLearningEvent(ctx context.Context, event *agentv1.
 		return
 	}
 
+	// Istio learns the source principal; only the destination needs workload labels.
 	learningEvent := types.LearningEvent{
 		Source:   &securityv1alpha1.WorkloadRef{Identity: srcIdentity},
 		Dest:     &dstWorkloadRef,

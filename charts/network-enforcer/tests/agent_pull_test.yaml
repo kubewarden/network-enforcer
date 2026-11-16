@@ -11,7 +11,7 @@ tests:
   - it: renders discovery configuration for Istio even when agents are disabled
     template: templates/controller/deployment.yaml
     asserts:
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --agent-namespace=network-enforcer
       - contains:
@@ -68,9 +68,17 @@ tests:
       agent:
         enabled: true
     asserts:
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --agent-namespace=agent-namespace
+      - equal:
+          path: metadata.namespace
+          value: agent-namespace
+        template: templates/controller/deployment.yaml
+      - equal:
+          path: metadata.namespace
+          value: agent-namespace
+        template: templates/agent/daemonset.yaml
       - contains:
           path: spec.template.spec.containers[0].args
           content: --agent-label-selector=app.kubernetes.io/name=custom-name,app.kubernetes.io/instance=blue-installation,app.kubernetes.io/component=agent

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
+	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -15,7 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	k8stypes "k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apimachinery/pkg/util/wait"
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -40,7 +40,7 @@ const (
 	maximumAgentRetryBackoff     = 30 * time.Second
 	agentPollJitterFraction      = 0.2
 	initialAgentPollDelayDivisor = 2
-	cacheSyncPollInterval        = 5 * time.Millisecond
+	agentRetryBackoffFactor      = 2
 )
 
 // AgentDialFunc creates a new client for one poll. The authority is the expected Pod DNS identity.
@@ -78,10 +78,10 @@ func (s *IstioScraper) NeedLeaderElection() bool {
 	return true
 }
 
-//nolint:gocognit,funlen // This runnable owns the informer, retry queue, and worker shutdown state machine.
+//nolint:funlen // Keep discovery and worker cleanup in the same lifecycle.
 func (s *IstioScraper) Start(ctx context.Context) error {
-	if err := validateIstioPullConfig(s.pull); err != nil {
-		return err
+	if s.pull.MaxInFlight <= 0 {
+		return errors.New("--agent-max-in-flight must be positive")
 	}
 	if s.Logger == nil {
 		s.Logger = slog.Default()
@@ -138,12 +138,8 @@ func (s *IstioScraper) Start(ctx context.Context) error {
 	if !s.pull.Cache.WaitForCacheSync(ctx) {
 		return nil
 	}
-	for !registration.HasSynced() {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(cacheSyncPollInterval):
-		}
+	if !toolscache.WaitForCacheSync(ctx.Done(), registration.HasSynced) {
+		return nil
 	}
 
 	permits := make(chan struct{}, s.pull.MaxInFlight)
@@ -171,48 +167,6 @@ func (s *IstioScraper) Start(ctx context.Context) error {
 		}
 		queue.Forget(key)
 	}
-}
-
-// ValidateIstioPullOptions validates the active Istio discovery and polling flags.
-func ValidateIstioPullOptions(
-	namespace, selector string,
-	port int,
-	interval, timeout time.Duration,
-	maxInFlight int,
-) error {
-	if errs := validation.IsDNS1123Label(namespace); len(errs) != 0 {
-		return fmt.Errorf("--agent-namespace must be a DNS-1123 label: %s", strings.Join(errs, "; "))
-	}
-	if strings.TrimSpace(selector) == "" {
-		return errors.New("--agent-label-selector must not be empty")
-	}
-	if _, err := labels.Parse(selector); err != nil {
-		return fmt.Errorf("invalid --agent-label-selector %q: %w", selector, err)
-	}
-	if port < 1 || port > 65535 {
-		return errors.New("--agent-grpc-port must be in range 1-65535")
-	}
-	if interval <= 0 {
-		return errors.New("--agent-poll-interval must be positive")
-	}
-	if timeout <= 0 {
-		return errors.New("--agent-scrape-timeout must be positive")
-	}
-	if maxInFlight <= 0 {
-		return errors.New("--agent-max-in-flight must be positive")
-	}
-	return nil
-}
-
-func validateIstioPullConfig(conf IstioPullConfig) error {
-	if err := ValidateIstioPullOptions(conf.Namespace, conf.LabelSelector, conf.GRPCPort,
-		conf.PollInterval, conf.ScrapeTimeout, conf.MaxInFlight); err != nil {
-		return err
-	}
-	if conf.Cache == nil || conf.Reader == nil || conf.DialAgent == nil {
-		return errors.New("istio agent discovery requires a cache, reader, and client factory")
-	}
-	return nil
 }
 
 func enqueueAgentPod(queue workqueue.TypedRateLimitingInterface[k8stypes.NamespacedName], obj any) {
@@ -295,6 +249,13 @@ func (s *IstioScraper) retireWorker(key k8stypes.NamespacedName, worker *agentWo
 
 func (s *IstioScraper) runAgent(ctx context.Context, worker *agentWorker, permits chan struct{}) {
 	defer close(worker.done)
+	initialBackoff := wait.Backoff{
+		Duration: initialAgentRetryBackoff,
+		Factor:   agentRetryBackoffFactor,
+		Steps:    math.MaxInt,
+		Cap:      maximumAgentRetryBackoff,
+	}
+	backoff := initialBackoff
 	failures := 0
 	delay := s.jitter(s.pull.PollInterval/initialAgentPollDelayDivisor, 1)
 	for {
@@ -318,32 +279,16 @@ func (s *IstioScraper) runAgent(ctx context.Context, worker *agentWorker, permit
 		}
 		if err != nil {
 			failures++
-			delay = s.retryDelay(failures)
+			delay = min(s.jitter(backoff.Step(), agentPollJitterFraction), maximumAgentRetryBackoff)
 			s.Logger.WarnContext(ctx, "Istio agent poll failed, retrying",
 				"pod", worker.key.String(), "endpoint", worker.endpoint,
 				"failures", failures, "retryAfter", delay, "error", err)
 			continue
 		}
 		failures = 0
+		backoff = initialBackoff
 		delay = s.jitter(s.pull.PollInterval, agentPollJitterFraction)
 	}
-}
-
-func (s *IstioScraper) retryDelay(failures int) time.Duration {
-	backoff := initialAgentRetryBackoff
-	for range failures - 1 {
-		if backoff >= maximumAgentRetryBackoff/2 {
-			backoff = maximumAgentRetryBackoff
-			break
-		}
-		backoff *= 2
-	}
-
-	delay := s.jitter(backoff, agentPollJitterFraction)
-	if delay > maximumAgentRetryBackoff {
-		return maximumAgentRetryBackoff
-	}
-	return delay
 }
 
 func (s *IstioScraper) scrapeOnce(ctx context.Context, worker *agentWorker) error {
@@ -377,32 +322,7 @@ func (s *IstioScraper) scrapeOnce(ctx context.Context, worker *agentWorker) erro
 }
 
 func waitForDelay(ctx context.Context, delay time.Duration) bool {
-	if delay <= 0 {
-		return ctx.Err() == nil
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
-}
-
-func randomDelay(base time.Duration, fraction float64) time.Duration {
-	if base <= 0 {
-		return 0
-	}
-	spread := time.Duration(float64(base) * fraction)
-	if spread <= 0 {
-		return base
-	}
-	lowerBound := int64(base - spread)
-	upperBound := int64(base + spread)
-	if lowerBound < 0 {
-		lowerBound = 0
-	}
-	//nolint:gosec // Poll jitter is not security-sensitive.
-	return time.Duration(lowerBound + rand.Int64N(upperBound-lowerBound+1))
+	return wait.PollUntilContextCancel(ctx, delay, false, func(context.Context) (bool, error) {
+		return true, nil
+	}) == nil
 }

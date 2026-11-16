@@ -189,69 +189,12 @@ func TestProcessTypedPolicyTimestampAndRawJSON(t *testing.T) {
 	require.True(t, fallback.After(before))
 }
 
-func TestValidateIstioPullOptions(t *testing.T) {
+func TestIstioScraperRejectsNonPositiveConcurrency(t *testing.T) {
 	t.Parallel()
-	valid := func() error {
-		return ValidateIstioPullOptions(
-			"agents",
-			"app.kubernetes.io/component=agent",
-			50052,
-			5*time.Second,
-			30*time.Second,
-			2,
-		)
-	}
-	require.NoError(t, valid())
-	cases := []struct {
-		name     string
-		edit     func(*string, *string, *int, *time.Duration, *time.Duration, *int)
-		contains string
-	}{
-		{
-			"namespace required",
-			func(ns, _ *string, _ *int, _ *time.Duration, _ *time.Duration, _ *int) { *ns = "" },
-			"--agent-namespace",
-		},
-		{
-			"selector required",
-			func(_, sel *string, _ *int, _ *time.Duration, _ *time.Duration, _ *int) { *sel = "" },
-			"--agent-label-selector",
-		},
-		{
-			"selector valid",
-			func(_, sel *string, _ *int, _ *time.Duration, _ *time.Duration, _ *int) { *sel = "not a selector" },
-			"invalid --agent-label-selector",
-		},
-		{
-			"port valid",
-			func(_, _ *string, port *int, _ *time.Duration, _ *time.Duration, _ *int) { *port = 65536 },
-			"--agent-grpc-port",
-		},
-		{
-			"poll interval positive",
-			func(_, _ *string, _ *int, interval *time.Duration, _ *time.Duration, _ *int) { *interval = 0 },
-			"--agent-poll-interval",
-		},
-		{
-			"timeout positive",
-			func(_, _ *string, _ *int, _ *time.Duration, timeout *time.Duration, _ *int) { *timeout = 0 },
-			"--agent-scrape-timeout",
-		},
-		{
-			"in-flight positive",
-			func(_, _ *string, _ *int, _ *time.Duration, _ *time.Duration, limit *int) { *limit = 0 },
-			"--agent-max-in-flight",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			ns, selector := "agents", "app.kubernetes.io/component=agent"
-			port, interval, timeout, inFlight := 50052, 5*time.Second, 30*time.Second, 2
-			tc.edit(&ns, &selector, &port, &interval, &timeout, &inFlight)
-			err := ValidateIstioPullOptions(ns, selector, port, interval, timeout, inFlight)
-			require.ErrorContains(t, err, tc.contains)
-		})
+	for _, limit := range []int{0, -1} {
+		scraper := NewIstioScraper(IstioScraperConfig{})
+		scraper.ConfigurePulling(IstioPullConfig{MaxInFlight: limit})
+		require.ErrorContains(t, scraper.Start(t.Context()), "--agent-max-in-flight must be positive")
 	}
 }
 
@@ -780,36 +723,68 @@ func TestAgentWorkersShareBoundedPermitsWithoutBlockingHealthyAgent(t *testing.T
 	require.Equal(t, closes.Load(), unhealthyAttempts.Load()+healthyAttempts.Load())
 }
 
-func TestAgentWorkerRetryDelayResetsAfterSuccessfulEmptyScrape(t *testing.T) {
+func TestAgentWorkerRetryBackoff(t *testing.T) {
 	t.Parallel()
-	var scrapeCount atomic.Int32
-	var waitCount atomic.Int32
-	var delays []time.Duration
-	scraper := NewIstioScraper(IstioScraperConfig{Logger: slog.New(slog.DiscardHandler)})
-	scraper.pull = IstioPullConfig{
-		PollInterval: 8 * time.Second, ScrapeTimeout: time.Second,
-		DialAgent: func(context.Context, string, string) (grpcexporter.AgentClientAPI, error) {
-			return &scriptedAgentClient{scrape: func(context.Context) ([]*agentv1.Event, error) {
-				if scrapeCount.Add(1) == 1 || scrapeCount.Load() == 3 {
-					return nil, errors.New("temporary")
-				}
-				return []*agentv1.Event{}, nil
-			}}, nil
+	cases := []struct {
+		name       string
+		failures   []bool
+		wantDelays []time.Duration
+	}{
+		{
+			name:       "resets after successful empty scrape",
+			failures:   []bool{true, true, false, true},
+			wantDelays: []time.Duration{4 * time.Second, time.Second, 2 * time.Second, 8 * time.Second, time.Second},
+		},
+		{
+			name:     "retries indefinitely at cap",
+			failures: []bool{true, true, true, true, true, true, true, true},
+			wantDelays: []time.Duration{
+				4 * time.Second, time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second,
+				16 * time.Second, 30 * time.Second, 30 * time.Second, 30 * time.Second,
+			},
 		},
 	}
-	scraper.jitter = func(base time.Duration, _ float64) time.Duration {
-		delays = append(delays, base)
-		return 0
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var scrapeCount int
+			var delays []time.Duration
+			scraper := NewIstioScraper(IstioScraperConfig{Logger: slog.New(slog.DiscardHandler)})
+			scraper.pull = IstioPullConfig{
+				PollInterval: 8 * time.Second, ScrapeTimeout: time.Second,
+				DialAgent: func(context.Context, string, string) (grpcexporter.AgentClientAPI, error) {
+					return &scriptedAgentClient{scrape: func(context.Context) ([]*agentv1.Event, error) {
+						failed := tc.failures[scrapeCount]
+						scrapeCount++
+						if failed {
+							return nil, errors.New("temporary")
+						}
+						return []*agentv1.Event{}, nil
+					}}, nil
+				},
+			}
+			scraper.jitter = func(base time.Duration, _ float64) time.Duration {
+				delays = append(delays, base)
+				return 0
+			}
+			scraper.wait = func(context.Context, time.Duration) bool { return scrapeCount < len(tc.failures) }
+			worker := &agentWorker{
+				key:  k8stypes.NamespacedName{Name: "agent", Namespace: "agents"},
+				done: make(chan struct{}),
+			}
+			scraper.runAgent(t.Context(), worker, make(chan struct{}, 1))
+			require.Equal(t, tc.wantDelays, delays)
+		})
 	}
-	scraper.wait = func(context.Context, time.Duration) bool { return waitCount.Add(1) <= 3 }
-	worker := &agentWorker{key: k8stypes.NamespacedName{Name: "agent", Namespace: "agents"}, done: make(chan struct{})}
-	go scraper.runAgent(context.Background(), worker, make(chan struct{}, 1))
-	select {
-	case <-worker.done:
-	case <-time.After(time.Second):
-		t.Fatal("worker did not honor injected scheduler")
-	}
-	require.Equal(t, []time.Duration{4 * time.Second, time.Second, 8 * time.Second, time.Second}, delays)
+}
+
+func TestWaitForDelay(t *testing.T) {
+	t.Parallel()
+	require.True(t, waitForDelay(t.Context(), time.Nanosecond))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.False(t, waitForDelay(ctx, time.Hour))
+	require.False(t, waitForDelay(ctx, 0))
 }
 
 func TestAgentWorkerCancellationWhileWaitingForPermit(t *testing.T) {

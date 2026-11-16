@@ -26,6 +26,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -65,6 +66,7 @@ import (
 
 const (
 	defaultWnpStatusUpdateInterval = 30 * time.Second
+	serviceAccountNamespaceFile    = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 	// otlpLogShutdownTimeout bounds the final flush of buffered log records
 	// when the manager stops. The manager context is already cancelled at
 	// that point, so the shutdown runs against a fresh context.
@@ -398,6 +400,21 @@ func setupFlowDumper(
 	return flowDumperBuffer, nil
 }
 
+func resolveAgentNamespace(namespace, namespaceFile string) (string, error) {
+	if namespace != "" {
+		return namespace, nil
+	}
+	data, err := os.ReadFile(namespaceFile)
+	if err != nil {
+		return "", fmt.Errorf("read controller namespace (set --agent-namespace outside a Pod): %w", err)
+	}
+	namespace = strings.TrimSpace(string(data))
+	if namespace == "" {
+		return "", errors.New("controller service-account namespace is empty")
+	}
+	return namespace, nil
+}
+
 func validateProviderConfiguration(logger *slog.Logger, conf *config) error {
 	if types.Provider(conf.provider.name) != types.ProviderIstio {
 		if err := certsource.Validate(conf.provider.certSourceConfig()); err != nil {
@@ -405,16 +422,11 @@ func validateProviderConfiguration(logger *slog.Logger, conf *config) error {
 		}
 		return nil
 	}
-	if err := scraper.ValidateIstioPullOptions(
-		conf.agent.namespace,
-		conf.agent.labelSelector,
-		conf.agent.grpcPort,
-		conf.agent.pollInterval,
-		conf.agent.scrapeTimeout,
-		conf.agent.maxInFlight,
-	); err != nil {
+	namespace, err := resolveAgentNamespace(conf.agent.namespace, serviceAccountNamespaceFile)
+	if err != nil {
 		return err
 	}
+	conf.agent.namespace = namespace
 	if conf.agent.maxRecvMsgSize <= 0 {
 		return errors.New("--agent-grpc-max-recv-msg-size must be positive")
 	}
@@ -647,7 +659,7 @@ func main() {
 		"Directory holding tls.crt, tls.key, and ca.crt for the agent hop client. "+
 			"Required when --agent-grpc-mtls-enabled is set.")
 	flag.StringVar(&conf.agent.namespace, "agent-namespace", "",
-		"Required namespace for Istio agent Pod discovery.")
+		"Namespace for Istio agent Pod discovery; defaults to the controller's service-account namespace.")
 	flag.StringVar(&conf.agent.labelSelector, "agent-label-selector",
 		scraper.DefaultAgentLabelSelector,
 		"Label selector used to discover Istio agent Pods.")
