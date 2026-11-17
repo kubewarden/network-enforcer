@@ -3,6 +3,8 @@ templates:
   - "templates/priorityclass/priorityclass.yaml"
   - "templates/controller/deployment.yaml"
   - "templates/istio-fluent-bit/daemonset.yaml"
+  - "templates/istio-agent/daemonset.yaml"
+  - "templates/agent/daemonset.yaml"
   # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
   # Every assertion below names its template, so the ConfigMap is not checked.
   - "templates/istio-fluent-bit/configmap.yaml"
@@ -24,6 +26,10 @@ tests:
           path: spec.template.spec.priorityClassName
           value: network-enforcer-priorityclass
         template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: network-enforcer-priorityclass
+        template: "templates/istio-agent/daemonset.yaml"
 
   - it: "should not render the PriorityClass but keep the reference when priorityClass.enabled is false"
     set:
@@ -57,6 +63,9 @@ tests:
       - notExists:
           path: spec.template.spec.priorityClassName
         template: "templates/istio-fluent-bit/daemonset.yaml"
+      - notExists:
+          path: spec.template.spec.priorityClassName
+        template: "templates/istio-agent/daemonset.yaml"
 
   - it: "should keep the PriorityClass and use global.priorityClassName on every workload"
     set:
@@ -74,6 +83,10 @@ tests:
           path: spec.template.spec.priorityClassName
           value: system-cluster-critical
         template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: system-cluster-critical
+        template: "templates/istio-agent/daemonset.yaml"
 
   - it: "should use common.priorityClassName on every workload"
     set:
@@ -93,6 +106,10 @@ tests:
           path: spec.template.spec.priorityClassName
           value: system-cluster-critical
         template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: system-cluster-critical
+        template: "templates/istio-agent/daemonset.yaml"
 
   - it: "should keep the chart PriorityClass on the fluent-bit DaemonSet with a controller-only priorityClassName"
     set:
@@ -110,6 +127,10 @@ tests:
           path: spec.template.spec.priorityClassName
           value: network-enforcer-priorityclass
         template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: network-enforcer-priorityclass
+        template: "templates/istio-agent/daemonset.yaml"
 
   - it: "should prefer the workload priorityClassName over global"
     set:
@@ -119,11 +140,20 @@ tests:
         priorityClassName: common-priority
       istioFluentBit:
         priorityClassName: system-node-critical
+      controller:
+        provider:
+          istio:
+            agent:
+              priorityClassName: agent-priority
     asserts:
       - equal:
           path: spec.template.spec.priorityClassName
           value: system-node-critical
         template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: agent-priority
+        template: "templates/istio-agent/daemonset.yaml"
       - equal:
           path: spec.template.spec.priorityClassName
           value: common-priority
@@ -145,7 +175,7 @@ tests:
         template: "templates/priorityclass/priorityclass.yaml"
       - equal:
           path: description
-          value: PriorityClass for network-enforcer controller and fluent-bit pods.
+          value: PriorityClass for network-enforcer controller, fluent-bit, and agent pods.
         template: "templates/priorityclass/priorityclass.yaml"
 
   - it: "should allow name and value override"
@@ -170,3 +200,7 @@ tests:
           path: spec.template.spec.priorityClassName
           value: custom-priorityclass
         template: "templates/istio-fluent-bit/daemonset.yaml"
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: custom-priorityclass
+        template: "templates/istio-agent/daemonset.yaml"

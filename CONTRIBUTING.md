@@ -132,6 +132,9 @@ The file accepts the following keys:
 - `controller.providerName`: the default data-plane provider. The accepted
   values are `istio`, `calico` and `cilium`. The `--provider` flag of
   `tilt up` overrides this value.
+- `agent.image`: the local agent image used only for Istio Tilt builds. This is
+  a Tilt setting; the chart value is
+  `controller.provider.istio.agent.image`.
 
 Example:
 
@@ -143,6 +146,8 @@ clusters:
 controller:
   image: controller
   providerName: "istio"
+agent:
+  image: agent
 ```
 
 ### Running
@@ -154,6 +159,10 @@ The `Tiltfile` included in this repository takes care of the following:
   selected provider and the flow dumper enabled.
 - Rebuilds the controller binary and reloads it inside the running Pod on
   every code change.
+- For Istio only, builds and reloads the agent image. Non-Istio development
+  does not register or deploy the agent. Tilt disables the agent's read-only
+  root filesystem only for restart-process live updates; the chart production
+  default remains read-only.
 
 The controller needs a cluster with one of the supported providers and with
 cert-manager installed. The `setup-dev-cluster` target creates a kind cluster,

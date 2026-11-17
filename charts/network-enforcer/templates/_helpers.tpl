@@ -63,7 +63,7 @@ or an empty map when the block has no image.
 It takes the context dict of the workload helpers.
 */}}
 {{- define "network-enforcer._image" -}}
-{{- $block := index .root.Values .workload | default dict -}}
+{{- $block := .workloadValues | default (index .root.Values .workload | default dict) -}}
 {{- toYaml ($block.image | default dict) -}}
 {{- end -}}
 
@@ -455,7 +455,8 @@ The other private helpers decode this list, so they work on copies of .Values.
 */}}
 {{- define "network-enforcer._levels" -}}
 {{- $values := .ctx.root.Values -}}
-{{- $blocks := list ($values.global | default dict) ($values.common | default dict) (index $values .ctx.workload | default dict) -}}
+{{- $workload := .ctx.workloadValues | default (index $values .ctx.workload | default dict) -}}
+{{- $blocks := list ($values.global | default dict) ($values.common | default dict) $workload -}}
 {{- $out := list -}}
 {{- range $block := $blocks -}}
 {{- $value := $block -}}
@@ -534,7 +535,7 @@ When none is set, the controller and the Istio fluent-bit DaemonSet use priority
 */}}
 {{- define "network-enforcer.priorityClassName" -}}
 {{- $name := include "network-enforcer._scalar" (dict "ctx" . "key" "priorityClassName") -}}
-{{- if and (not $name) (has .workload (list "controller" "istioFluentBit")) -}}
+{{- if and (not $name) (has .workload (list "controller" "istioFluentBit" "agent")) -}}
 {{- $name = .root.Values.priorityClass.name | default "" -}}
 {{- end -}}
 {{- with $name -}}

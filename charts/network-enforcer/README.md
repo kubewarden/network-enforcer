@@ -28,8 +28,9 @@ It operates in three phases:
 
 The project is built around a Kubernetes controller that manages the proposal
 and policy lifecycle. The controller reads flow telemetry from the configured
-data-plane provider: Istio ambient (ztunnel and fluent-bit), Calico Goldmane,
-or Cilium Hubble Relay.
+data-plane provider: the Istio ambient ztunnel agent, Calico Goldmane, or
+Cilium Hubble Relay. The chart retains legacy Fluent Bit resources for Istio
+migration, but the current controller reads from the agent.
 
 The design documents are in the
 [RFCs](https://github.com/kubewarden/network-enforcer/tree/main/docs/rfc).
@@ -98,9 +99,10 @@ The top-level keys of
 | `otel`                    | The telemetry export of this chart. A key that is set here wins over the workload `otel` and `global.otel`. |
 | `controller`              | The controller Deployment: image, replicas, resources, security context, PodDisruptionBudget.               |
 | `controller.provider`     | The data-plane provider (`istio`, `cilium`, `calico`), and per-provider endpoint/TLS settings.              |
-| `istioFluentBit`          | The fluent-bit DaemonSet that sends `ztunnel` logs to the controller. The chart deploys it only for `istio`. |
+| `controller.provider.istio.agent` | Istio agent DaemonSet settings, enabled by default only for Istio. The controller uses authenticated mTLS even when local deployment is disabled. |
+| `istioFluentBit`          | Retained legacy Fluent Bit resources, rendered only for Istio. They are not the current controller ingestion path. |
 | `kubernetesClusterDomain` | The DNS domain of the cluster.                                                                              |
-| `priorityClass`           | The PriorityClass shared by the controller and fluent-bit pods. A `priorityClassName` overrides it.         |
+| `priorityClass`           | The PriorityClass shared by the controller, fluent-bit, and agent pods. A `priorityClassName` overrides it. |
 | `nameOverride`            | Replaces the chart name in the generated resource names.                                                    |
 | `fullnameOverride`        | Replaces the whole `<release>-<chart>` prefix in the generated resource names.                              |
 
@@ -130,10 +132,9 @@ The controller serves a validating admission webhook for
 ### Scheduling
 
 The `global` block sets `tolerations`, `nodeSelector`, `affinity`, and the
-other scheduling keys for all workloads. The `controller`, `agent`, and
-`istioFluentBit` blocks accept the same keys. A value in a workload block
-replaces the value in `global`. `controller`, `agent`, and `istioFluentBit`
-also have their own `resources` key.
+other scheduling keys for all workloads. The `controller`,
+`controller.provider.istio.agent`, and `istioFluentBit` blocks accept the same
+keys. A value in a workload block replaces the value in `global`.
 
 The `istio-fluent-bit` DaemonSet must run on every node that runs the Istio
 ambient `ztunnel` DaemonSet. This includes nodes with taints, for example
@@ -148,14 +149,14 @@ that is also empty, fluent-bit no longer tolerates any taint. The fluent-bit
 pod is then missing from each tainted node that `ztunnel` still runs on. The
 chart does not collect logs from `ztunnel` on those nodes.
 
-The `agent` DaemonSet reads `ztunnel` logs from the node's filesystem as well.
-It has the same scheduling requirement as `istio-fluent-bit`.
-`agent.tolerations` uses the same default (`- operator: Exists`), and this
-default replaces `global.tolerations`. If you set `agent.tolerations` to `[]`,
-the agent uses `global.tolerations`. If that is also empty, the agent no longer
-tolerates any taint. The agent pod is then missing from each tainted node that
-`ztunnel` still runs on. The chart does not collect logs from `ztunnel` on those
-nodes.
+The Istio agent runs as root and accepts only `/var/log/pods/istio-system_ztunnel-*/ztunnel/*.log` and `/var/log/pods/istio-system_ztunnel-*/istio-proxy/*.log`. It mounts `/var/log/pods` and `/var/log/containers` read-only using `hostPath` `Directory` mounts. It does not mount a ServiceAccount token and has no Kubernetes RBAC permissions. The matcher excludes other namespaces, misleading pod names, all other container names, and rotated filenames. The retained Fluent Bit input uses its comma-separated `Path` list for the same two paths. The `.log` suffix excludes retained `.log.<timestamp>`, `.log.gz`, and `.log.tmp` rotations. For the agent, an already-open renamed log receives a best-effort one-pass drain; writes arriving after that drain and before the producer reopens a matching `.log` may be lost. This protects against ordinary tenant log spoofing, not node root, privileged writers, or control of trusted ztunnel workloads. A compromised agent can still read other logs exposed by its host mounts. No chart NetworkPolicy restricts the agent port.
+
+> [!WARNING]
+> The Istio agent is **not compatible with the restricted Pod Security Standard**. It runs as root and uses hostPath, which also violates baseline Pod Security. The release namespace's admission policy must explicitly permit the required hostPath and root settings (or exempt that namespace); changing only the UID cannot make this workload restricted-compatible. The chart does not change namespace Pod Security labels.
+
+Both Istio agent and Fluent Bit need a pod on every node running ztunnel. Their default `Exists` toleration matches ztunnel, but custom tolerations, node selectors, or affinity can leave ztunnel nodes uncovered. The agent requests 100m CPU and 256Mi memory by default. It uses the chart's high-priority shared PriorityClass and may preempt lower-priority pods. The agent container uses a read-only root filesystem, drops all capabilities, disables privilege escalation, and uses `RuntimeDefault` seccomp; cert-manager's CSI driver remains required for its per-pod mTLS identity.
+
+Set `controller.provider.istio.agent.enabled: false` to disable only the chart-managed DaemonSet. The controller still requires authenticated mTLS and can ingest from externally managed agents that satisfy the existing namespace, discovery-label selector, port, CA, certificate SAN, and client SAN contract. Disabling the local DaemonSet does not provision those agents. User `args` are emitted before the chart-owned matcher and transport flags, so mandatory settings remain pinned. Istio agent image tags are release-managed with the controller image.
 
 The `controller` Deployment has no tolerations by default. Set
 `controller.tolerations` or `global.tolerations` to schedule it onto tainted

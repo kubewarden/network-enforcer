@@ -38,11 +38,9 @@ spec:
         - --provider-name={{ $w.provider.name }}
         {{- if eq $w.provider.name "istio" }}
         - --agent-label-selector=app.kubernetes.io/name={{ include "network-enforcer.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=agent
-        - --agent-grpc-port={{ .Values.agent.grpcPort }}
-        {{- if .Values.agent.enabled }}
+        - --agent-grpc-port={{ $w.provider.istio.agent.grpcPort }}
         - --agent-grpc-mtls-enabled=true
         - --agent-grpc-mtls-cert-dir={{ include "network-enforcer.grpc.certDir" . }}
-        {{- end }}
         {{- else }}
         - --provider-endpoint={{ include "network-enforcer.controller.providerEndpoint" . }}
         {{- $tlsArgs := include "network-enforcer.provider.tls.args" . | trim }}
@@ -98,7 +96,7 @@ spec:
         - mountPath: /tmp/k8s-webhook-server/serving-certs
           name: webhook-certs
           readOnly: true
-        {{- if .Values.agent.enabled }}
+        {{- if eq $w.provider.name "istio" }}
         - mountPath: {{ include "network-enforcer.grpc.certDir" . }}
           name: grpc-certs
           readOnly: true
@@ -123,7 +121,7 @@ spec:
             {{- with (default dict $w.containerSecurityContext).runAsGroup }}
             csi.cert-manager.io/fs-group: {{ . | quote }}
             {{- end }}
-      {{- if .Values.agent.enabled }}
+      {{- if eq $w.provider.name "istio" }}
       - name: grpc-certs
         csi:
           driver: csi.cert-manager.io

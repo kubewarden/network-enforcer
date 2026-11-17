@@ -183,6 +183,17 @@ tests:
       - hasDocuments:
           count: 1
 
+  - it: "uses comma-separated Fluent Bit paths for only the two supported ztunnel containers"
+    set:
+      controller:
+        provider:
+          name: istio
+    asserts:
+      - matchRegex:
+          path: data["fluent-bit.conf"]
+          pattern: '(?m)^ *Path +/var/log/pods/istio-system_ztunnel-\*/ztunnel/\*\.log,/var/log/pods/istio-system_ztunnel-\*/istio-proxy/\*\.log$'
+        template: templates/istio-fluent-bit/configmap.yaml
+
   - it: "does not render fluent-bit templates for cilium"
     set:
       controller:

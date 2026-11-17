@@ -1,36 +1,149 @@
-suite: "Agent hop mTLS material issued by the chart CA"
+suite: Istio agent deployment and security
 chart:
   version: 1.0.0
   appVersion: 2.0.0
 release:
   name: my-release
   namespace: my-namespace
+templates:
+  - templates/istio-agent/daemonset.yaml
+  - templates/istio-agent/serviceaccount.yaml
+  - templates/agent/daemonset.yaml
+  - templates/controller/deployment.yaml
+  - templates/istio-fluent-bit/daemonset.yaml
+  - templates/istio-fluent-bit/configmap.yaml
+  - templates/istio-fluent-bit/serviceaccount.yaml
 tests:
-  - it: "mounts agent CSI material when enabled"
-    template: templates/agent/daemonset.yaml
-    set:
-      agent:
-        enabled: true
+  - it: deploys exactly one Istio agent DaemonSet and a dedicated tokenless ServiceAccount by default
     asserts:
-      - equal:
-          path: kind
-          value: DaemonSet
+      - hasDocuments:
+          count: 1
+        template: templates/istio-agent/daemonset.yaml
       - equal:
           path: metadata.name
           value: my-release-network-enforcer-agent
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: --grpc-mtls-cert-dir=/etc/network-enforcer/certs
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: --grpc-expected-client-san=my-release-network-enforcer-controller
+        template: templates/istio-agent/daemonset.yaml
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: my-release-network-enforcer-agent
+        template: templates/istio-agent/daemonset.yaml
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+        template: templates/istio-agent/daemonset.yaml
+      - equal:
+          path: metadata.name
+          value: my-release-network-enforcer-agent
+        template: templates/istio-agent/serviceaccount.yaml
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: agent
+        template: templates/istio-agent/serviceaccount.yaml
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: my-release
+        template: templates/istio-agent/serviceaccount.yaml
+      - notExists:
+          path: metadata["app.kubernetes.io/instance"]
+        template: templates/istio-agent/serviceaccount.yaml
+      - equal:
+          path: automountServiceAccountToken
+          value: false
+        template: templates/istio-agent/serviceaccount.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/agent/daemonset.yaml
+
+  - it: mounts only the two read-only log directories and CSI certificates
+    template: templates/istio-agent/daemonset.yaml
+    asserts:
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
           content:
-            name: grpc-certs
-            mountPath: /etc/network-enforcer/certs
+            name: varlog-pods
+            mountPath: /var/log/pods
             readOnly: true
-          count: 1
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: varlog-containers
+            mountPath: /var/log/containers
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: varlog-pods
+            hostPath:
+              path: /var/log/pods
+              type: Directory
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: varlog-containers
+            hostPath:
+              path: /var/log/containers
+              type: Directory
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: varlog
+            hostPath:
+              path: /var/log
+      - lengthEqual:
+          path: spec.template.spec.volumes
+          count: 3
+      - lengthEqual:
+          path: spec.template.spec.containers[0].volumeMounts
+          count: 3
+
+  - it: pins the ztunnel matcher and mTLS settings after user tuning arguments
+    template: templates/istio-agent/daemonset.yaml
+    set:
+      controller:
+        provider:
+          istio:
+            agent:
+              args:
+                - --poll-interval=1s
+                - --log-glob=/tmp/forbidden/*.log
+                - --grpc-mtls-enabled=false
+                - --grpc-expected-client-san
+                - --grpc-mtls-cert-dir
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value:
+            - --poll-interval=1s
+            - --log-glob=/tmp/forbidden/*.log
+            - --grpc-mtls-enabled=false
+            - --grpc-expected-client-san
+            - --grpc-mtls-cert-dir
+            - --log-glob=/var/log/pods/istio-system_ztunnel-*/{ztunnel,istio-proxy}/*.log
+            - --grpc-port=50052
+            - --grpc-mtls-enabled=true
+            - --grpc-mtls-cert-dir=/etc/network-enforcer/certs
+            - --grpc-expected-client-san=my-release-network-enforcer-controller
+
+  - it: retains chart-owned identity and certificate SANs
+    set:
+      controller:
+        provider:
+          istio:
+            agent:
+              grpcPort: 50123
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --grpc-port=50123
+        template: templates/istio-agent/daemonset.yaml
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --grpc-mtls-enabled=true
+        template: templates/istio-agent/daemonset.yaml
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --grpc-expected-client-san=my-release-network-enforcer-controller
+        template: templates/istio-agent/daemonset.yaml
       - contains:
           path: spec.template.spec.volumes
           content:
@@ -43,25 +156,48 @@ tests:
                 csi.cert-manager.io/issuer-kind: Issuer
                 csi.cert-manager.io/dns-names: ${POD_NAME}.${POD_NAMESPACE}
                 csi.cert-manager.io/fs-group: "65532"
+        template: templates/istio-agent/daemonset.yaml
 
-  - it: "keeps controller free of gRPC material by default"
-    template: templates/controller/deployment.yaml
+  - it: runs as root with the remaining container hardening
+    template: templates/istio-agent/daemonset.yaml
     asserts:
-      - notContains:
-          path: spec.template.spec.volumes
-          content:
-            name: grpc-certs
-      - notContains:
-          path: spec.template.spec.containers[0].volumeMounts
-          content:
-            mountPath: /etc/network-enforcer/certs
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: false
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 0
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop[0]
+          value: ALL
 
-  - it: "issues controller gRPC material when the agent is enabled"
-    template: templates/controller/deployment.yaml
+  - it: does not render a local agent when disabled but the controller still uses mTLS
     set:
-      agent:
-        enabled: true
+      controller:
+        provider:
+          istio:
+            agent:
+              enabled: false
     asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/istio-agent/daemonset.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/istio-agent/serviceaccount.yaml
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-mtls-enabled=true
+        template: templates/controller/deployment.yaml
       - contains:
           path: spec.template.spec.volumes
           content:
@@ -74,188 +210,246 @@ tests:
                 csi.cert-manager.io/issuer-kind: Issuer
                 csi.cert-manager.io/dns-names: my-release-network-enforcer-controller
                 csi.cert-manager.io/fs-group: "65532"
-      - contains:
-          path: spec.template.spec.containers[0].volumeMounts
+        template: templates/controller/deployment.yaml
+
+  - it: inherits common settings while allowing nested workload overrides
+    template: templates/istio-agent/daemonset.yaml
+    set:
+      common:
+        tolerations:
+          - key: common
+            operator: Exists
+        nodeSelector:
+          node-role: common
+      controller:
+        provider:
+          istio:
+            agent:
+              tolerations: []
+              nodeSelector:
+                node-role: agent
+    asserts:
+      - equal:
+          path: spec.template.spec.tolerations
+          value:
+            - key: common
+              operator: Exists
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            node-role: agent
+
+  - it: merges global, common and nested image pull secrets
+    template: templates/istio-agent/daemonset.yaml
+    set:
+      global:
+        imagePullSecrets:
+          - global-secret
+      common:
+        imagePullSecrets:
+          - name: common-secret
+      controller:
+        provider:
+          istio:
+            agent:
+              imagePullSecrets:
+                - name: agent-secret
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: global-secret
+            - name: common-secret
+            - name: agent-secret
+
+  - it: applies the namespace override to the agent ServiceAccount
+    template: templates/istio-agent/serviceaccount.yaml
+    release:
+      namespace: ignored-release-namespace
+    set:
+      namespaceOverride: agent-namespace
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: agent-namespace
+
+  - it: renders merged ServiceAccount annotations on the agent identity
+    template: templates/istio-agent/serviceaccount.yaml
+    set:
+      global:
+        serviceAccount:
+          annotations:
+            example.com/global: global
+            example.com/role: global
+      common:
+        serviceAccount:
+          annotations:
+            example.com/common: common
+            example.com/role: common
+      controller:
+        provider:
+          istio:
+            agent:
+              serviceAccount:
+                annotations:
+                  example.com/role: agent
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            example.com/global: global
+            example.com/common: common
+            example.com/role: agent
+
+  - it: renders fixed agent component labels despite user label collisions
+    template: templates/istio-agent/daemonset.yaml
+    set:
+      controller:
+        provider:
+          istio:
+            agent:
+              labels:
+                app.kubernetes.io/component: overridden
+              podLabels:
+                app.kubernetes.io/component: overridden
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: agent
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: agent
+
+  - it: does not render Istio agents or agent-hop material for Cilium
+    set:
+      controller:
+        provider:
+          name: cilium
+          istio:
+            agent:
+              enabled: true
+              grpcPort: 50123
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/istio-agent/daemonset.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/istio-agent/serviceaccount.yaml
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-mtls-enabled=true
+        template: templates/controller/deployment.yaml
+      - notContains:
+          path: spec.template.spec.volumes
           content:
             name: grpc-certs
-            mountPath: /etc/network-enforcer/certs
-            readOnly: true
-          count: 1
+          any: true
+        template: templates/controller/deployment.yaml
 
-  - it: "renders no agent DaemonSet by default"
-    asserts:
-      - containsDocument:
-          kind: DaemonSet
-          apiVersion: apps/v1
-          name: my-release-network-enforcer-agent
-        not: true
-
-  - it: "the agent runs unprivileged by default"
-    template: templates/agent/daemonset.yaml
+  - it: does not render Istio agents or agent-hop material for Calico
     set:
-      agent:
-        enabled: true
+      controller:
+        provider:
+          name: calico
+          istio:
+            agent:
+              enabled: true
+              grpcPort: 50123
     asserts:
-      - equal:
-          path: spec.template.spec.securityContext.runAsNonRoot
-          value: true
-      - equal:
-          path: spec.template.spec.containers[0].securityContext.runAsUser
-          value: 65532
-
-  - it: "accepts custom agent security contexts"
-    template: templates/agent/daemonset.yaml
-    set:
-      agent:
-        enabled: true
-        podSecurityContext:
-          runAsNonRoot: true
-        containerSecurityContext:
-          runAsUser: 1000
-          capabilities:
-            drop:
-            - ALL
-    asserts:
-      - equal:
-          path: spec.template.spec.securityContext.runAsNonRoot
-          value: true
-      - equal:
-          path: spec.template.spec.containers[0].securityContext.runAsUser
-          value: 1000
-
-  - it: "appends custom agent args after the default gRPC flags"
-    template: templates/agent/daemonset.yaml
-    set:
-      agent:
-        enabled: true
-        args:
-          - --grpc-mtls-enabled=false
-          - --log-level=debug
-    asserts:
-      - equal:
-          path: spec.template.spec.containers[0].args
-          value:
-            - --grpc-port=50052
-            - --grpc-mtls-cert-dir=/etc/network-enforcer/certs
-            - --grpc-expected-client-san=my-release-network-enforcer-controller
-            - --grpc-mtls-enabled=false
-            - --log-level=debug
-
-  - it: "renders agent extra environment variables under env"
-    template: templates/agent/daemonset.yaml
-    set:
-      agent:
-        enabled: true
-        extraEnv:
-          - name: POD_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.name
-          - name: LOG_FORMAT
-            value: json
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: POD_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.name
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: LOG_FORMAT
-            value: json
+      - hasDocuments:
+          count: 0
+        template: templates/istio-agent/daemonset.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/istio-agent/serviceaccount.yaml
       - notContains:
-          path: spec.template.spec.containers[0].command
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-mtls-enabled=true
+        template: templates/controller/deployment.yaml
+      - notContains:
+          path: spec.template.spec.volumes
           content:
-            name: LOG_FORMAT
-            value: json
-
-  - it: "omits env when no agent extra environment variables are set"
-    template: templates/agent/daemonset.yaml
-    set:
-      agent:
-        enabled: true
+            name: grpc-certs
+          any: true
+        template: templates/controller/deployment.yaml
+---
+suite: Istio agent has no Kubernetes RBAC bindings
+templates:
+  - templates/controller/rolebinding.yaml
+  - templates/controller/leader-election-rbac.yaml
+  - templates/controller/metrics-auth-rbac.yaml
+  - templates/controller/metrics-reader-rbac.yaml
+  - templates/controller/provider-tls-rbac.yaml
+tests:
+  - it: does not grant Kubernetes permissions to the agent ServiceAccount
+    documentSelector:
+      path: kind
+      pattern: "^(RoleBinding|ClusterRoleBinding)$"
+      skipEmptyTemplates: true
+      matchMany: true
     asserts:
-      - notExists:
-          path: spec.template.spec.containers[0].env
-
-  - it: "renders agent.resources on the DaemonSet"
-    template: templates/agent/daemonset.yaml
+      - notContains:
+          path: subjects
+          content:
+            kind: ServiceAccount
+            name: RELEASE-NAME-network-enforcer-agent
+          any: true
+---
+suite: full chart render without inactive Istio values
+templates:
+  - templates/**/*.yaml
+chart:
+  version: 1.0.0
+  appVersion: 2.0.0
+release:
+  name: audit
+  namespace: audit
+tests:
+  - it: renders Cilium when the inactive Istio values are removed
     set:
-      agent:
-        enabled: true
-        resources:
-          limits:
-            cpu: 250m
-            memory: 128Mi
-          requests:
-            cpu: 50m
-            memory: 64Mi
+      controller:
+        provider:
+          name: cilium
+          istio: null
     asserts:
-      - equal:
-          path: spec.template.spec.containers[0].resources.limits.cpu
-          value: 250m
-      - equal:
-          path: spec.template.spec.containers[0].resources.requests.memory
-          value: 64Mi
+      - hasDocuments:
+          count: 0
+        template: templates/istio-agent/daemonset.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/istio-agent/serviceaccount.yaml
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-mtls-enabled=true
+        template: templates/controller/deployment.yaml
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: grpc-certs
+          any: true
+        template: templates/controller/deployment.yaml
 
-  - it: "renders agent topologySpreadConstraints on the DaemonSet"
-    template: templates/agent/daemonset.yaml
+  - it: renders Calico when the inactive Istio values are removed
     set:
-      agent:
-        enabled: true
-        topologySpreadConstraints:
-          - maxSkew: 1
-            topologyKey: kubernetes.io/hostname
-            whenUnsatisfiable: ScheduleAnyway
+      controller:
+        provider:
+          name: calico
+          istio: null
     asserts:
-      - equal:
-          path: spec.template.spec.topologySpreadConstraints[0].maxSkew
-          value: 1
-
-  - it: "renders agent extraEnvFrom as envFrom on the DaemonSet"
-    template: templates/agent/daemonset.yaml
-    set:
-      agent:
-        enabled: true
-        extraEnvFrom:
-          - secretRef:
-              name: agent-env
-    asserts:
-      - equal:
-          path: spec.template.spec.containers[0].envFrom
-          value:
-            - secretRef:
-                name: agent-env
-
-  - it: "tolerates all taints by default so it runs where ztunnel runs"
-    template: templates/agent/daemonset.yaml
-    set:
-      agent:
-        enabled: true
-    asserts:
-      - equal:
-          path: spec.template.spec.tolerations
-          value:
-            - operator: Exists
-
-  - it: "lets agent tolerations override the default"
-    template: templates/agent/daemonset.yaml
-    set:
-      agent:
-        enabled: true
-        tolerations:
-          - key: dedicated
-            operator: Equal
-            value: logging
-            effect: NoSchedule
-    asserts:
-      - equal:
-          path: spec.template.spec.tolerations
-          value:
-            - key: dedicated
-              operator: Equal
-              value: logging
-              effect: NoSchedule
+      - hasDocuments:
+          count: 0
+        template: templates/istio-agent/daemonset.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/istio-agent/serviceaccount.yaml
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-mtls-enabled=true
+        template: templates/controller/deployment.yaml
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: grpc-certs
+          any: true
+        template: templates/controller/deployment.yaml

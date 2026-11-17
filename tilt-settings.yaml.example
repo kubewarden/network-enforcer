@@ -11,5 +11,7 @@ controller:
   image: controller
   providerName: "istio"
 
+# Used only when controller.providerName is istio. This is a Tilt build setting,
+# not the Helm chart values path (controller.provider.istio.agent.image).
 agent:
   image: agent

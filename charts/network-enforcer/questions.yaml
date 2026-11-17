@@ -42,8 +42,8 @@ questions:
     label: Data-plane Provider
     description: |
       The data-plane provider the controller reads network flows from.
-      "istio" pulls typed ztunnel events from the network-enforcer agent DaemonSet, "cilium" uses Hubble Relay, and "calico" uses Goldmane.
-      Enable agent.enabled and configure node-log access for Istio ingestion. The chart retains legacy Fluent Bit/OTLP resources temporarily; #649 must land before release.
+      "istio" pulls typed ztunnel events from the agent DaemonSet, "cilium" uses Hubble Relay, and "calico" uses Goldmane.
+      The Istio agent is enabled by default under controller.provider.istio.agent and reads node logs through hostPath mounts; the release namespace admission policy must permit this workload. The chart retains legacy Fluent Bit resources, which are not the current controller ingestion path.
       Endpoint and TLS defaults live under controller.provider.<name>; only the selected provider's tree is used.
     group: Provider
 

@@ -51,5 +51,7 @@ annotations:
   artifacthub.io/images: |
     - name: controller
       image: ghcr.io/kubewarden/network-enforcer/controller:v0.4.0
+    - name: agent
+      image: ghcr.io/kubewarden/network-enforcer/agent:v0.4.0
     - name: fluent-bit
       image: fluent/fluent-bit:5.2.0

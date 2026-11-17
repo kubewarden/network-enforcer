@@ -92,6 +92,14 @@ targets:
     spec:
       file: charts/network-enforcer/values.yaml
       key: $.controller.image.tag
+  update_agent_version:
+    scmid: default
+    name: update Helm chart agent version
+    kind: yaml
+    sourceid: releaseVersion
+    spec:
+      file: charts/network-enforcer/values.yaml
+      key: $.controller.provider.istio.agent.image.tag
   update_readme:
     scmid: default
     name: Update Helm chart README
@@ -112,6 +120,15 @@ targets:
       file: charts/network-enforcer/Chart.yaml
       matchpattern: 'image: ghcr\.io/kubewarden/network-enforcer/controller:(v?\S+)'
       replacepattern: 'image: ghcr.io/kubewarden/network-enforcer/controller:{{ source "releaseVersion" }}'
+  update_agent_artifacthub_annotation:
+    scmid: default
+    name: update agent image in artifacthub.io/images annotation
+    kind: file
+    sourceid: releaseVersion
+    spec:
+      file: charts/network-enforcer/Chart.yaml
+      matchpattern: 'image: ghcr\.io/kubewarden/network-enforcer/agent:(v?\S+)'
+      replacepattern: 'image: ghcr.io/kubewarden/network-enforcer/agent:{{ source "releaseVersion" }}'
   generate_values_schema:
     kind: shell
     disablesourceinput: true

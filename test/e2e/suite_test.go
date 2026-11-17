@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -188,13 +189,9 @@ func netEnforcerHelmOpts(testCfg suiteConfig) []helm.Option {
 	if testCfg.IsIstioProvider() {
 		agentRepo, agentTag := parseImage(testCfg.agentImage)
 		helmOpts = append(helmOpts,
-			helm.WithArgs("--set", "agent.enabled=true"),
-			helm.WithArgs("--set", "agent.image.registry="),
-			helm.WithArgs("--set", fmt.Sprintf("agent.image.repository=%s", agentRepo)),
-			helm.WithArgs("--set", fmt.Sprintf("agent.image.tag=%s", agentTag)),
-			// Reading ztunnel logs on Kind requires the agent to run as root.
-			helm.WithArgs("--set", "agent.podSecurityContext.runAsNonRoot=false"),
-			helm.WithArgs("--set", "agent.containerSecurityContext.runAsUser=0"),
+			helm.WithArgs("--set", "controller.provider.istio.agent.image.registry="),
+			helm.WithArgs("--set", fmt.Sprintf("controller.provider.istio.agent.image.repository=%s", agentRepo)),
+			helm.WithArgs("--set", fmt.Sprintf("controller.provider.istio.agent.image.tag=%s", agentTag)),
 		)
 	}
 	return helmOpts
@@ -241,6 +238,102 @@ func waitForNetEnforcerReady(
 		); err != nil {
 			return fmt.Errorf("wait Istio agent daemonset ready: %w", err)
 		}
+		if err := assertIstioAgentInstallation(ctx, r, testCfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func assertIstioAgentInstallation(ctx context.Context, r *resources.Resources, testCfg suiteConfig) error {
+	namespace := testCfg.releaseNS
+	var agent appsv1.DaemonSet
+	if err := r.Get(ctx, testCfg.releaseName+"-agent", namespace, &agent); err != nil {
+		return fmt.Errorf("get Istio agent DaemonSet: %w", err)
+	}
+	var ztunnel appsv1.DaemonSet
+	if err := r.Get(ctx, "ztunnel", istioNamespace, &ztunnel); err != nil {
+		return fmt.Errorf("get ztunnel DaemonSet: %w", err)
+	}
+	if agent.Status.NumberReady != ztunnel.Status.NumberReady {
+		return fmt.Errorf(
+			"agent has %d ready pods for %d ready ztunnel pods",
+			agent.Status.NumberReady,
+			ztunnel.Status.NumberReady,
+		)
+	}
+	if err := assertIstioAgentPod(agent.Spec.Template.Spec, testCfg.releaseName); err != nil {
+		return err
+	}
+	var serviceAccount corev1.ServiceAccount
+	if err := r.Get(ctx, testCfg.releaseName+"-agent", namespace, &serviceAccount); err != nil {
+		return fmt.Errorf("get Istio agent ServiceAccount: %w", err)
+	}
+	if serviceAccount.AutomountServiceAccountToken == nil || *serviceAccount.AutomountServiceAccountToken {
+		return errors.New("agent ServiceAccount must disable token automount")
+	}
+	return assertFluentBitResources(ctx, r, namespace, testCfg.releaseName)
+}
+
+func assertIstioAgentPod(podSpec corev1.PodSpec, releaseName string) error {
+	if podSpec.ServiceAccountName != releaseName+"-agent" || podSpec.AutomountServiceAccountToken == nil ||
+		*podSpec.AutomountServiceAccountToken {
+		return errors.New("agent pod must use its tokenless dedicated ServiceAccount")
+	}
+	if podSpec.SecurityContext == nil || podSpec.SecurityContext.RunAsNonRoot == nil ||
+		*podSpec.SecurityContext.RunAsNonRoot {
+		return errors.New("agent pod must allow the root UID needed to read kubelet logs")
+	}
+	container := findContainer(podSpec.Containers, "agent")
+	if container == nil || container.SecurityContext == nil || container.SecurityContext.RunAsUser == nil ||
+		*container.SecurityContext.RunAsUser != 0 ||
+		container.SecurityContext.ReadOnlyRootFilesystem == nil ||
+		!*container.SecurityContext.ReadOnlyRootFilesystem {
+		return errors.New("agent container must run as root with a read-only root filesystem")
+	}
+	if container.SecurityContext.AllowPrivilegeEscalation == nil ||
+		*container.SecurityContext.AllowPrivilegeEscalation {
+		return errors.New("agent container must disable privilege escalation")
+	}
+	return assertIstioAgentLogMounts(container.VolumeMounts)
+}
+
+func findContainer(containers []corev1.Container, name string) *corev1.Container {
+	for i := range containers {
+		if containers[i].Name == name {
+			return &containers[i]
+		}
+	}
+	return nil
+}
+
+func assertIstioAgentLogMounts(mounts []corev1.VolumeMount) error {
+	for _, required := range []struct{ name, path string }{{"varlog-pods", "/var/log/pods"}, {"varlog-containers", "/var/log/containers"}} {
+		found := false
+		for _, mount := range mounts {
+			if mount.Name == required.name && mount.MountPath == required.path && mount.ReadOnly {
+				found = true
+			}
+		}
+		if !found {
+			return fmt.Errorf("agent is missing read-only mount %s", required.path)
+		}
+	}
+	return nil
+}
+
+func assertFluentBitResources(ctx context.Context, r *resources.Resources, namespace, releaseName string) error {
+	var config corev1.ConfigMap
+	if err := r.Get(ctx, releaseName+"-istio-fluent-bit", namespace, &config); err != nil {
+		return fmt.Errorf("get retained Istio Fluent Bit ConfigMap: %w", err)
+	}
+	var daemonSet appsv1.DaemonSet
+	if err := r.Get(ctx, releaseName+"-istio-fluent-bit", namespace, &daemonSet); err != nil {
+		return fmt.Errorf("get retained Istio Fluent Bit DaemonSet: %w", err)
+	}
+	var account corev1.ServiceAccount
+	if err := r.Get(ctx, releaseName+"-istio-fluent-bit", namespace, &account); err != nil {
+		return fmt.Errorf("get retained Istio Fluent Bit ServiceAccount: %w", err)
 	}
 	return nil
 }
