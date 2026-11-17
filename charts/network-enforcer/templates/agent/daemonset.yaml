@@ -32,7 +32,6 @@ spec:
       containers:
       - args:
         - --grpc-port={{ $a.grpcPort }}
-        - --grpc-mtls-enabled=true
         - --grpc-mtls-cert-dir={{ include "network-enforcer.grpc.certDir" . }}
         - --grpc-expected-client-san={{ include "network-enforcer.fullname" . }}-controller
         {{- with $a.args }}{{ toYaml . | nindent 8 }}{{ end }}
