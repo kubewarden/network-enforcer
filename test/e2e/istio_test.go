@@ -49,8 +49,8 @@ func labelNamespaceAmbient(ctx context.Context, t *testing.T, _ *envconf.Config)
 }
 
 // TestIstioFlow is the smoke test for the Istio path: it validates the whole
-// learning data path (ztunnel access log → istio-fluent-bit → OTLP → istio
-// scraper → learning controller → WorkloadNetworkPolicyProposal) with a single
+// learning data path (ztunnel access log → agent → controller puller → learning
+// controller → WorkloadNetworkPolicyProposal) with a single
 // TCP connection between two in-mesh workloads, then exercises the full policy
 // lifecycle on the learned proposal: promotion to a monitor policy (dry-run
 // AuthorizationPolicy, violations observed but traffic allowed), followed by

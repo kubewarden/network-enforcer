@@ -67,8 +67,7 @@ func installIstioMesh() env.Func {
 				args: []string{
 					// surface monitor-mode policy decisions in ztunnel logs
 					"--set", "env.AUTHZ_POLICY_INFO_LOGGING=true",
-					// emit logs as JSON: the istio-fluent-bit pipeline (ztunnel_json
-					// parser + Lua) expects the flat dotted-key JSON format
+					// emit logs as JSON for the node agent's typed ztunnel parser
 					"--set", "logAsJson=true",
 				},
 			},

@@ -262,12 +262,16 @@ generate-calico-goldmane-proto: download-calico-goldmane-proto $(BUF) ## Generat
 # Set E2E_DEPENDENCIES=none to skip dependency installation (useful with existing clusters).
 # cert-manager must still be available because the chart always enables its validating webhook.
 # Example: `make test-e2e E2E_USE_EXISTING_CLUSTER=true E2E_DEPENDENCIES=none`
-# Set E2E_NO_REBUILD=true to skip image building.  This is useful when you're developing new e2e tests.
+# Set E2E_NO_REBUILD=true to skip image building. This reuses the locally available controller and agent images.
+E2E_PROVIDER ?= istio
 .PHONY: test-e2e
 test-e2e:
 ifneq ($(E2E_USE_EXISTING_CLUSTER),true)
 ifeq ($(E2E_NO_REBUILD),)
 	$(MAKE) build-controller-image
+ifeq ($(E2E_PROVIDER),istio)
+	$(MAKE) build-agent-image
+endif
 endif
 endif
 	@echo "🧪 Running e2e tests with '$(E2E_PROVIDER)' provider..."

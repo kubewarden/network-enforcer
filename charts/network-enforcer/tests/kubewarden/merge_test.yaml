@@ -606,8 +606,7 @@ tests:
                         values: [system]
         template: "templates/istio-fluent-bit/daemonset.yaml"
 
-  # The default Istio provider mounts its TLS certificate first,
-  # so the chart volumes on the controller are provider-tls and webhook-certs.
+  # The active Istio controller has a webhook certificate and no legacy provider TLS volume.
   - it: "should order extraEnv, extraVolumes, and extraVolumeMounts as chart, global, common, workload"
     set:
       global:
@@ -654,47 +653,44 @@ tests:
             - name: B
               value: b
       - equal:
-          path: "spec.template.spec.volumes[2]"
+          path: "spec.template.spec.volumes[1]"
           value:
             name: vol-a
             emptyDir: {}
       - equal:
-          path: "spec.template.spec.volumes[3]"
+          path: "spec.template.spec.volumes[2]"
           value:
             name: vol-c
             emptyDir: {}
       - equal:
-          path: "spec.template.spec.volumes[4]"
+          path: "spec.template.spec.volumes[3]"
           value:
             name: vol-b
             emptyDir: {}
       - lengthEqual:
           path: "spec.template.spec.volumes"
-          count: 5
+          count: 4
       - equal:
           path: "spec.template.spec.volumes[0].name"
-          value: provider-tls
-      - equal:
-          path: "spec.template.spec.volumes[1].name"
           value: webhook-certs
       - equal:
-          path: "spec.template.spec.containers[0].volumeMounts[2]"
+          path: "spec.template.spec.containers[0].volumeMounts[1]"
           value:
             name: vol-a
             mountPath: /a
       - equal:
-          path: "spec.template.spec.containers[0].volumeMounts[3]"
+          path: "spec.template.spec.containers[0].volumeMounts[2]"
           value:
             name: vol-c
             mountPath: /c
       - equal:
-          path: "spec.template.spec.containers[0].volumeMounts[4]"
+          path: "spec.template.spec.containers[0].volumeMounts[3]"
           value:
             name: vol-b
             mountPath: /b
       - lengthEqual:
           path: "spec.template.spec.containers[0].volumeMounts"
-          count: 5
+          count: 4
 
   - it: "should order extraEnv, extraVolumes, and extraVolumeMounts as chart, global, common, workload on the fluent-bit DaemonSet"
     documentSelector: *workloads

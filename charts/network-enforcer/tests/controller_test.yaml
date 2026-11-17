@@ -93,7 +93,7 @@ tests:
     set:
       controller:
         provider:
-          # if the provider is not istio the container port will have index 0.
+          # The controller exposes only the optional flow-dumper port.
           name: cilium
         flowDumper:
           enabled: true
@@ -115,7 +115,6 @@ tests:
     set:
       controller:
         provider:
-            # if the provider is istio the container port will have index 1.
           name: istio
         flowDumper:
           enabled: true
@@ -132,7 +131,7 @@ tests:
           path: spec.template.spec.containers[0].args
           content: --flow-dumper-buffer-size=1234
       - equal:
-            path: spec.template.spec.containers[0].ports[1].containerPort
+            path: spec.template.spec.containers[0].ports[0].containerPort
             value: 9084
 ---
 suite: "Render flow dumper service"

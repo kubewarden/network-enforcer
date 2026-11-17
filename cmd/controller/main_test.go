@@ -17,6 +17,9 @@ limitations under the License.
 package main
 
 import (
+	"flag"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -36,63 +39,6 @@ type stubManager struct {
 
 func (s stubManager) GetAPIReader() client.Reader {
 	return s.reader
-}
-
-func TestIstioTLSCertDir(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name       string
-		tlsMode    string
-		tlsCertDir string
-		wantDir    string
-		wantErr    string
-	}{
-		{
-			name:       "insecure allows empty cert dir",
-			tlsMode:    string(certsource.ModeInsecure),
-			tlsCertDir: "",
-			wantDir:    "",
-		},
-		{
-			name:       "issuer requires cert dir",
-			tlsMode:    string(certsource.ModeIssuer),
-			tlsCertDir: "",
-			wantErr:    `istio provider TLS mode "issuer" requires --provider-tls-cert-dir`,
-		},
-		{
-			name:       "issuer with cert dir",
-			tlsMode:    string(certsource.ModeIssuer),
-			tlsCertDir: "/etc/provider/certs",
-			wantDir:    "/etc/provider/certs",
-		},
-		{
-			name:       "existingSecret requires cert dir",
-			tlsMode:    string(certsource.ModeExistingSecret),
-			tlsCertDir: "",
-			wantErr:    `istio provider TLS mode "existingSecret" requires --provider-tls-cert-dir`,
-		},
-		{
-			name:       "existingSecret with cert dir",
-			tlsMode:    string(certsource.ModeExistingSecret),
-			tlsCertDir: "/etc/provider/certs",
-			wantDir:    "/etc/provider/certs",
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, err := istioTLSCertDir(tc.tlsMode, tc.tlsCertDir)
-			if tc.wantErr != "" {
-				require.EqualError(t, err, tc.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.wantDir, got)
-		})
-	}
 }
 
 func TestValidateCalicoTLSMode(t *testing.T) {
@@ -187,6 +133,57 @@ func TestNewProviderCertSource(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveAgentNamespace(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		override   string
+		contents   string
+		createFile bool
+		want       string
+		wantErr    string
+	}{
+		{name: "service account", contents: "controller-system\n", createFile: true, want: "controller-system"},
+		{name: "explicit override without service account", override: "local-agents", want: "local-agents"},
+		{
+			name:       "explicit override wins",
+			override:   "other-agents",
+			contents:   "controller-system",
+			createFile: true,
+			want:       "other-agents",
+		},
+		{name: "missing service account", wantErr: "set --agent-namespace outside a Pod"},
+		{name: "empty service account namespace", contents: "\n", createFile: true, wantErr: "namespace is empty"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "namespace")
+			if tc.createFile {
+				require.NoError(t, os.WriteFile(path, []byte(tc.contents), 0o600))
+			}
+			got, err := resolveAgentNamespace(tc.override, path)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestExplicitlySetProviderFlagsIncludesExplicitDefaults(t *testing.T) {
+	t.Parallel()
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.String("provider-endpoint", "", "")
+	fs.String("provider-tls-mode", "insecure", "")
+	fs.String("provider-tls-cert-dir", "", "")
+	fs.String("unrelated", "", "")
+	require.NoError(t, fs.Parse([]string{"--provider-endpoint=", "--provider-tls-mode=insecure"}))
+	require.Equal(t, []string{"provider-endpoint", "provider-tls-mode"}, explicitlySetProviderFlags(fs))
 }
 
 func TestNewAgentClientFactory(t *testing.T) {

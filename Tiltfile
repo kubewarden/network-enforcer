@@ -38,7 +38,7 @@ helm_set_values = [
     "agent.image.repository=" + agent_image,
     # The agent reads node log files, so it runs as root.
     "agent.podSecurityContext.runAsNonRoot=false",
-    "agent.containerSecurityContext.runAsUser=null",
+    "agent.containerSecurityContext.runAsUser=0",
 ]
 
 yaml = helm(

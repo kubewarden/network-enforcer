@@ -14,6 +14,7 @@ const (
 	defaultChartPath               = "../../charts/network-enforcer"
 	defaultLogsDir                 = "./logs"
 	defaultControllerImage         = "ghcr.io/kubewarden/network-enforcer/controller:latest"
+	defaultAgentImage              = "ghcr.io/kubewarden/network-enforcer/agent:latest"
 	defaultReleaseName             = "network-enforcer"
 	defaultReleaseNS               = "network-enforcer"
 	defaultNamespacePref           = "network-enforcer-e2e"
@@ -35,6 +36,7 @@ const (
 	// selects the data-plane provider to set up (istio, cilium or calico).
 	providerEnvVar        = "E2E_PROVIDER"
 	providerVersionEnvVar = "E2E_PROVIDER_VERSION"
+	agentImageEnvVar      = "E2E_AGENT_IMAGE"
 	// comma-separated list of optional dependencies to install: provider name
 	// ("istio", "cilium", "calico") and "cert-manager". Empty/unset means all.
 	// "none" means none.
@@ -53,6 +55,7 @@ type suiteConfig struct {
 	releaseName             string
 	releaseNS               string
 	controllerImage         string
+	agentImage              string
 	namespacePrefix         string
 	provider                provider
 	wnpStatusUpdateInterval time.Duration
@@ -70,7 +73,8 @@ func loadSuiteConfig() suiteConfig {
 		chartPath:       defaultChartPath,
 		releaseName:     defaultReleaseName,
 		releaseNS:       defaultReleaseNS,
-		controllerImage: defaultControllerImage,
+		controllerImage: readEnvOrDefault("E2E_CONTROLLER_IMAGE", defaultControllerImage),
+		agentImage:      readEnvOrDefault(agentImageEnvVar, defaultAgentImage),
 		namespacePrefix: defaultNamespacePref,
 		kindConfigPath:  defaultKindConfigPathForProvider(providerName),
 		provider: provider{

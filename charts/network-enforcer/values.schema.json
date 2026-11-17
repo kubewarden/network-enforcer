@@ -15,6 +15,11 @@
                 "enabled": {
                     "type": "boolean"
                 },
+                "grpcPort": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
                 "image": {
                     "type": "object",
                     "required": [
