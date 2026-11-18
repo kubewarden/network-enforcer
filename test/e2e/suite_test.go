@@ -188,13 +188,9 @@ func netEnforcerHelmOpts(testCfg suiteConfig) []helm.Option {
 	if testCfg.IsIstioProvider() {
 		agentRepo, agentTag := parseImage(testCfg.agentImage)
 		helmOpts = append(helmOpts,
-			helm.WithArgs("--set", "agent.enabled=true"),
-			helm.WithArgs("--set", "agent.image.registry="),
-			helm.WithArgs("--set", fmt.Sprintf("agent.image.repository=%s", agentRepo)),
-			helm.WithArgs("--set", fmt.Sprintf("agent.image.tag=%s", agentTag)),
-			// Reading ztunnel logs on Kind requires the agent to run as root.
-			helm.WithArgs("--set", "agent.podSecurityContext.runAsNonRoot=false"),
-			helm.WithArgs("--set", "agent.containerSecurityContext.runAsUser=0"),
+			helm.WithArgs("--set", "controller.provider.istio.agent.image.registry="),
+			helm.WithArgs("--set", fmt.Sprintf("controller.provider.istio.agent.image.repository=%s", agentRepo)),
+			helm.WithArgs("--set", fmt.Sprintf("controller.provider.istio.agent.image.tag=%s", agentTag)),
 		)
 	}
 	return helmOpts
@@ -230,7 +226,7 @@ func waitForNetEnforcerReady(
 	}
 
 	if testCfg.IsIstioProvider() {
-		logger.InfoContext(ctx, "⏲️ waiting for Istio agent")
+		logger.InfoContext(ctx, "⏲️ waiting for ztunnel log reader")
 		if err := wait.For(
 			conditions.New(r).DaemonSetReady(
 				&appsv1.DaemonSet{
@@ -239,7 +235,7 @@ func waitForNetEnforcerReady(
 				}),
 			wait.WithTimeout(defaultOperationTimeout),
 		); err != nil {
-			return fmt.Errorf("wait Istio agent daemonset ready: %w", err)
+			return fmt.Errorf("wait ztunnel log reader daemonset ready: %w", err)
 		}
 	}
 	return nil

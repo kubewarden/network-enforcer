@@ -11,7 +11,7 @@ fullnameOverride: ""
 # Leave empty to use the release namespace.
 namespaceOverride: ""
 
-# global holds the settings for all workloads: controller and istioFluentBit.
+# global holds settings for all workloads: controller, istioFluentBit, and the ztunnel log reader.
 # A parent chart can also set these keys.
 # A `common` block with the same keys, except imageRegistry, is also accepted.
 # It applies to all workloads of this chart only, and it wins over global.
@@ -54,7 +54,7 @@ global:
   # Topology spread constraints for the pods.
   # @schema itemRef: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint; item:object
   topologySpreadConstraints: []
-  # PriorityClass for the pods. It overrides priorityClass.name for the controller and the Istio fluent-bit DaemonSet.
+  # PriorityClass for the pods. It overrides priorityClass.name for the controller, Istio fluent-bit, and agent.
   # The chart still creates its own PriorityClass unless priorityClass.enabled is false.
   priorityClassName: ""
   # Extra environment variables for all containers.
@@ -195,6 +195,49 @@ controller:
           caBundleKey: ca.crt
         # Empty means the endpoint host.
         serverName: ""
+      # Network Enforcer's ztunnel log reader, not Istio's istio-agent component.
+      # The values key and published image retain the agent name for compatibility.
+      agent:
+        enabled: true
+        # TCP port used by the agent and the controller's Pod-IP pull client.
+        # @schema minimum: 1
+        # @schema maximum: 65535
+        grpcPort: 50052
+        image:
+          # @schema required
+          repository: kubewarden/network-enforcer/agent
+          # @schema required
+          tag: v0.4.0
+          registry: ghcr.io
+          pullPolicy: ""
+        args: []
+        # @schema $ref: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
+        resources:
+          # @schema hidden
+          limits:
+            cpu: 100m
+            memory: 256Mi
+          # @schema hidden
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        # @schema $ref: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext
+        podSecurityContext:
+          runAsNonRoot: false
+          seccompProfile:
+            type: RuntimeDefault
+        # @schema $ref: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext
+        containerSecurityContext:
+          runAsUser: 0
+          runAsGroup: 65532
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        # @schema itemRef: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration; item:object
+        tolerations:
+          - operator: Exists
     cilium:
       # Hubble Relay address (host:port). Default is TLS on port 443.
       # For plaintext Relay set tls.mode=insecure and tls.serverName to "".
@@ -241,78 +284,10 @@ controller:
     port: 9080
     bufferSize: 10000
 
-# The agent pod that serves gRPC mTLS to the controller.
-# cert-manager issues its certificate through the CSI volumes of the chart CA Issuer.
-# This branch still defaults the agent to disabled; enable it for Istio ingestion.
-# TODO: Complete the chart cutover before release; the controller no longer accepts OTLP.
-agent:
-  enabled: false
-  # TCP port used by the agent and the controller's Pod-IP pull client.
-  # @schema minimum: 1
-  # @schema maximum: 65535
-  grpcPort: 50052
-  image:
-    # The image path used by agent, without the registry.
-    # @schema required
-    repository: kubewarden/network-enforcer/agent
-    # The image tag used by agent
-    # @schema required
-    tag: v0.4.0
-    # Registry for the image. global.imageRegistry replaces it when set.
-    registry: ghcr.io
-    # Pull policy for the image. If it is empty, the chart uses common.imagePullPolicy, then global.imagePullPolicy.
-    pullPolicy: ""
-  # Extra command-line arguments for the agent.
-  args: []
-  # To make the Pods "Guaranteed" (evicted last under node pressure), kubelet requires
-  # requests and limits are specified for all the containers and they are equal.
-  # Please refer to https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#pod-selection-for-kubelet-eviction
-  # @schema $ref: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
-  resources:
-    # @schema hidden
-    limits:
-      cpu: 100m
-      memory: 256Mi
-    # @schema hidden
-    requests:
-      cpu: 100m
-      memory: 256Mi
-  # The image runs as a baked-in non-root user by default. Node logs under /var/log/pods may require root.
-  # For an opt-in root override set podSecurityContext.runAsNonRoot=false and containerSecurityContext.runAsUser=0.
-  # @schema $ref: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext
-  podSecurityContext:
-    # @schema hidden
-    runAsNonRoot: true
-    # @schema hidden
-    seccompProfile:
-      type: RuntimeDefault
-  # @schema $ref: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext
-  containerSecurityContext:
-    # @schema hidden
-    runAsUser: 65532
-    # The agent mounts the webhook and agent certificates through the
-    # cert-manager CSI driver. The driver writes the files with this group.
-    # runAsGroup must match the fs-group so the non-root process can read them.
-    # @schema hidden
-    runAsGroup: 65532
-    # @schema hidden
-    allowPrivilegeEscalation: false
-    # @schema hidden
-    capabilities:
-      drop:
-      - ALL
-  # The agent must run on every node where ztunnel runs, including
-  # tainted ones (e.g. control-plane). ztunnel itself tolerates all
-  # taints, so this default does the same.
-  # This value replaces common.tolerations and global.tolerations.
-  # Set it to [] to use common.tolerations or global.tolerations instead.
-  # @schema itemRef: $k8s/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration; item:object
-  tolerations:
-    - operator: Exists
-
-# TODO: Remove the legacy Fluent Bit OTLP resources during the chart cutover.
-# The controller no longer receives their events; these settings are not an active Istio ingestion path.
-# The chart still deploys the resources only when controller.provider.name is istio.
+# Deprecated: Fluent Bit OTLP resources are retained temporarily for migration and will be removed.
+# The controller pulls from the ztunnel log reader instead.
+# The chart still deploys these resources only when controller.provider.name is istio.
+# @schema deprecated: true
 istioFluentBit:
   image:
     # The image path used by fluent-bit, without the registry.
@@ -346,11 +321,11 @@ istioFluentBit:
 
 kubernetesClusterDomain: cluster.local
 
-# PriorityClass shared by the controller and the Istio fluent-bit pods.
+# PriorityClass shared by the controller, Istio fluent-bit, and agent pods.
 # A priorityClassName in global, common, or a workload block overrides this class for that workload.
 priorityClass:
   enabled: true
   name: network-enforcer-priorityclass
   value: 1000000
   globalDefault: false
-  description: PriorityClass for network-enforcer controller and fluent-bit pods.
+  description: PriorityClass for network-enforcer controller, fluent-bit, and agent pods.

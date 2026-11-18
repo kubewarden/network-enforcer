@@ -1,14 +1,14 @@
-suite: Istio agent pull configuration
+suite: ztunnel log reader pull configuration
 templates:
   - templates/controller/deployment.yaml
-  - templates/agent/daemonset.yaml
+  - templates/ztunnel-log-reader/daemonset.yaml
 chart:
   version: 1.0.0
 release:
   name: network-enforcer
   namespace: network-enforcer
 tests:
-  - it: renders discovery configuration for Istio even when agents are disabled
+  - it: configures discovery and authenticated transport for Istio by default
     template: templates/controller/deployment.yaml
     asserts:
       - notContains:
@@ -23,14 +23,35 @@ tests:
       - notContains:
           path: spec.template.spec.containers[0].args
           content: --agent-grpc-mtls-enabled=true
-      - notExists:
-          path: spec.template.spec.containers[0].ports
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --agent-grpc-mtls-cert-dir=/etc/network-enforcer/certs
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: grpc-certs
+            mountPath: /etc/network-enforcer/certs
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: grpc-certs
+            csi:
+              driver: csi.cert-manager.io
+              readOnly: true
+              volumeAttributes:
+                csi.cert-manager.io/issuer-name: network-enforcer-ca
+                csi.cert-manager.io/issuer-kind: Issuer
+                csi.cert-manager.io/dns-names: network-enforcer-controller
+                csi.cert-manager.io/fs-group: "65532"
 
-  - it: configures matching agent and controller ports and mTLS when enabled
+  - it: uses matching nested ports and mTLS identities for controller and agent
     set:
-      agent:
-        enabled: true
-        grpcPort: 50123
+      controller:
+        provider:
+          istio:
+            agent:
+              grpcPort: 50123
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -38,43 +59,25 @@ tests:
         template: templates/controller/deployment.yaml
       - contains:
           path: spec.template.spec.containers[0].args
-          content: --agent-grpc-mtls-enabled=true
-        template: templates/controller/deployment.yaml
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: --agent-grpc-mtls-cert-dir=/etc/network-enforcer/certs
-        template: templates/controller/deployment.yaml
-      - equal:
-          path: spec.template.spec.volumes[1].name
-          value: grpc-certs
-        template: templates/controller/deployment.yaml
-      - contains:
-          path: spec.template.spec.containers[0].args
           content: --grpc-port=50123
-        template: templates/agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - notContains:
           path: spec.template.spec.containers[0].args
           content: --grpc-mtls-enabled=true
-        template: templates/agent/daemonset.yaml
-      - notContains:
+        template: templates/ztunnel-log-reader/daemonset.yaml
+      - contains:
           path: spec.template.spec.containers[0].args
-          content: --grpc-mtls-enabled=false
-        template: templates/agent/daemonset.yaml
+          content: --grpc-expected-client-san=network-enforcer-controller
+        template: templates/ztunnel-log-reader/daemonset.yaml
 
   - it: honors release, name and namespace overrides in the discovery selector
-    template: templates/controller/deployment.yaml
     release:
       name: blue-installation
       namespace: release-namespace
     set:
       nameOverride: custom-name
       namespaceOverride: agent-namespace
-      agent:
-        enabled: true
     asserts:
-      - notContains:
-          path: spec.template.spec.containers[0].args
-          content: --agent-namespace=agent-namespace
       - equal:
           path: metadata.namespace
           value: agent-namespace
@@ -82,7 +85,7 @@ tests:
       - equal:
           path: metadata.namespace
           value: agent-namespace
-        template: templates/agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - contains:
           path: spec.template.spec.containers[0].args
           content: --agent-label-selector=app.kubernetes.io/name=custom-name,app.kubernetes.io/instance=blue-installation,app.kubernetes.io/component=agent
@@ -93,27 +96,32 @@ tests:
             app.kubernetes.io/component: agent
             app.kubernetes.io/name: custom-name
             app.kubernetes.io/instance: blue-installation
-        template: templates/agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
 
-  - it: keeps agent pull flags out of non-Istio providers
-    template: templates/controller/deployment.yaml
+  - it: keeps agent workload and controller pull flags out of non-Istio providers
     set:
       controller:
         provider:
           name: cilium
+          istio:
+            agent:
+              enabled: true
+              grpcPort: 50123
     asserts:
       - notContains:
           path: spec.template.spec.containers[0].args
-          content: --agent-namespace=network-enforcer
+          content: --agent-grpc-port=50123
+        template: templates/controller/deployment.yaml
       - notContains:
           path: spec.template.spec.containers[0].args
-          content: --agent-grpc-port=50052
+          content: --agent-grpc-mtls-cert-dir=/etc/network-enforcer/certs
+        template: templates/controller/deployment.yaml
       - notContains:
-          path: spec.template.spec.containers[0].args
-          content: --agent-grpc-mtls-enabled=true
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: --provider-endpoint=hubble-relay.kube-system.svc:443
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: --provider-tls-mode=existingSecret
+          path: spec.template.spec.volumes
+          content:
+            name: grpc-certs
+          any: true
+        template: templates/controller/deployment.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/ztunnel-log-reader/daemonset.yaml

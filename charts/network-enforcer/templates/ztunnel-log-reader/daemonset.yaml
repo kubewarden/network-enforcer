@@ -1,6 +1,7 @@
-{{- if .Values.agent.enabled }}
-{{- $ctx := dict "root" $ "workload" "agent" "component" "agent" }}
-{{- $a := .Values.agent }}
+{{- if eq (include "network-enforcer.provider.name" . | trim) "istio" }}
+{{- $agent := .Values.controller.provider.istio.agent -}}
+{{- if $agent.enabled }}
+{{- $ctx := dict "root" $ "workload" "agent" "component" "agent" "workloadValues" $agent }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -24,17 +25,19 @@ spec:
       {{- with include "network-enforcer.nodeSelector" $ctx }}{{ . | nindent 6 }}{{ end }}
       {{- with include "network-enforcer.affinity" $ctx }}{{ . | nindent 6 }}{{ end }}
       {{- with include "network-enforcer.topologySpreadConstraints" $ctx }}{{ . | nindent 6 }}{{ end }}
-      {{- with $a.podSecurityContext }}
+      {{- with $agent.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       automountServiceAccountToken: false
+      serviceAccountName: {{ include "network-enforcer.fullname" . }}-agent
       containers:
       - args:
-        - --grpc-port={{ $a.grpcPort }}
+        {{- with $agent.args }}{{ toYaml . | nindent 8 }}{{ end }}
+        - --log-glob=/var/log/pods/istio-system_ztunnel-*/{ztunnel,istio-proxy}/*.log
+        - --grpc-port={{ $agent.grpcPort }}
         - --grpc-mtls-cert-dir={{ include "network-enforcer.grpc.certDir" . }}
         - --grpc-expected-client-san={{ include "network-enforcer.fullname" . }}-controller
-        {{- with $a.args }}{{ toYaml . | nindent 8 }}{{ end }}
         command:
         - /agent
         {{- with include "network-enforcer.extraEnv" $ctx }}
@@ -42,29 +45,37 @@ spec:
         {{- . | nindent 8 }}
         {{- end }}
         {{- with include "network-enforcer.extraEnvFrom" $ctx }}{{ . | nindent 8 }}{{ end }}
-        image: '{{ template "system_default_registry" $ctx }}{{ $a.image.repository }}:{{ $a.image.tag }}'
+        image: '{{ template "system_default_registry" $ctx }}{{ $agent.image.repository }}:{{ $agent.image.tag }}'
         imagePullPolicy: {{ include "network-enforcer.imagePullPolicy" $ctx }}
         name: agent
-        {{- with $a.resources }}
+        {{- with $agent.resources }}
         resources:
           {{- toYaml . | nindent 10 }}
         {{- end }}
-        {{- with $a.containerSecurityContext }}
+        {{- with $agent.containerSecurityContext }}
         securityContext:
           {{- toYaml . | nindent 10 }}
         {{- end }}
         volumeMounts:
-        - name: varlog
-          mountPath: /var/log
+        - name: varlog-pods
+          mountPath: /var/log/pods
+          readOnly: true
+        - name: varlog-containers
+          mountPath: /var/log/containers
           readOnly: true
         - name: grpc-certs
           mountPath: {{ include "network-enforcer.grpc.certDir" . }}
           readOnly: true
         {{- with include "network-enforcer.extraVolumeMounts" $ctx }}{{ . | nindent 8 }}{{ end }}
       volumes:
-      - name: varlog
+      - name: varlog-pods
         hostPath:
-          path: /var/log
+          path: /var/log/pods
+          type: Directory
+      - name: varlog-containers
+        hostPath:
+          path: /var/log/containers
+          type: Directory
       - name: grpc-certs
         csi:
           driver: csi.cert-manager.io
@@ -73,9 +84,10 @@ spec:
             csi.cert-manager.io/issuer-name: {{ include "network-enforcer.caIssuerName" . }}
             csi.cert-manager.io/issuer-kind: Issuer
             csi.cert-manager.io/dns-names: ${POD_NAME}.${POD_NAMESPACE}
-            {{- with (default dict $a.containerSecurityContext).runAsGroup }}
+            {{- with (default dict $agent.containerSecurityContext).runAsGroup }}
             csi.cert-manager.io/fs-group: {{ . | quote }}
             {{- end }}
       {{- with include "network-enforcer.extraVolumes" $ctx }}{{ . | nindent 6 }}{{ end }}
       terminationGracePeriodSeconds: 10
+{{- end }}
 {{- end }}

@@ -27,13 +27,13 @@
       ]
     },
     {
-      "description": "Chart controller image is set by the release process",
+      "description": "Chart controller and agent images are set by the release process",
       "enabled": false,
       "matchDatasources": [
         "docker"
       ],
       "matchPackageNames": [
-        "kubewarden/network-enforcer/controller"
+        "/^(ghcr\\.io\\/)?kubewarden\\/network-enforcer\\/(controller|agent)$/"
       ],
       "matchFileNames": [
         "charts/network-enforcer/values.yaml"

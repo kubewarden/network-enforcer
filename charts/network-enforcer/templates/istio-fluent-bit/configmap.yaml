@@ -19,7 +19,7 @@ data:
     [INPUT]
         Name              tail
         Tag               istio.ztunnel
-        Path              /var/log/containers/*ztunnel*.log
+        Path              /var/log/pods/istio-system_ztunnel-*/ztunnel/*.log,/var/log/pods/istio-system_ztunnel-*/istio-proxy/*.log
         Parser            cri
         DB                /fluent-bit/state/ztunnel.db
         Mem_Buf_Limit     50MB

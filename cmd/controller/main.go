@@ -599,6 +599,14 @@ func setupControllers(
 	return nil
 }
 
+func registerAgentTLSFlags(flags *flag.FlagSet, conf *agentConfig) {
+	flags.BoolVar(&conf.mtlsEnabled, "agent-grpc-mtls-enabled", true,
+		"Enable mutual TLS when the controller dials the agent gRPC server.")
+	flags.StringVar(&conf.certDirPath, "agent-grpc-mtls-cert-dir", "",
+		"Directory holding tls.crt, tls.key, and ca.crt for the agent hop client. "+
+			"Required unless --agent-grpc-mtls-enabled=false.")
+}
+
 func main() {
 	conf := &config{}
 	flag.StringVar(&conf.metrics.Addr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
@@ -653,11 +661,7 @@ func main() {
 	flag.StringVar(&conf.provider.tlsServerName, "provider-tls-server-name", "",
 		"Optional TLS server name verified against the provider's server certificate. "+
 			"Defaults to the host part of --provider-endpoint.")
-	flag.BoolVar(&conf.agent.mtlsEnabled, "agent-grpc-mtls-enabled", false,
-		"Enable mutual TLS when the controller dials the agent gRPC server.")
-	flag.StringVar(&conf.agent.certDirPath, "agent-grpc-mtls-cert-dir", "",
-		"Directory holding tls.crt, tls.key, and ca.crt for the agent hop client. "+
-			"Required when --agent-grpc-mtls-enabled is set.")
+	registerAgentTLSFlags(flag.CommandLine, &conf.agent)
 	flag.StringVar(&conf.agent.namespace, "agent-namespace", "",
 		"Namespace for Istio agent Pod discovery; defaults to the controller's service-account namespace.")
 	flag.StringVar(&conf.agent.labelSelector, "agent-label-selector",

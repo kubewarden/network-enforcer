@@ -186,6 +186,33 @@ func TestExplicitlySetProviderFlagsIncludesExplicitDefaults(t *testing.T) {
 	require.Equal(t, []string{"provider-endpoint", "provider-tls-mode"}, explicitlySetProviderFlags(fs))
 }
 
+func TestAgentTLSFlags(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		args     []string
+		wantMTLS bool
+	}{
+		{name: "enables mTLS by default", wantMTLS: true},
+		{name: "allows explicit opt-out", args: []string{"--agent-grpc-mtls-enabled=false"}},
+		{name: "allows explicit opt-in", args: []string{"--agent-grpc-mtls-enabled=true"}, wantMTLS: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			flags := flag.NewFlagSet("test", flag.ContinueOnError)
+			var conf agentConfig
+			registerAgentTLSFlags(flags, &conf)
+			args := append([]string{"--agent-grpc-mtls-cert-dir=/etc/network-enforcer/certs"}, tc.args...)
+			require.NoError(t, flags.Parse(args))
+			require.Equal(t, tc.wantMTLS, conf.mtlsEnabled)
+			require.Equal(t, "/etc/network-enforcer/certs", conf.certDirPath)
+		})
+	}
+}
+
 func TestNewAgentClientFactory(t *testing.T) {
 	t.Parallel()
 

@@ -13,13 +13,11 @@ release_namespace = "network-enforcer"
 load("ext://namespace", "namespace_create")
 namespace_create(release_namespace)
 
-controller_image = settings.get("controller").get("image")
-agent_image = settings.get("agent").get("image")
-
 # allow the override of the provider from command line
 config.define_string("provider")
 cfg = config.parse()
 providerName = cfg.get("provider") or settings.get("controller").get("providerName")
+controller_image = settings.get("controller").get("image")
 
 # Prepare Helm set values based on CNI type
 helm_set_values = [
@@ -30,16 +28,17 @@ helm_set_values = [
     "controller.replicas=1",
     "controller.containerSecurityContext.runAsUser=null",
     "controller.podSecurityContext.runAsNonRoot=false",
-	"controller.provider.name=" + providerName,
-	"controller.flowDumper.enabled=true",
-    # The agent workload, always on in tilt.
-    "agent.enabled=true",
-    "agent.image.registry=",
-    "agent.image.repository=" + agent_image,
-    # The agent reads node log files, so it runs as root.
-    "agent.podSecurityContext.runAsNonRoot=false",
-    "agent.containerSecurityContext.runAsUser=0",
+    "controller.provider.name=" + providerName,
+    "controller.flowDumper.enabled=true",
 ]
+
+if providerName == "istio":
+    agent_image = settings.get("agent").get("image")
+    helm_set_values += [
+        "controller.provider.istio.agent.image.registry=",
+        "controller.provider.istio.agent.image.repository=" + agent_image,
+        "controller.provider.istio.agent.containerSecurityContext.readOnlyRootFilesystem=false",
+    ]
 
 yaml = helm(
     "./charts/network-enforcer",
@@ -82,33 +81,34 @@ docker_build_with_restart(
     ],
 )
 
-local_resource(
-    "agent_tilt",
-    "make agent",
-    deps=[
-        "go.mod",
-        "go.sum",
-        "cmd/agent",
-        "api",
-        "internal",
-        "proto",
-    ],
-)
+if providerName == "istio":
+    local_resource(
+        "agent_tilt",
+        "make agent",
+        deps=[
+            "go.mod",
+            "go.sum",
+            "cmd/agent",
+            "api",
+            "internal",
+            "proto",
+        ],
+    )
 
-agent_entrypoint = ["/agent"]
-agent_dockerfile = "./hack/Dockerfile.agent.tilt"
+    agent_entrypoint = ["/agent"]
+    agent_dockerfile = "./hack/Dockerfile.agent.tilt"
 
-docker_build_with_restart(
-    agent_image,
-    ".",
-    dockerfile=agent_dockerfile,
-    entrypoint=agent_entrypoint,
-    # `only` here is important, otherwise, the container will get updated
-    # on _any_ file change.
-    only=[
-        "./bin/agent",
-    ],
-    live_update=[
-        sync("./bin/agent", "/agent"),
-    ],
-)
+    docker_build_with_restart(
+        agent_image,
+        ".",
+        dockerfile=agent_dockerfile,
+        entrypoint=agent_entrypoint,
+        # `only` here is important, otherwise, the container will get updated
+        # on _any_ file change.
+        only=[
+            "./bin/agent",
+        ],
+        live_update=[
+            sync("./bin/agent", "/agent"),
+        ],
+    )

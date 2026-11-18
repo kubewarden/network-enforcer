@@ -2,6 +2,7 @@ suite: "Values contract: images"
 templates:
   - "templates/controller/deployment.yaml"
   - "templates/istio-fluent-bit/daemonset.yaml"
+  - "templates/ztunnel-log-reader/daemonset.yaml"
   # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
   # The documentSelector below keeps the assertions on the Deployment and the DaemonSet.
   - "templates/istio-fluent-bit/configmap.yaml"
@@ -107,6 +108,39 @@ tests:
           path: "spec.template.spec.containers[0].image"
           value: "fluent.example.com/fluent/fluent-bit:2.0.0"
         template: "templates/istio-fluent-bit/daemonset.yaml"
+
+  - it: "should render the nested agent image and apply global registry precedence"
+    template: "templates/ztunnel-log-reader/daemonset.yaml"
+    set:
+      global:
+        imageRegistry: mirror.example.com
+      controller:
+        provider:
+          istio:
+            agent:
+              image:
+                registry: agent.example.com
+                repository: example/network-enforcer-agent
+                tag: v9.9.9-agent
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].image"
+          value: "mirror.example.com/example/network-enforcer-agent:v9.9.9-agent"
+
+  - it: "should use the nested agent registry when the global registry is empty"
+    template: "templates/ztunnel-log-reader/daemonset.yaml"
+    set:
+      controller:
+        provider:
+          istio:
+            agent:
+              image:
+                registry: agent.example.com
+                tag: v9.9.9-agent
+    asserts:
+      - equal:
+          path: "spec.template.spec.containers[0].image"
+          value: "agent.example.com/kubewarden/network-enforcer/agent:v9.9.9-agent"
 
   - it: "should render no registry prefix when every registry is empty"
     documentSelector: *workloads

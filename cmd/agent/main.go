@@ -18,12 +18,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -33,46 +35,123 @@ import (
 	"github.com/kubewarden/network-enforcer/internal/tlsutil"
 )
 
+const (
+	defaultLogGlob          = "/var/log/pods/istio-system_ztunnel-*/{ztunnel,istio-proxy}/*.log"
+	defaultPollInterval     = 200 * time.Millisecond
+	defaultGRPCPort         = 50052
+	invalidArgumentExitCode = 2
+)
+
+type agentOptions struct {
+	logGlob               string
+	pollInterval          time.Duration
+	grpcPort              int
+	grpcTLSEnabled        bool
+	grpcCertDir           string
+	grpcExpectedClientSAN string
+}
+
+func parseAgentArgs(args []string) (agentOptions, error) {
+	if err := validateAgentArgumentBoundary(args); err != nil {
+		return agentOptions{}, err
+	}
+	flags := flag.NewFlagSet("agent", flag.ContinueOnError)
+	var options agentOptions
+	flags.StringVar(&options.logGlob, "log-glob", defaultLogGlob, "glob for the container log files to tail")
+	flags.DurationVar(&options.pollInterval, "poll-interval", defaultPollInterval, "file poll period")
+	flags.IntVar(&options.grpcPort, "grpc-port", defaultGRPCPort, "TCP port the agent gRPC server listens on")
+	flags.BoolVar(
+		&options.grpcTLSEnabled,
+		"grpc-mtls-enabled",
+		true,
+		"enable mutual TLS between the agent server and clients",
+	)
+	flags.StringVar(
+		&options.grpcCertDir,
+		"grpc-mtls-cert-dir",
+		"",
+		"path to the directory holding the agent certificate, key and CA",
+	)
+	flags.StringVar(
+		&options.grpcExpectedClientSAN,
+		"grpc-expected-client-san",
+		"",
+		"DNS SAN the controller client must present; empty keeps chain-only verification",
+	)
+	if err := flags.Parse(args); err != nil {
+		return agentOptions{}, err
+	}
+	if flags.NArg() != 0 {
+		return agentOptions{}, fmt.Errorf("unexpected positional arguments: %q", flags.Args())
+	}
+	return options, nil
+}
+
+func validateAgentArgumentBoundary(args []string) error {
+	valueFlags := map[string]struct{}{
+		"grpc-port":                {},
+		"grpc-mtls-cert-dir":       {},
+		"grpc-expected-client-san": {},
+		"log-glob":                 {},
+		"poll-interval":            {},
+	}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" || arg == "-h" || arg == "-help" || arg == "--help" {
+			return nil
+		}
+		if !strings.HasPrefix(arg, "-") {
+			continue
+		}
+		nameValue := strings.TrimLeft(arg, "-")
+		name, _, hasValue := strings.Cut(nameValue, "=")
+		if hasValue {
+			continue
+		}
+		if _, takesValue := valueFlags[name]; !takesValue || i+1 == len(args) {
+			continue
+		}
+		if strings.HasPrefix(args[i+1], "-") {
+			return fmt.Errorf("flag %s must use an equals value before another flag", arg)
+		}
+		i++
+	}
+	return nil
+}
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-
-	// Include retained rotations so their unread tails can be drained while running.
-	glob := flag.String("log-glob", "/var/log/pods/istio-system_ztunnel*/*/*.log*",
-		"glob for the container log files to tail")
-	poll := flag.Duration("poll-interval", 200*time.Millisecond,
-		"file poll period")
-	grpcPort := flag.Int("grpc-port", 50052,
-		"TCP port the agent gRPC server listens on")
-	grpcTLSEnabled := flag.Bool("grpc-mtls-enabled", true,
-		"enable mutual TLS between the agent server and clients")
-	grpcCertDir := flag.String("grpc-mtls-cert-dir", "",
-		"path to the directory holding the agent certificate, key and CA")
-	grpcExpectedClientSAN := flag.String("grpc-expected-client-san", "",
-		"DNS SAN the controller client must present; empty keeps chain-only verification")
-	flag.Parse()
+	options, err := parseAgentArgs(os.Args[1:])
+	if errors.Is(err, flag.ErrHelp) {
+		return
+	}
+	if err != nil {
+		logger.Error("Invalid agent arguments", "err", err)
+		os.Exit(invalidArgumentExitCode)
+	}
 
 	// Check the mounted material before the agent serves anything.
 	// ref: https://github.com/kubewarden/network-enforcer/issues/641
-	if err := validateGRPCTLS(*grpcTLSEnabled, *grpcCertDir); err != nil {
-		logger.Error("Invalid gRPC mTLS material", "err", err)
+	if tlsErr := validateGRPCTLS(options.grpcTLSEnabled, options.grpcCertDir); tlsErr != nil {
+		logger.Error("Invalid gRPC mTLS material", "err", tlsErr)
 		os.Exit(1)
 	}
 
 	cfg := tailer.Config{
-		Include: []string{*glob},
+		Include: []string{options.logGlob},
 		// Skip the kubelet rotation artifacts. The kubelet compresses older
 		// rotated files to ".gz" through a ".tmp" file. Those files are not
 		// live container logs.
 		Exclude:      []string{"**/*.gz", "**/*.tmp"},
-		PollInterval: *poll,
+		PollInterval: options.pollInterval,
 	}
 
 	buffer := agentbuffer.New()
 	server, err := grpcexporter.NewServer(grpcexporter.ServerConfig{
-		Port:              *grpcPort,
-		MTLSEnabled:       *grpcTLSEnabled,
-		CertDirPath:       *grpcCertDir,
-		ExpectedClientSAN: *grpcExpectedClientSAN,
+		Port:              options.grpcPort,
+		MTLSEnabled:       options.grpcTLSEnabled,
+		CertDirPath:       options.grpcCertDir,
+		ExpectedClientSAN: options.grpcExpectedClientSAN,
 	}, buffer, logger)
 	if err != nil {
 		logger.Error("Failed to build agent gRPC server", "err", err)
@@ -82,9 +161,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
 	listenConfig := net.ListenConfig{}
-	listener, err := listenConfig.Listen(ctx, "tcp", fmt.Sprintf(":%d", *grpcPort))
+	listener, err := listenConfig.Listen(ctx, "tcp", fmt.Sprintf(":%d", options.grpcPort))
 	if err != nil {
-		logger.Error("Failed to listen for the agent gRPC server", "err", err, "port", *grpcPort)
+		logger.Error("Failed to listen for the agent gRPC server", "err", err, "port", options.grpcPort)
 		os.Exit(1)
 	}
 
