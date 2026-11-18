@@ -465,6 +465,7 @@
             }
         },
         "istioFluentBit": {
+            "deprecated": true,
             "type": "object",
             "properties": {
                 "image": {

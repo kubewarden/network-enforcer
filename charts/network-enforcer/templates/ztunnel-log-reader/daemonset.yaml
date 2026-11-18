@@ -1,4 +1,3 @@
-{{- define "network-enforcer.istioAgent.daemonset" -}}
 {{- if eq (include "network-enforcer.provider.name" . | trim) "istio" }}
 {{- $agent := .Values.controller.provider.istio.agent -}}
 {{- if $agent.enabled }}
@@ -37,7 +36,6 @@ spec:
         {{- with $agent.args }}{{ toYaml . | nindent 8 }}{{ end }}
         - --log-glob=/var/log/pods/istio-system_ztunnel-*/{ztunnel,istio-proxy}/*.log
         - --grpc-port={{ $agent.grpcPort }}
-        - --grpc-mtls-enabled=true
         - --grpc-mtls-cert-dir={{ include "network-enforcer.grpc.certDir" . }}
         - --grpc-expected-client-san={{ include "network-enforcer.fullname" . }}-controller
         command:
@@ -91,6 +89,5 @@ spec:
             {{- end }}
       {{- with include "network-enforcer.extraVolumes" $ctx }}{{ . | nindent 6 }}{{ end }}
       terminationGracePeriodSeconds: 10
-{{- end }}
 {{- end }}
 {{- end }}

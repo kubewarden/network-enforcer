@@ -1,4 +1,4 @@
-suite: Istio agent deployment and security
+suite: ztunnel log reader deployment and security
 chart:
   version: 1.0.0
   appVersion: 2.0.0
@@ -6,56 +6,52 @@ release:
   name: my-release
   namespace: my-namespace
 templates:
-  - templates/istio-agent/daemonset.yaml
-  - templates/istio-agent/serviceaccount.yaml
-  - templates/agent/daemonset.yaml
+  - templates/ztunnel-log-reader/daemonset.yaml
+  - templates/ztunnel-log-reader/serviceaccount.yaml
   - templates/controller/deployment.yaml
   - templates/istio-fluent-bit/daemonset.yaml
   - templates/istio-fluent-bit/configmap.yaml
   - templates/istio-fluent-bit/serviceaccount.yaml
 tests:
-  - it: deploys exactly one Istio agent DaemonSet and a dedicated tokenless ServiceAccount by default
+  - it: deploys exactly one ztunnel log reader DaemonSet and a dedicated tokenless ServiceAccount by default
     asserts:
       - hasDocuments:
           count: 1
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - equal:
           path: metadata.name
           value: my-release-network-enforcer-agent
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - equal:
           path: spec.template.spec.serviceAccountName
           value: my-release-network-enforcer-agent
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - equal:
           path: spec.template.spec.automountServiceAccountToken
           value: false
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - equal:
           path: metadata.name
           value: my-release-network-enforcer-agent
-        template: templates/istio-agent/serviceaccount.yaml
+        template: templates/ztunnel-log-reader/serviceaccount.yaml
       - equal:
           path: metadata.labels["app.kubernetes.io/component"]
           value: agent
-        template: templates/istio-agent/serviceaccount.yaml
+        template: templates/ztunnel-log-reader/serviceaccount.yaml
       - equal:
           path: metadata.labels["app.kubernetes.io/instance"]
           value: my-release
-        template: templates/istio-agent/serviceaccount.yaml
+        template: templates/ztunnel-log-reader/serviceaccount.yaml
       - notExists:
           path: metadata["app.kubernetes.io/instance"]
-        template: templates/istio-agent/serviceaccount.yaml
+        template: templates/ztunnel-log-reader/serviceaccount.yaml
       - equal:
           path: automountServiceAccountToken
           value: false
-        template: templates/istio-agent/serviceaccount.yaml
-      - hasDocuments:
-          count: 0
-        template: templates/agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/serviceaccount.yaml
 
   - it: mounts only the two read-only log directories and CSI certificates
-    template: templates/istio-agent/daemonset.yaml
+    template: templates/ztunnel-log-reader/daemonset.yaml
     asserts:
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
@@ -96,8 +92,8 @@ tests:
           path: spec.template.spec.containers[0].volumeMounts
           count: 3
 
-  - it: pins the ztunnel matcher and mTLS settings after user tuning arguments
-    template: templates/istio-agent/daemonset.yaml
+  - it: pins the ztunnel matcher and identity settings while preserving explicit mTLS opt-out
+    template: templates/ztunnel-log-reader/daemonset.yaml
     set:
       controller:
         provider:
@@ -107,8 +103,8 @@ tests:
                 - --poll-interval=1s
                 - --log-glob=/tmp/forbidden/*.log
                 - --grpc-mtls-enabled=false
-                - --grpc-expected-client-san
-                - --grpc-mtls-cert-dir
+                - --grpc-expected-client-san=custom-controller
+                - --grpc-mtls-cert-dir=/custom/certs
     asserts:
       - equal:
           path: spec.template.spec.containers[0].args
@@ -116,11 +112,10 @@ tests:
             - --poll-interval=1s
             - --log-glob=/tmp/forbidden/*.log
             - --grpc-mtls-enabled=false
-            - --grpc-expected-client-san
-            - --grpc-mtls-cert-dir
+            - --grpc-expected-client-san=custom-controller
+            - --grpc-mtls-cert-dir=/custom/certs
             - --log-glob=/var/log/pods/istio-system_ztunnel-*/{ztunnel,istio-proxy}/*.log
             - --grpc-port=50052
-            - --grpc-mtls-enabled=true
             - --grpc-mtls-cert-dir=/etc/network-enforcer/certs
             - --grpc-expected-client-san=my-release-network-enforcer-controller
 
@@ -135,15 +130,15 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].args
           content: --grpc-port=50123
-        template: templates/istio-agent/daemonset.yaml
-      - contains:
+        template: templates/ztunnel-log-reader/daemonset.yaml
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --grpc-mtls-enabled=true
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - contains:
           path: spec.template.spec.containers[0].args
           content: --grpc-expected-client-san=my-release-network-enforcer-controller
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - contains:
           path: spec.template.spec.volumes
           content:
@@ -156,10 +151,10 @@ tests:
                 csi.cert-manager.io/issuer-kind: Issuer
                 csi.cert-manager.io/dns-names: ${POD_NAME}.${POD_NAMESPACE}
                 csi.cert-manager.io/fs-group: "65532"
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
 
   - it: runs as root with the remaining container hardening
-    template: templates/istio-agent/daemonset.yaml
+    template: templates/ztunnel-log-reader/daemonset.yaml
     asserts:
       - equal:
           path: spec.template.spec.securityContext.runAsNonRoot
@@ -180,7 +175,7 @@ tests:
           path: spec.template.spec.containers[0].securityContext.capabilities.drop[0]
           value: ALL
 
-  - it: does not render a local agent when disabled but the controller still uses mTLS
+  - it: does not render a local agent when disabled but the controller still has mTLS material
     set:
       controller:
         provider:
@@ -190,13 +185,13 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - hasDocuments:
           count: 0
-        template: templates/istio-agent/serviceaccount.yaml
+        template: templates/ztunnel-log-reader/serviceaccount.yaml
       - contains:
           path: spec.template.spec.containers[0].args
-          content: --agent-grpc-mtls-enabled=true
+          content: --agent-grpc-mtls-cert-dir=/etc/network-enforcer/certs
         template: templates/controller/deployment.yaml
       - contains:
           path: spec.template.spec.volumes
@@ -213,7 +208,7 @@ tests:
         template: templates/controller/deployment.yaml
 
   - it: inherits common settings while allowing nested workload overrides
-    template: templates/istio-agent/daemonset.yaml
+    template: templates/ztunnel-log-reader/daemonset.yaml
     set:
       common:
         tolerations:
@@ -240,7 +235,7 @@ tests:
             node-role: agent
 
   - it: merges global, common and nested image pull secrets
-    template: templates/istio-agent/daemonset.yaml
+    template: templates/ztunnel-log-reader/daemonset.yaml
     set:
       global:
         imagePullSecrets:
@@ -263,7 +258,7 @@ tests:
             - name: agent-secret
 
   - it: applies the namespace override to the agent ServiceAccount
-    template: templates/istio-agent/serviceaccount.yaml
+    template: templates/ztunnel-log-reader/serviceaccount.yaml
     release:
       namespace: ignored-release-namespace
     set:
@@ -274,7 +269,7 @@ tests:
           value: agent-namespace
 
   - it: renders merged ServiceAccount annotations on the agent identity
-    template: templates/istio-agent/serviceaccount.yaml
+    template: templates/ztunnel-log-reader/serviceaccount.yaml
     set:
       global:
         serviceAccount:
@@ -302,7 +297,7 @@ tests:
             example.com/role: agent
 
   - it: renders fixed agent component labels despite user label collisions
-    template: templates/istio-agent/daemonset.yaml
+    template: templates/ztunnel-log-reader/daemonset.yaml
     set:
       controller:
         provider:
@@ -320,7 +315,7 @@ tests:
           path: spec.template.metadata.labels["app.kubernetes.io/component"]
           value: agent
 
-  - it: does not render Istio agents or agent-hop material for Cilium
+  - it: does not render ztunnel log readers or agent-hop material for Cilium
     set:
       controller:
         provider:
@@ -332,13 +327,13 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - hasDocuments:
           count: 0
-        template: templates/istio-agent/serviceaccount.yaml
+        template: templates/ztunnel-log-reader/serviceaccount.yaml
       - notContains:
           path: spec.template.spec.containers[0].args
-          content: --agent-grpc-mtls-enabled=true
+          content: --agent-grpc-mtls-cert-dir=/etc/network-enforcer/certs
         template: templates/controller/deployment.yaml
       - notContains:
           path: spec.template.spec.volumes
@@ -347,7 +342,7 @@ tests:
           any: true
         template: templates/controller/deployment.yaml
 
-  - it: does not render Istio agents or agent-hop material for Calico
+  - it: does not render ztunnel log readers or agent-hop material for Calico
     set:
       controller:
         provider:
@@ -359,13 +354,13 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - hasDocuments:
           count: 0
-        template: templates/istio-agent/serviceaccount.yaml
+        template: templates/ztunnel-log-reader/serviceaccount.yaml
       - notContains:
           path: spec.template.spec.containers[0].args
-          content: --agent-grpc-mtls-enabled=true
+          content: --agent-grpc-mtls-cert-dir=/etc/network-enforcer/certs
         template: templates/controller/deployment.yaml
       - notContains:
           path: spec.template.spec.volumes
@@ -374,7 +369,7 @@ tests:
           any: true
         template: templates/controller/deployment.yaml
 ---
-suite: Istio agent has no Kubernetes RBAC bindings
+suite: ztunnel log reader has no Kubernetes RBAC bindings
 templates:
   - templates/controller/rolebinding.yaml
   - templates/controller/leader-election-rbac.yaml
@@ -415,13 +410,13 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - hasDocuments:
           count: 0
-        template: templates/istio-agent/serviceaccount.yaml
+        template: templates/ztunnel-log-reader/serviceaccount.yaml
       - notContains:
           path: spec.template.spec.containers[0].args
-          content: --agent-grpc-mtls-enabled=true
+          content: --agent-grpc-mtls-cert-dir=/etc/network-enforcer/certs
         template: templates/controller/deployment.yaml
       - notContains:
           path: spec.template.spec.volumes
@@ -439,13 +434,13 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - hasDocuments:
           count: 0
-        template: templates/istio-agent/serviceaccount.yaml
+        template: templates/ztunnel-log-reader/serviceaccount.yaml
       - notContains:
           path: spec.template.spec.containers[0].args
-          content: --agent-grpc-mtls-enabled=true
+          content: --agent-grpc-mtls-cert-dir=/etc/network-enforcer/certs
         template: templates/controller/deployment.yaml
       - notContains:
           path: spec.template.spec.volumes

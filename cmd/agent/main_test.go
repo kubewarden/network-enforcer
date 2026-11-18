@@ -20,74 +20,142 @@ import (
 )
 
 func TestParseAgentArgs(t *testing.T) {
-	t.Run("uses the production matcher by default", func(t *testing.T) {
-		options, err := parseAgentArgs(nil)
-		require.NoError(t, err)
-		assert.Equal(t, defaultLogGlob, options.logGlob)
-		assert.True(t, options.grpcTLSEnabled)
-	})
+	t.Parallel()
 
-	t.Run("handles help without treating it as invalid input", func(t *testing.T) {
-		_, err := parseAgentArgs([]string{"--help"})
-		require.ErrorIs(t, err, flag.ErrHelp)
-	})
+	cases := []struct {
+		name       string
+		args       []string
+		want       agentOptions
+		wantErr    error
+		wantErrMsg string
+	}{
+		{
+			name: "uses the production matcher and mTLS by default",
+			want: agentOptions{
+				logGlob:        defaultLogGlob,
+				pollInterval:   defaultPollInterval,
+				grpcPort:       defaultGRPCPort,
+				grpcTLSEnabled: true,
+			},
+		},
+		{
+			name:    "handles help without treating it as invalid input",
+			args:    []string{"--help"},
+			wantErr: flag.ErrHelp,
+		},
+		{
+			name: "accepts tuning and explicit mTLS opt-out",
+			args: []string{
+				"--poll-interval", "1s",
+				"--log-glob=/tmp/forbidden/*.log",
+				"--grpc-port", "40123",
+				"--grpc-mtls-enabled=false",
+				"--grpc-expected-client-san=",
+			},
+			want: agentOptions{
+				logGlob:      "/tmp/forbidden/*.log",
+				pollInterval: time.Second,
+				grpcPort:     40123,
+			},
+		},
+		{
+			name:       "rejects positional arguments",
+			args:       []string{"unexpected"},
+			wantErrMsg: "unexpected positional arguments",
+		},
+		{
+			name:       "rejects arguments after the flag terminator",
+			args:       []string{"--", "--grpc-mtls-enabled=false"},
+			wantErrMsg: "unexpected positional arguments",
+		},
+	}
 
-	t.Run("accepts tuning and flag values before the chart-owned arguments", func(t *testing.T) {
-		options, err := parseAgentArgs([]string{
-			"--poll-interval", "1s",
-			"--log-glob=/tmp/forbidden/*.log",
-			"--grpc-port", "40123",
-			"--grpc-mtls-enabled=false",
-			"--grpc-expected-client-san=",
-		})
-		require.NoError(t, err)
-		assert.Equal(t, time.Second, options.pollInterval)
-		assert.Equal(t, 40123, options.grpcPort)
-		assert.Equal(t, "/tmp/forbidden/*.log", options.logGlob)
-		assert.False(t, options.grpcTLSEnabled)
-		assert.Empty(t, options.grpcExpectedClientSAN)
-	})
-
-	for _, args := range [][]string{{"unexpected"}, {"--", "--grpc-mtls-enabled=false"}} {
-		t.Run("rejects positional arguments", func(t *testing.T) {
-			_, err := parseAgentArgs(args)
-			require.ErrorContains(t, err, "unexpected positional arguments")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			options, err := parseAgentArgs(tc.args)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+			if tc.wantErrMsg != "" {
+				require.ErrorContains(t, err, tc.wantErrMsg)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, options)
 		})
 	}
 }
 
-func TestParseAgentArgsRejectsDanglingFlagsBeforeChartPins(t *testing.T) {
+func TestParseAgentArgsWithChartPins(t *testing.T) {
+	t.Parallel()
+
 	chartArgs := []string{
 		"--log-glob=" + defaultLogGlob,
 		"--grpc-port=50123",
-		"--grpc-mtls-enabled=true",
 		"--grpc-mtls-cert-dir=/etc/network-enforcer/certs",
 		"--grpc-expected-client-san=network-enforcer-controller",
 	}
-	for _, userArgs := range [][]string{
-		{"--log-glob=/var/log/pods/*/*/*.log", "--grpc-expected-client-san"},
-		{"--log-glob=/var/log/pods/*/*/*.log", "--grpc-mtls-cert-dir"},
-	} {
-		_, err := parseAgentArgs(append(userArgs, chartArgs...))
-		require.ErrorContains(t, err, "must use an equals value")
+	cases := []struct {
+		name           string
+		userArgs       []string
+		wantMTLS       bool
+		wantPollPeriod time.Duration
+		wantErr        string
+	}{
+		{
+			name:     "rejects a dangling client SAN flag",
+			userArgs: []string{"--log-glob=/var/log/pods/*/*/*.log", "--grpc-expected-client-san"},
+			wantErr:  "must use an equals value",
+		},
+		{
+			name:     "rejects a dangling certificate directory flag",
+			userArgs: []string{"--log-glob=/var/log/pods/*/*/*.log", "--grpc-mtls-cert-dir"},
+			wantErr:  "must use an equals value",
+		},
+		{
+			name: "retains chart-owned settings after tuning arguments",
+			userArgs: []string{
+				"--poll-interval", "1s",
+				"--log-glob=/tmp/forbidden/*.log",
+				"--grpc-port", "40123",
+				"--grpc-expected-client-san", "tuning-client",
+			},
+			wantMTLS:       true,
+			wantPollPeriod: time.Second,
+		},
+		{
+			name:           "allows explicit mTLS opt-out without a chart override",
+			userArgs:       []string{"--grpc-mtls-enabled=false"},
+			wantPollPeriod: defaultPollInterval,
+		},
+		{
+			name:     "rejects a flag terminator before chart arguments",
+			userArgs: []string{"--"},
+			wantErr:  "unexpected positional arguments",
+		},
 	}
 
-	validArgs := append([]string{
-		"--poll-interval", "1s",
-		"--grpc-port", "40123",
-		"--grpc-expected-client-san", "tuning-client",
-	}, chartArgs...)
-	options, err := parseAgentArgs(validArgs)
-	require.NoError(t, err)
-	assert.Equal(t, time.Second, options.pollInterval)
-	assert.Equal(t, 50123, options.grpcPort)
-	assert.True(t, options.grpcTLSEnabled)
-	assert.Equal(t, "/etc/network-enforcer/certs", options.grpcCertDir)
-	assert.Equal(t, "network-enforcer-controller", options.grpcExpectedClientSAN)
-	assert.Equal(t, defaultLogGlob, options.logGlob)
-
-	_, err = parseAgentArgs(append([]string{"--"}, chartArgs...))
-	require.ErrorContains(t, err, "unexpected positional arguments")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			options, err := parseAgentArgs(append(tc.userArgs, chartArgs...))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, agentOptions{
+				logGlob:               defaultLogGlob,
+				pollInterval:          tc.wantPollPeriod,
+				grpcPort:              50123,
+				grpcTLSEnabled:        tc.wantMTLS,
+				grpcCertDir:           "/etc/network-enforcer/certs",
+				grpcExpectedClientSAN: "network-enforcer-controller",
+			}, options)
+		})
+	}
 }
 
 func TestProductionLogPatternExcludesUntrustedPaths(t *testing.T) {

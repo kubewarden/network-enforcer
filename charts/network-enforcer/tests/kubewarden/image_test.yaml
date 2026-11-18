@@ -2,8 +2,7 @@ suite: "Values contract: images"
 templates:
   - "templates/controller/deployment.yaml"
   - "templates/istio-fluent-bit/daemonset.yaml"
-  - "templates/istio-agent/daemonset.yaml"
-  - "templates/agent/daemonset.yaml"
+  - "templates/ztunnel-log-reader/daemonset.yaml"
   # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
   # The documentSelector below keeps the assertions on the Deployment and the DaemonSet.
   - "templates/istio-fluent-bit/configmap.yaml"
@@ -111,7 +110,7 @@ tests:
         template: "templates/istio-fluent-bit/daemonset.yaml"
 
   - it: "should render the nested agent image and apply global registry precedence"
-    template: "templates/istio-agent/daemonset.yaml"
+    template: "templates/ztunnel-log-reader/daemonset.yaml"
     set:
       global:
         imageRegistry: mirror.example.com
@@ -129,7 +128,7 @@ tests:
           value: "mirror.example.com/example/network-enforcer-agent:v9.9.9-agent"
 
   - it: "should use the nested agent registry when the global registry is empty"
-    template: "templates/istio-agent/daemonset.yaml"
+    template: "templates/ztunnel-log-reader/daemonset.yaml"
     set:
       controller:
         provider:

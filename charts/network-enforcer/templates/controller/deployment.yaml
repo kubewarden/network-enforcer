@@ -39,7 +39,6 @@ spec:
         {{- if eq $w.provider.name "istio" }}
         - --agent-label-selector=app.kubernetes.io/name={{ include "network-enforcer.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=agent
         - --agent-grpc-port={{ $w.provider.istio.agent.grpcPort }}
-        - --agent-grpc-mtls-enabled=true
         - --agent-grpc-mtls-cert-dir={{ include "network-enforcer.grpc.certDir" . }}
         {{- else }}
         - --provider-endpoint={{ include "network-enforcer.controller.providerEndpoint" . }}

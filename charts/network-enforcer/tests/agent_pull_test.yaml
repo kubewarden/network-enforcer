@@ -1,8 +1,7 @@
-suite: Istio agent pull configuration
+suite: ztunnel log reader pull configuration
 templates:
   - templates/controller/deployment.yaml
-  - templates/istio-agent/daemonset.yaml
-  - templates/agent/daemonset.yaml
+  - templates/ztunnel-log-reader/daemonset.yaml
 chart:
   version: 1.0.0
 release:
@@ -21,7 +20,7 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].args
           content: --agent-grpc-port=50052
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --agent-grpc-mtls-enabled=true
       - contains:
@@ -61,15 +60,15 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].args
           content: --grpc-port=50123
-        template: templates/istio-agent/daemonset.yaml
-      - contains:
+        template: templates/ztunnel-log-reader/daemonset.yaml
+      - notContains:
           path: spec.template.spec.containers[0].args
           content: --grpc-mtls-enabled=true
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - contains:
           path: spec.template.spec.containers[0].args
           content: --grpc-expected-client-san=network-enforcer-controller
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
 
   - it: honors release, name and namespace overrides in the discovery selector
     release:
@@ -86,7 +85,7 @@ tests:
       - equal:
           path: metadata.namespace
           value: agent-namespace
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
       - contains:
           path: spec.template.spec.containers[0].args
           content: --agent-label-selector=app.kubernetes.io/name=custom-name,app.kubernetes.io/instance=blue-installation,app.kubernetes.io/component=agent
@@ -97,7 +96,7 @@ tests:
             app.kubernetes.io/component: agent
             app.kubernetes.io/name: custom-name
             app.kubernetes.io/instance: blue-installation
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml
 
   - it: keeps agent workload and controller pull flags out of non-Istio providers
     set:
@@ -115,7 +114,7 @@ tests:
         template: templates/controller/deployment.yaml
       - notContains:
           path: spec.template.spec.containers[0].args
-          content: --agent-grpc-mtls-enabled=true
+          content: --agent-grpc-mtls-cert-dir=/etc/network-enforcer/certs
         template: templates/controller/deployment.yaml
       - notContains:
           path: spec.template.spec.volumes
@@ -125,4 +124,4 @@ tests:
         template: templates/controller/deployment.yaml
       - hasDocuments:
           count: 0
-        template: templates/istio-agent/daemonset.yaml
+        template: templates/ztunnel-log-reader/daemonset.yaml

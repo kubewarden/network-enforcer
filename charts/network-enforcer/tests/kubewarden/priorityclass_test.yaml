@@ -3,8 +3,7 @@ templates:
   - "templates/priorityclass/priorityclass.yaml"
   - "templates/controller/deployment.yaml"
   - "templates/istio-fluent-bit/daemonset.yaml"
-  - "templates/istio-agent/daemonset.yaml"
-  - "templates/agent/daemonset.yaml"
+  - "templates/ztunnel-log-reader/daemonset.yaml"
   # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
   # Every assertion below names its template, so the ConfigMap is not checked.
   - "templates/istio-fluent-bit/configmap.yaml"
@@ -29,7 +28,7 @@ tests:
       - equal:
           path: spec.template.spec.priorityClassName
           value: network-enforcer-priorityclass
-        template: "templates/istio-agent/daemonset.yaml"
+        template: "templates/ztunnel-log-reader/daemonset.yaml"
 
   - it: "should not render the PriorityClass but keep the reference when priorityClass.enabled is false"
     set:
@@ -65,7 +64,7 @@ tests:
         template: "templates/istio-fluent-bit/daemonset.yaml"
       - notExists:
           path: spec.template.spec.priorityClassName
-        template: "templates/istio-agent/daemonset.yaml"
+        template: "templates/ztunnel-log-reader/daemonset.yaml"
 
   - it: "should keep the PriorityClass and use global.priorityClassName on every workload"
     set:
@@ -86,7 +85,7 @@ tests:
       - equal:
           path: spec.template.spec.priorityClassName
           value: system-cluster-critical
-        template: "templates/istio-agent/daemonset.yaml"
+        template: "templates/ztunnel-log-reader/daemonset.yaml"
 
   - it: "should use common.priorityClassName on every workload"
     set:
@@ -109,7 +108,7 @@ tests:
       - equal:
           path: spec.template.spec.priorityClassName
           value: system-cluster-critical
-        template: "templates/istio-agent/daemonset.yaml"
+        template: "templates/ztunnel-log-reader/daemonset.yaml"
 
   - it: "should keep the chart PriorityClass on the fluent-bit DaemonSet with a controller-only priorityClassName"
     set:
@@ -130,7 +129,7 @@ tests:
       - equal:
           path: spec.template.spec.priorityClassName
           value: network-enforcer-priorityclass
-        template: "templates/istio-agent/daemonset.yaml"
+        template: "templates/ztunnel-log-reader/daemonset.yaml"
 
   - it: "should prefer the workload priorityClassName over global"
     set:
@@ -153,7 +152,7 @@ tests:
       - equal:
           path: spec.template.spec.priorityClassName
           value: agent-priority
-        template: "templates/istio-agent/daemonset.yaml"
+        template: "templates/ztunnel-log-reader/daemonset.yaml"
       - equal:
           path: spec.template.spec.priorityClassName
           value: common-priority
@@ -203,4 +202,4 @@ tests:
       - equal:
           path: spec.template.spec.priorityClassName
           value: custom-priorityclass
-        template: "templates/istio-agent/daemonset.yaml"
+        template: "templates/ztunnel-log-reader/daemonset.yaml"

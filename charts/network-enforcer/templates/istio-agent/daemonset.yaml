@@ -1,1 +1,0 @@
-{{- include "network-enforcer.istioAgent.daemonset" . }}

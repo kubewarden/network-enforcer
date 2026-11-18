@@ -8,7 +8,7 @@ release:
   name: my-release
   namespace: my-namespace
 tests:
-  - it: "renders Istio agent discovery settings and ignores the legacy endpoint"
+  - it: "renders ztunnel log reader discovery settings and ignores the legacy endpoint"
     set:
       controller:
         provider:

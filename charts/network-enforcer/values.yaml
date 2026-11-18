@@ -11,7 +11,7 @@ fullnameOverride: ""
 # Leave empty to use the release namespace.
 namespaceOverride: ""
 
-# global holds settings for all workloads: controller, istioFluentBit, and the Istio agent.
+# global holds settings for all workloads: controller, istioFluentBit, and the ztunnel log reader.
 # A parent chart can also set these keys.
 # A `common` block with the same keys, except imageRegistry, is also accepted.
 # It applies to all workloads of this chart only, and it wins over global.
@@ -195,6 +195,8 @@ controller:
           caBundleKey: ca.crt
         # Empty means the endpoint host.
         serverName: ""
+      # Network Enforcer's ztunnel log reader, not Istio's istio-agent component.
+      # The values key and published image retain the agent name for compatibility.
       agent:
         enabled: true
         # TCP port used by the agent and the controller's Pod-IP pull client.
@@ -282,9 +284,10 @@ controller:
     port: 9080
     bufferSize: 10000
 
-# Legacy Fluent Bit OTLP resources retained for chart migration.
-# These resources are retained for migration; the controller currently pulls from the agent.
-# The chart still deploys the resources only when controller.provider.name is istio.
+# Deprecated: Fluent Bit OTLP resources are retained temporarily for migration and will be removed.
+# The controller pulls from the ztunnel log reader instead.
+# The chart still deploys these resources only when controller.provider.name is istio.
+# @schema deprecated: true
 istioFluentBit:
   image:
     # The image path used by fluent-bit, without the registry.

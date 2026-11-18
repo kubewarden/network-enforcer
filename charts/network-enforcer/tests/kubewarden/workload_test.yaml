@@ -6,7 +6,7 @@ templates:
   # The documentSelector below keeps the assertions on the Deployment and the DaemonSet.
   - "templates/istio-fluent-bit/configmap.yaml"
   # skipEmptyTemplates keeps the disabled local agent workload out of unrelated cases.
-  - "templates/istio-agent/daemonset.yaml"
+  - "templates/ztunnel-log-reader/daemonset.yaml"
 workloads: &workloads
   path: apiVersion
   value: apps/v1
@@ -429,7 +429,7 @@ tests:
       - equal:
           path: "spec.template.spec.containers[0].resources.limits.memory"
           value: 4Gi
-        template: "templates/istio-agent/daemonset.yaml"
+        template: "templates/ztunnel-log-reader/daemonset.yaml"
       - equal:
           path: "spec.template.spec.containers[0].resources.limits.memory"
           value: 256Mi
@@ -450,7 +450,7 @@ tests:
       - equal:
           path: "spec.template.spec.topologySpreadConstraints[0].maxSkew"
           value: 1
-        template: "templates/istio-agent/daemonset.yaml"
+        template: "templates/ztunnel-log-reader/daemonset.yaml"
       - notExists:
           path: "spec.template.spec.topologySpreadConstraints"
         template: "templates/controller/deployment.yaml"
@@ -471,7 +471,7 @@ tests:
           value:
             - secretRef:
                 name: agent-env
-        template: "templates/istio-agent/daemonset.yaml"
+        template: "templates/ztunnel-log-reader/daemonset.yaml"
       - notExists:
           path: "spec.template.spec.containers[0].envFrom"
         template: "templates/controller/deployment.yaml"
@@ -490,7 +490,7 @@ tests:
       - equal:
           path: "spec.template.spec.containers[0].image"
           value: "agent.example.com/kubewarden/network-enforcer/agent:3.0.0"
-        template: "templates/istio-agent/daemonset.yaml"
+        template: "templates/ztunnel-log-reader/daemonset.yaml"
       - matchRegex:
           path: "spec.template.spec.containers[0].image"
           pattern: "^ghcr\\.io/kubewarden/network-enforcer/controller:"
