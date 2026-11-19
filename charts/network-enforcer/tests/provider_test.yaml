@@ -1,4 +1,4 @@
-suite: "Provider endpoint in controller deployment"
+suite: Provider endpoints in controller deployment
 templates:
   - templates/controller/deployment.yaml
 chart:
@@ -8,7 +8,7 @@ release:
   name: my-release
   namespace: my-namespace
 tests:
-  - it: "renders ztunnel log reader discovery settings and ignores the legacy endpoint"
+  - it: renders Istio agent discovery without a push listener
     set:
       controller:
         provider:
@@ -26,21 +26,7 @@ tests:
       - notExists:
           path: spec.template.spec.containers[0].ports
 
-  - it: "does not pass the custom legacy Istio endpoint to the controller"
-    set:
-      controller:
-        provider:
-          istio:
-            endpoint: 5555
-    asserts:
-      - notContains:
-          path: spec.template.spec.containers[0].args
-          content: --provider-endpoint=5555
-      - notContains:
-          path: spec.template.spec.containers[0].args
-          content: --agent-namespace=my-namespace
-
-  - it: "uses cilium default endpoint when empty"
+  - it: uses Cilium default endpoint
     set:
       controller:
         provider:
@@ -52,7 +38,7 @@ tests:
       - notExists:
           path: spec.template.spec.containers[0].ports
 
-  - it: "uses cilium plaintext default endpoint in insecure mode"
+  - it: uses Cilium plaintext default endpoint in insecure mode
     set:
       controller:
         provider:
@@ -68,7 +54,7 @@ tests:
       - notExists:
           path: spec.template.spec.containers[0].ports
 
-  - it: "uses cilium custom endpoint override"
+  - it: uses Cilium custom endpoint override
     set:
       controller:
         provider:
@@ -82,7 +68,7 @@ tests:
       - notExists:
           path: spec.template.spec.containers[0].ports
 
-  - it: "uses calico default endpoint when empty"
+  - it: uses Calico default endpoint and TLS settings
     set:
       controller:
         provider:
@@ -106,7 +92,7 @@ tests:
           path: spec.template.spec.containers[0].args
           content: --provider-tls-ca-bundle-key=tigera-ca-bundle.crt
 
-  - it: "uses calico custom endpoint override"
+  - it: uses Calico custom endpoint override
     set:
       controller:
         provider:
@@ -119,102 +105,3 @@ tests:
           content: --provider-endpoint=example:9032
       - notExists:
           path: spec.template.spec.containers[0].ports
----
-suite: "Provider endpoint in istio service"
-templates:
-  - templates/controller/istio-otlp-service.yaml
-chart:
-  version: 1.0.0
-  appVersion: 2.0.0
-release:
-  name: my-release
-  namespace: my-namespace
-tests:
-  - it: "renders istio service with default port"
-    set:
-      controller:
-        provider:
-          name: istio
-    asserts:
-      - hasDocuments:
-          count: 1
-      - equal:
-          path: spec.ports[0].port
-          value: 4317
-
-  - it: "renders istio service with custom port"
-    set:
-      controller:
-        provider:
-          istio:
-            endpoint: 5555
-    asserts:
-      - hasDocuments:
-          count: 1
-      - equal:
-          path: spec.ports[0].port
-          value: 5555
-
-  - it: "does not render istio templates for cilium"
-    set:
-      controller:
-        provider:
-          name: cilium
-    asserts:
-      - hasDocuments:
-          count: 0
----
-suite: "Rendering fluent-bit templates"
-templates:
-  - templates/istio-fluent-bit/**.yaml
-chart:
-  version: 1.0.0
-  appVersion: 2.0.0
-release:
-  name: my-release
-  namespace: my-namespace
-tests:
-  - it: "renders fluent-bit templates for istio"
-    set:
-      controller:
-        provider:
-          name: istio
-    asserts:
-      - hasDocuments:
-          count: 1
-
-  - it: "uses comma-separated Fluent Bit paths for only the two supported ztunnel containers"
-    set:
-      controller:
-        provider:
-          name: istio
-    asserts:
-      - matchRegex:
-          path: data["fluent-bit.conf"]
-          pattern: '(?m)^ *Path +/var/log/pods/istio-system_ztunnel-\*/ztunnel/\*\.log,/var/log/pods/istio-system_ztunnel-\*/istio-proxy/\*\.log$'
-        template: templates/istio-fluent-bit/configmap.yaml
-
-  - it: "does not render fluent-bit templates for cilium"
-    set:
-      controller:
-        provider:
-          name: cilium
-    asserts:
-      - hasDocuments:
-          count: 0
-
-  - it: "annotates the fluent-bit daemonset with a config checksum"
-    set:
-      controller:
-        provider:
-          name: istio
-    documentSelector:
-      path: kind
-      value: DaemonSet
-      skipEmptyTemplates: true
-    asserts:
-      - exists:
-          path: spec.template.metadata.annotations["checksum/config"]
-      - matchRegex:
-          path: spec.template.metadata.annotations["checksum/config"]
-          pattern: ^[a-f0-9]{64}$

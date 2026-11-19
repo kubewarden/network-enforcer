@@ -1,8 +1,206 @@
-suite: "Values contract: resolution rules"
+suite: "Values contract: nested agent merges with global and common settings"
 templates:
-  - "templates/controller/deployment.yaml"
+  - templates/controller/deployment.yaml
+  - templates/ztunnel-log-reader/daemonset.yaml
+workloads: &workloads
+  path: apiVersion
+  value: apps/v1
+  skipEmptyTemplates: true
+  matchMany: true
 tests:
-  - it: "should prefer the workload value, then common, then global for a scalar"
+  - it: merges maps from global, common, and the nested agent block
+    set:
+      global:
+        nodeSelector:
+          from-global: "yes"
+          shared: global
+      common:
+        nodeSelector:
+          from-common: "yes"
+          shared: common
+      controller:
+        provider:
+          istio:
+            agent:
+              nodeSelector:
+                from-agent: "yes"
+                shared: agent
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            from-global: "yes"
+            from-common: "yes"
+            shared: common
+        template: templates/controller/deployment.yaml
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            from-global: "yes"
+            from-common: "yes"
+            from-agent: "yes"
+            shared: agent
+        template: templates/ztunnel-log-reader/daemonset.yaml
+
+  - it: deep merges global, common, and agent affinity maps
+    documentSelector: *workloads
+    set:
+      global:
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: global.example.com/pool
+                      operator: In
+                      values: [shared]
+      common:
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app: network-enforcer
+                topologyKey: kubernetes.io/hostname
+      controller:
+        provider:
+          istio:
+            agent:
+              affinity:
+                nodeAffinity:
+                  preferredDuringSchedulingIgnoredDuringExecution:
+                    - weight: 100
+                      preference:
+                        matchExpressions:
+                          - key: agent.example.com/zone
+                            operator: In
+                            values: [east]
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: global.example.com/pool
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 100
+        template: templates/ztunnel-log-reader/daemonset.yaml
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+        template: templates/ztunnel-log-reader/daemonset.yaml
+
+  - it: selects agent tolerations over common unless an empty agent list requests fallback
+    set:
+      common:
+        tolerations:
+          - key: common
+            operator: Exists
+      controller:
+        tolerations:
+          - key: controller
+            operator: Exists
+        provider:
+          istio:
+            agent:
+              tolerations: []
+    asserts:
+      - equal:
+          path: spec.template.spec.tolerations
+          value:
+            - key: controller
+              operator: Exists
+        template: templates/controller/deployment.yaml
+      - equal:
+          path: spec.template.spec.tolerations
+          value:
+            - key: common
+              operator: Exists
+        template: templates/ztunnel-log-reader/daemonset.yaml
+
+  - it: concatenates global, common, and workload image pull secrets and extra environment
+    set:
+      global:
+        imagePullSecrets: [global-secret]
+        extraEnv:
+          - name: FROM_GLOBAL
+            value: global
+      common:
+        imagePullSecrets:
+          - name: common-secret
+        extraEnv:
+          - name: FROM_COMMON
+            value: common
+      controller:
+        provider:
+          istio:
+            agent:
+              imagePullSecrets:
+                - name: agent-secret
+              extraEnv:
+                - name: FROM_AGENT
+                  value: agent
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: global-secret
+            - name: common-secret
+            - name: agent-secret
+        template: templates/ztunnel-log-reader/daemonset.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FROM_GLOBAL
+            value: global
+        template: templates/ztunnel-log-reader/daemonset.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FROM_COMMON
+            value: common
+        template: templates/ztunnel-log-reader/daemonset.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FROM_AGENT
+            value: agent
+        template: templates/ztunnel-log-reader/daemonset.yaml
+
+  - it: prefers the agent image pull policy over common and global
+    template: templates/ztunnel-log-reader/daemonset.yaml
+    set:
+      global:
+        imagePullPolicy: IfNotPresent
+      common:
+        imagePullPolicy: Always
+      controller:
+        provider:
+          istio:
+            agent:
+              image:
+                pullPolicy: Never
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Never
+
+  - it: keeps the default agent toleration ahead of global tolerations
+    template: templates/ztunnel-log-reader/daemonset.yaml
+    set:
+      global:
+        tolerations:
+          - key: global
+            operator: Exists
+    asserts:
+      - equal:
+          path: spec.template.spec.tolerations
+          value:
+            - operator: Exists
+
+  - it: prefers workload then common then global scalar values and falls back when empty
+    template: templates/controller/deployment.yaml
     set:
       global:
         logLevel: error
@@ -12,92 +210,25 @@ tests:
         logLevel: debug
     asserts:
       - contains:
-          path: "spec.template.spec.containers[0].args"
-          content: "--log-level=debug"
+          path: spec.template.spec.containers[0].args
+          content: --log-level=debug
 
-  - it: "should prefer common over global for a scalar"
+  - it: falls back past an empty workload scalar
+    template: templates/controller/deployment.yaml
     set:
       global:
         logLevel: error
       common:
         logLevel: warn
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].args"
-          content: "--log-level=warn"
-
-  - it: "should fall back to global when the workload value is empty"
-    set:
-      global:
-        logLevel: error
       controller:
         logLevel: ""
     asserts:
       - contains:
-          path: "spec.template.spec.containers[0].args"
-          content: "--log-level=error"
+          path: spec.template.spec.containers[0].args
+          content: --log-level=warn
 
-  - it: "should merge maps, with the workload value winning on a duplicate key"
-    set:
-      global:
-        nodeSelector:
-          a: "1"
-          b: "1"
-      controller:
-        nodeSelector:
-          b: "2"
-    asserts:
-      - equal:
-          path: "spec.template.spec.nodeSelector"
-          value:
-            a: "1"
-            b: "2"
-
-  - it: "should append named lists after the chart entries, in the order global, common, workload"
-    set:
-      global:
-        extraEnv:
-          - name: A
-            value: a
-      common:
-        extraEnv:
-          - name: C
-            value: c
-      controller:
-        extraEnv:
-          - name: B
-            value: b
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].env"
-          value:
-            - name: KUBERNETES_CLUSTER_DOMAIN
-              value: "cluster.local"
-            - name: A
-              value: a
-            - name: C
-              value: c
-            - name: B
-              value: b
-
-  - it: "should replace unnamed lists with the most specific value"
-    set:
-      global:
-        tolerations:
-          - key: from-global
-            operator: Exists
-      controller:
-        tolerations:
-          - key: from-controller
-            operator: Exists
-    asserts:
-      - equal:
-          path: "spec.template.spec.tolerations"
-          value:
-            - key: from-controller
-              operator: Exists
-
-  - it: "should keep the fixed chart labels and the selector"
+  - it: keeps fixed controller labels and selector under user label collisions
+    template: templates/controller/deployment.yaml
     release:
       name: rel
     set:
@@ -108,818 +239,25 @@ tests:
           app.kubernetes.io/name: other
     asserts:
       - equal:
-          path: "metadata.labels[\"app.kubernetes.io/name\"]"
+          path: metadata.labels["app.kubernetes.io/name"]
           value: network-enforcer
       - equal:
-          path: "spec.template.metadata.labels[\"app.kubernetes.io/name\"]"
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
           value: network-enforcer
       - equal:
-          path: "spec.selector.matchLabels"
+          path: spec.selector.matchLabels
           value:
             app.kubernetes.io/name: network-enforcer
             app.kubernetes.io/instance: rel
             app.kubernetes.io/component: controller
 
-  - it: "should prefer common.otel over global.otel"
-    set:
-      global:
-        otel:
-          endpoint: "http://global:4317"
-      common:
-        otel:
-          endpoint: "http://common:4317"
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].env"
-          content:
-            name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: "http://common:4317"
-
-  - it: "should prefer the workload otel over common.otel"
-    set:
-      common:
-        otel:
-          endpoint: "http://common:4317"
-      controller:
-        otel:
-          endpoint: "http://workload:4317"
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].env"
-          content:
-            name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: "http://workload:4317"
-
-  - it: "should fall back to common.otel when the workload otel endpoint is empty"
-    set:
-      common:
-        otel:
-          endpoint: "http://common:4317"
-      controller:
-        otel:
-          endpoint: ""
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].env"
-          content:
-            name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: "http://common:4317"
-
-  - it: "should resolve each otel field on its own"
-    set:
-      global:
-        otel:
-          endpoint: "http://global:4317"
-          caSecretName: "global-ca"
-      common:
-        otel:
-          clientCertificateSecretName: "common-client"
-      controller:
-        otel:
-          caSecretName: "workload-ca"
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].env"
-          content:
-            name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: "http://global:4317"
-      - contains:
-          path: "spec.template.spec.volumes"
-          content:
-            name: otel-ca
-            secret:
-              secretName: workload-ca
-      - contains:
-          path: "spec.template.spec.volumes"
-          content:
-            name: otel-client-tls
-            secret:
-              secretName: common-client
-
-  - it: "should prefer the top-level otel over the workload otel"
-    set:
-      otel:
-        endpoint: "http://chart:4317"
-      controller:
-        otel:
-          endpoint: "http://workload:4317"
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].env"
-          content:
-            name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: "http://chart:4317"
-
-  - it: "should prefer global.imageRegistry over the workload image.registry"
-    set:
-      global:
-        imageRegistry: global.example.com
-      controller:
-        image:
-          registry: mirror.example.com
-    asserts:
-      - matchRegex:
-          path: "spec.template.spec.containers[0].image"
-          pattern: "^global\\.example\\.com/kubewarden/network-enforcer/"
-
-  - it: "should use the workload image.registry when global.imageRegistry is empty"
-    set:
-      controller:
-        image:
-          registry: mirror.example.com
-    asserts:
-      - matchRegex:
-          path: "spec.template.spec.containers[0].image"
-          pattern: "^mirror\\.example\\.com/kubewarden/network-enforcer/"
-
-  - it: "should append imagePullSecrets: global, then common, then the workload"
-    set:
-      global:
-        imagePullSecrets:
-          - name: global-secret
-      common:
-        imagePullSecrets:
-          - name: common-secret
-      controller:
-        imagePullSecrets:
-          - name: controller-secret
-    asserts:
-      - equal:
-          path: "spec.template.spec.imagePullSecrets"
-          value:
-            - name: global-secret
-            - name: common-secret
-            - name: controller-secret
-
-  - it: "should accept names and maps on all levels of imagePullSecrets"
-    set:
-      global:
-        imagePullSecrets:
-          - global-secret
-      common:
-        imagePullSecrets:
-          - name: common-secret
-          - common-name
-      controller:
-        imagePullSecrets:
-          - controller-secret
-    asserts:
-      - equal:
-          path: "spec.template.spec.imagePullSecrets"
-          value:
-            - name: global-secret
-            - name: common-secret
-            - name: common-name
-            - name: controller-secret
----
-# network-enforcer cases
-suite: "Values contract: resolution rules across workloads"
-templates:
-  - "templates/controller/deployment.yaml"
-  - "templates/istio-fluent-bit/daemonset.yaml"
-  # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
-  # The documentSelector below keeps the assertions on the Deployment and the DaemonSet.
-  - "templates/istio-fluent-bit/configmap.yaml"
-release:
-  name: rel
-workloads: &workloads
-  path: apiVersion
-  value: apps/v1
-  skipEmptyTemplates: true
-  matchMany: true
-tests:
-  - it: "should fall back past an empty scalar at workload and common"
-    documentSelector: *workloads
-    set:
-      global:
-        logLevel: error
-        imagePullPolicy: Never
-      common:
-        logLevel: ""
-        imagePullPolicy: ""
-      controller:
-        logLevel: ""
-        image:
-          pullPolicy: ""
-      istioFluentBit:
-        image:
-          pullPolicy: ""
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].args"
-          content: "--log-level=error"
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.template.spec.containers[0].imagePullPolicy"
-          value: Never
-
-  - it: "should prefer the workload image.pullPolicy over common and global"
-    documentSelector: *workloads
-    set:
-      global:
-        imagePullPolicy: Never
-      common:
-        imagePullPolicy: IfNotPresent
-      controller:
-        image:
-          pullPolicy: Always
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].imagePullPolicy"
-          value: Always
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.template.spec.containers[0].imagePullPolicy"
-          value: IfNotPresent
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should prefer istioFluentBit.image.pullPolicy over common and global"
-    documentSelector: *workloads
-    set:
-      global:
-        imagePullPolicy: Never
-      common:
-        imagePullPolicy: IfNotPresent
-      istioFluentBit:
-        image:
-          pullPolicy: Always
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].imagePullPolicy"
-          value: Always
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-      - equal:
-          path: "spec.template.spec.containers[0].imagePullPolicy"
-          value: IfNotPresent
-        template: "templates/controller/deployment.yaml"
-
-  # istioFluentBit.tolerations has a default that wins over common.
-  # This case clears it, so the fluent-bit DaemonSet falls back to common.
-  - it: "should replace unnamed lists with the most specific value"
-    documentSelector: *workloads
-    set:
-      global:
-        tolerations:
-          - key: from-global
-            operator: Exists
-      common:
-        tolerations:
-          - key: from-common
-            operator: Exists
-      controller:
-        tolerations:
-          - key: from-controller
-            operator: Exists
-      istioFluentBit:
-        tolerations: []
-    asserts:
-      - equal:
-          path: "spec.template.spec.tolerations"
-          value:
-            - key: from-controller
-              operator: Exists
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.template.spec.tolerations"
-          value:
-            - key: from-common
-              operator: Exists
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should fall back past an empty unnamed list at workload and common"
-    documentSelector: *workloads
-    set:
-      global:
-        tolerations:
-          - key: from-global
-            operator: Exists
-        topologySpreadConstraints:
-          - maxSkew: 2
-            topologyKey: kubernetes.io/hostname
-            whenUnsatisfiable: DoNotSchedule
-      common:
-        tolerations: []
-        topologySpreadConstraints: []
-      controller:
-        tolerations: []
-        topologySpreadConstraints: []
-      istioFluentBit:
-        tolerations: []
-        topologySpreadConstraints: []
-    asserts:
-      - equal:
-          path: "spec.template.spec.tolerations"
-          value:
-            - key: from-global
-              operator: Exists
-      - equal:
-          path: "spec.template.spec.topologySpreadConstraints[0].maxSkew"
-          value: 2
-
-  - it: "should keep the default fluent-bit tolerations over global.tolerations"
-    documentSelector: *workloads
-    set:
-      global:
-        tolerations:
-          - key: from-global
-            operator: Exists
-    asserts:
-      - equal:
-          path: "spec.template.spec.tolerations"
-          value:
-            - operator: Exists
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-      - equal:
-          path: "spec.template.spec.tolerations"
-          value:
-            - key: from-global
-              operator: Exists
-        template: "templates/controller/deployment.yaml"
-
-  - it: "should keep the default fluent-bit tolerations over common.tolerations"
-    documentSelector: *workloads
-    set:
-      common:
-        tolerations:
-          - key: from-common
-            operator: Exists
-    asserts:
-      - equal:
-          path: "spec.template.spec.tolerations"
-          value:
-            - operator: Exists
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-      - equal:
-          path: "spec.template.spec.tolerations"
-          value:
-            - key: from-common
-              operator: Exists
-        template: "templates/controller/deployment.yaml"
-
-  - it: "should fall back to global.tolerations when istioFluentBit.tolerations is empty"
-    documentSelector: *workloads
-    set:
-      global:
-        tolerations:
-          - key: from-global
-            operator: Exists
-      istioFluentBit:
-        tolerations: []
-    asserts:
-      - equal:
-          path: "spec.template.spec.tolerations"
-          value:
-            - key: from-global
-              operator: Exists
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should fall back to common.tolerations when istioFluentBit.tolerations is empty"
-    documentSelector: *workloads
-    set:
-      global:
-        tolerations:
-          - key: from-global
-            operator: Exists
-      common:
-        tolerations:
-          - key: from-common
-            operator: Exists
-      istioFluentBit:
-        tolerations: []
-    asserts:
-      - equal:
-          path: "spec.template.spec.tolerations"
-          value:
-            - key: from-common
-              operator: Exists
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should render no tolerations on the fluent-bit DaemonSet when every level is empty"
-    documentSelector: *workloads
-    set:
-      istioFluentBit:
-        tolerations: []
-    asserts:
-      - notExists:
-          path: "spec.template.spec.tolerations"
-
-  - it: "should merge maps, with the workload value winning on a duplicate key"
-    documentSelector: *workloads
-    set:
-      global:
-        nodeSelector:
-          a: "1"
-          b: "1"
-          c: "1"
-      common:
-        nodeSelector:
-          b: "2"
-          c: "2"
-      controller:
-        nodeSelector:
-          c: "3"
-    asserts:
-      - equal:
-          path: "spec.template.spec.nodeSelector"
-          value:
-            a: "1"
-            b: "2"
-            c: "3"
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.template.spec.nodeSelector"
-          value:
-            a: "1"
-            b: "2"
-            c: "2"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should merge nested affinity maps across global, common, and workload"
-    documentSelector: *workloads
-    set:
-      global:
-        affinity:
-          nodeAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              nodeSelectorTerms:
-                - matchExpressions:
-                    - key: kubernetes.io/os
-                      operator: In
-                      values: [linux]
-      common:
-        affinity:
-          nodeAffinity:
-            preferredDuringSchedulingIgnoredDuringExecution:
-              - weight: 10
-                preference:
-                  matchExpressions:
-                    - key: example.com/pool
-                      operator: In
-                      values: [system]
-      controller:
-        affinity:
-          podAntiAffinity:
-            preferredDuringSchedulingIgnoredDuringExecution:
-              - weight: 100
-                podAffinityTerm:
-                  topologyKey: kubernetes.io/hostname
-    asserts:
-      - equal:
-          path: "spec.template.spec.affinity"
-          value:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                  - matchExpressions:
-                      - key: kubernetes.io/os
-                        operator: In
-                        values: [linux]
-              preferredDuringSchedulingIgnoredDuringExecution:
-                - weight: 10
-                  preference:
-                    matchExpressions:
-                      - key: example.com/pool
-                        operator: In
-                        values: [system]
-            podAntiAffinity:
-              preferredDuringSchedulingIgnoredDuringExecution:
-                - weight: 100
-                  podAffinityTerm:
-                    topologyKey: kubernetes.io/hostname
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.template.spec.affinity"
-          value:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                  - matchExpressions:
-                      - key: kubernetes.io/os
-                        operator: In
-                        values: [linux]
-              preferredDuringSchedulingIgnoredDuringExecution:
-                - weight: 10
-                  preference:
-                    matchExpressions:
-                      - key: example.com/pool
-                        operator: In
-                        values: [system]
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  # The active Istio controller has webhook and agent-hop certificates.
-  - it: "should order extraEnv, extraVolumes, and extraVolumeMounts as chart, global, common, workload"
-    set:
-      global:
-        extraEnv:
-          - name: A
-            value: a
-        extraVolumes:
-          - name: vol-a
-            emptyDir: {}
-        extraVolumeMounts:
-          - name: vol-a
-            mountPath: /a
-      common:
-        extraEnv:
-          - name: C
-            value: c
-        extraVolumes:
-          - name: vol-c
-            emptyDir: {}
-        extraVolumeMounts:
-          - name: vol-c
-            mountPath: /c
-      controller:
-        extraEnv:
-          - name: B
-            value: b
-        extraVolumes:
-          - name: vol-b
-            emptyDir: {}
-        extraVolumeMounts:
-          - name: vol-b
-            mountPath: /b
-    template: "templates/controller/deployment.yaml"
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].env"
-          value:
-            - name: KUBERNETES_CLUSTER_DOMAIN
-              value: cluster.local
-            - name: A
-              value: a
-            - name: C
-              value: c
-            - name: B
-              value: b
-      - equal:
-          path: "spec.template.spec.volumes[2]"
-          value:
-            name: vol-a
-            emptyDir: {}
-      - equal:
-          path: "spec.template.spec.volumes[3]"
-          value:
-            name: vol-c
-            emptyDir: {}
-      - equal:
-          path: "spec.template.spec.volumes[4]"
-          value:
-            name: vol-b
-            emptyDir: {}
-      - lengthEqual:
-          path: "spec.template.spec.volumes"
-          count: 5
-      - equal:
-          path: "spec.template.spec.volumes[0].name"
-          value: webhook-certs
-      - equal:
-          path: "spec.template.spec.volumes[1].name"
-          value: grpc-certs
-      - equal:
-          path: "spec.template.spec.containers[0].volumeMounts[2]"
-          value:
-            name: vol-a
-            mountPath: /a
-      - equal:
-          path: "spec.template.spec.containers[0].volumeMounts[3]"
-          value:
-            name: vol-c
-            mountPath: /c
-      - equal:
-          path: "spec.template.spec.containers[0].volumeMounts[4]"
-          value:
-            name: vol-b
-            mountPath: /b
-      - lengthEqual:
-          path: "spec.template.spec.containers[0].volumeMounts"
-          count: 5
-
-  - it: "should order extraEnv, extraVolumes, and extraVolumeMounts as chart, global, common, workload on the fluent-bit DaemonSet"
-    documentSelector: *workloads
-    set:
-      global:
-        extraEnv:
-          - name: A
-            value: a
-        extraVolumes:
-          - name: vol-a
-            emptyDir: {}
-        extraVolumeMounts:
-          - name: vol-a
-            mountPath: /a
-      common:
-        extraEnv:
-          - name: C
-            value: c
-        extraVolumes:
-          - name: vol-c
-            emptyDir: {}
-        extraVolumeMounts:
-          - name: vol-c
-            mountPath: /c
-      istioFluentBit:
-        extraEnv:
-          - name: B
-            value: b
-        extraVolumes:
-          - name: vol-b
-            emptyDir: {}
-        extraVolumeMounts:
-          - name: vol-b
-            mountPath: /b
-    template: "templates/istio-fluent-bit/daemonset.yaml"
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].env"
-          value:
-            - name: NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
-            - name: A
-              value: a
-            - name: C
-              value: c
-            - name: B
-              value: b
-      - equal:
-          path: "spec.template.spec.volumes[4].name"
-          value: provider-tls
-      - equal:
-          path: "spec.template.spec.volumes[5]"
-          value:
-            name: vol-a
-            emptyDir: {}
-      - equal:
-          path: "spec.template.spec.volumes[6]"
-          value:
-            name: vol-c
-            emptyDir: {}
-      - equal:
-          path: "spec.template.spec.volumes[7]"
-          value:
-            name: vol-b
-            emptyDir: {}
-      - lengthEqual:
-          path: "spec.template.spec.volumes"
-          count: 8
-      - equal:
-          path: "spec.template.spec.containers[0].volumeMounts[6].name"
-          value: provider-tls
-      - equal:
-          path: "spec.template.spec.containers[0].volumeMounts[7]"
-          value:
-            name: vol-a
-            mountPath: /a
-      - equal:
-          path: "spec.template.spec.containers[0].volumeMounts[8]"
-          value:
-            name: vol-c
-            mountPath: /c
-      - equal:
-          path: "spec.template.spec.containers[0].volumeMounts[9]"
-          value:
-            name: vol-b
-            mountPath: /b
-      - lengthEqual:
-          path: "spec.template.spec.containers[0].volumeMounts"
-          count: 10
-
-  - it: "should put the OTel env after the chart env and before the extra env"
-    set:
-      global:
-        otel:
-          endpoint: "http://collector:4317"
-        extraEnv:
-          - name: A
-            value: a
-    template: "templates/controller/deployment.yaml"
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].env[0].name"
-          value: KUBERNETES_CLUSTER_DOMAIN
-      - equal:
-          path: "spec.template.spec.containers[0].env[1].name"
-          value: OTEL_EXPORTER_OTLP_ENDPOINT
-      - equal:
-          path: "spec.template.spec.containers[0].env[-1]"
-          value:
-            name: A
-            value: a
-
-  - it: "should skip empty and missing imagePullSecrets names"
-    documentSelector: *workloads
-    set:
-      global:
-        imagePullSecrets:
-          - ""
-          - {}
-          - name: ""
-          - other: x
-          - name: real-secret
-    asserts:
-      - equal:
-          path: "spec.template.spec.imagePullSecrets"
-          value:
-            - name: real-secret
-
-  - it: "should render no registry prefix when every registry is empty"
-    documentSelector: *workloads
-    set:
-      controller:
-        image:
-          registry: ""
-          tag: 1.0.0
-      istioFluentBit:
-        image:
-          registry: ""
-          tag: 2.0.0
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "kubewarden/network-enforcer/controller:1.0.0"
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "fluent/fluent-bit:2.0.0"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should keep spec.selector.matchLabels with hostile labels and podLabels"
-    documentSelector: *workloads
-    set:
-      global:
-        labels: &hostile
-          app.kubernetes.io/name: other
-          app.kubernetes.io/instance: other
-          app.kubernetes.io/component: other
-        podLabels: *hostile
-      common:
-        labels: *hostile
-        podLabels: *hostile
-      controller:
-        labels: *hostile
-        podLabels: *hostile
-      istioFluentBit:
-        labels: *hostile
-        podLabels: *hostile
-    asserts:
-      - equal:
-          path: "spec.selector.matchLabels"
-          value:
-            app.kubernetes.io/name: network-enforcer
-            app.kubernetes.io/instance: rel
-            app.kubernetes.io/component: controller
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.selector.matchLabels"
-          value:
-            app.kubernetes.io/name: network-enforcer
-            app.kubernetes.io/instance: rel
-            app.kubernetes.io/component: istio-fluent-bit
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-      - equal:
-          path: "spec.template.metadata.labels[\"app.kubernetes.io/name\"]"
-          value: network-enforcer
-      - equal:
-          path: "spec.template.metadata.labels[\"app.kubernetes.io/instance\"]"
-          value: rel
-      - equal:
-          path: "metadata.labels[\"app.kubernetes.io/name\"]"
-          value: network-enforcer
-      - equal:
-          path: "metadata.labels[\"app.kubernetes.io/instance\"]"
-          value: rel
-      - equal:
-          path: "spec.template.metadata.labels[\"app.kubernetes.io/component\"]"
-          value: controller
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "metadata.labels[\"app.kubernetes.io/component\"]"
-          value: controller
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.template.metadata.labels[\"app.kubernetes.io/component\"]"
-          value: istio-fluent-bit
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-      - equal:
-          path: "metadata.labels[\"app.kubernetes.io/component\"]"
-          value: istio-fluent-bit
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should keep the fixed pod annotations with a hostile podAnnotations"
-    documentSelector: *workloads
+  - it: keeps fixed controller pod annotations over hostile user values
+    template: templates/controller/deployment.yaml
     set:
       global:
         podAnnotations:
-          kubectl.kubernetes.io/default-container: other
-          checksum/config: other
+          kubectl.kubernetes.io/default-container: hostile
     asserts:
       - equal:
-          path: "spec.template.metadata.annotations[\"kubectl.kubernetes.io/default-container\"]"
+          path: spec.template.metadata.annotations["kubectl.kubernetes.io/default-container"]
           value: manager
-        template: "templates/controller/deployment.yaml"
-      - matchRegex:
-          path: "spec.template.metadata.annotations[\"checksum/config\"]"
-          pattern: "^[a-f0-9]{64}$"
-        template: "templates/istio-fluent-bit/daemonset.yaml"

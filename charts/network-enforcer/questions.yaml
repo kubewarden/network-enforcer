@@ -43,8 +43,7 @@ questions:
     description: |
       The data-plane provider the controller reads network flows from.
       "istio" pulls typed ztunnel events from the agent DaemonSet, "cilium" uses Hubble Relay, and "calico" uses Goldmane.
-      The ztunnel log reader is enabled by default under controller.provider.istio.agent and reads node logs through hostPath mounts; the release namespace admission policy must permit this workload. Fluent Bit resources are deprecated and retained temporarily for migration; they are not the current controller ingestion path.
-      Endpoint and TLS defaults live under controller.provider.<name>; only the selected provider's tree is used.
+      The ztunnel log reader is enabled by default under controller.provider.istio.agent and reads node logs through hostPath mounts; the release namespace admission policy must permit this workload. Istio agent mTLS is chart-managed; endpoint and TLS values apply to Cilium and Calico.
     group: Provider
 
   # Configure controller.provider.<name>.endpoint and controller.provider.<name>.tls

@@ -1,3 +1,4 @@
+{{- if ne (include "network-enforcer.provider.name" . | trim) "istio" }}
 {{- if eq (include "network-enforcer.provider.tls.apiSecret" . | trim) "true" }}
 {{- $secret := include "network-enforcer.provider.tls.existingSecret" . | fromJson }}
 apiVersion: rbac.authorization.k8s.io/v1
@@ -42,4 +43,5 @@ subjects:
 - kind: ServiceAccount
   name: {{ include "network-enforcer.fullname" . }}-controller-manager
   namespace: {{ include "network-enforcer.namespace" . | quote }}
+{{- end }}
 {{- end }}

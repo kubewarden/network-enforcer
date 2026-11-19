@@ -169,9 +169,7 @@ tests:
 suite: "Workload names, default resources and schema"
 templates:
   - templates/controller/deployment.yaml
-  - templates/istio-fluent-bit/daemonset.yaml
-  # Included only because the DaemonSet computes a checksum of the ConfigMap.
-  - templates/istio-fluent-bit/configmap.yaml
+  - templates/ztunnel-log-reader/daemonset.yaml
 chart:
   version: 1.0.0
   appVersion: 2.0.0
@@ -179,18 +177,18 @@ release:
   name: my-release
   namespace: my-namespace
 tests:
-  - it: "should render default fluent-bit resources"
-    template: "templates/istio-fluent-bit/daemonset.yaml"
+  - it: "should render the default agent resources"
+    template: "templates/ztunnel-log-reader/daemonset.yaml"
     asserts:
       - equal:
           path: spec.template.spec.containers[0].resources
           value:
             limits:
-              cpu: 200m
+              cpu: 100m
               memory: 256Mi
             requests:
-              cpu: 50m
-              memory: 128Mi
+              cpu: 100m
+              memory: 256Mi
 
   - it: "should accept Kubernetes fields not listed in the values.yaml example"
     # values.schema.json references the upstream Kubernetes object schemas
