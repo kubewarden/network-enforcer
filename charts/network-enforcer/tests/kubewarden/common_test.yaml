@@ -1,215 +1,118 @@
-suite: "Values contract: common"
+suite: "Values contract: common settings on the controller and Istio agent"
 templates:
-  - "templates/controller/deployment.yaml"
-  - "templates/istio-fluent-bit/daemonset.yaml"
-  # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
-  # The documentSelector below keeps the assertions on the Deployment and the DaemonSet.
-  - "templates/istio-fluent-bit/configmap.yaml"
+  - templates/controller/deployment.yaml
+  - templates/ztunnel-log-reader/daemonset.yaml
 workloads: &workloads
   path: apiVersion
   value: apps/v1
   skipEmptyTemplates: true
   matchMany: true
 tests:
-  # The fluent-bit DaemonSet has no log level, so this case checks the controller only.
-  - it: "should render common.logLevel on every workload"
-    templates:
-      - "templates/controller/deployment.yaml"
-    set:
-      common:
-        logLevel: warn
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].args"
-          content: "--log-level=warn"
-
-  # istioFluentBit.tolerations has a default that wins over common.
-  # This case clears it, so common.tolerations applies to every workload.
-  - it: "should render common.tolerations on every workload"
+  - it: applies common scheduling, pull secrets, and extra environment to both workloads
     documentSelector: *workloads
     set:
       common:
         tolerations:
           - key: from-common
             operator: Exists
-      istioFluentBit:
-        tolerations: []
-    asserts:
-      - equal:
-          path: "spec.template.spec.tolerations"
-          value:
-            - key: from-common
-              operator: Exists
-
-  - it: "should render common.nodeSelector on every workload"
-    documentSelector: *workloads
-    set:
-      common:
         nodeSelector:
           kubernetes.io/os: linux
-    asserts:
-      - equal:
-          path: "spec.template.spec.nodeSelector"
-          value:
-            kubernetes.io/os: linux
-
-  - it: "should render common.extraEnv on every workload"
-    documentSelector: *workloads
-    set:
-      common:
+        imagePullSecrets:
+          - registry-credentials
         extraEnv:
           - name: FROM_COMMON
             value: "yes"
+      controller:
+        provider:
+          istio:
+            agent:
+              tolerations: []
     asserts:
+      - equal:
+          path: spec.template.spec.tolerations
+          value:
+            - key: from-common
+              operator: Exists
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            kubernetes.io/os: linux
+      - equal:
+          path: spec.template.spec.imagePullSecrets[0].name
+          value: registry-credentials
       - contains:
-          path: "spec.template.spec.containers[0].env"
+          path: spec.template.spec.containers[0].env
           content:
             name: FROM_COMMON
             value: "yes"
 
-  # network-enforcer cases
-  - it: "should render the defaults on every workload"
-    documentSelector: *workloads
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].imagePullPolicy"
-          value: IfNotPresent
-      - matchRegex:
-          path: "spec.template.spec.containers[0].image"
-          pattern: "^(ghcr\\.io/kubewarden/network-enforcer/controller|docker\\.io/fluent/fluent-bit):"
-      - notExists:
-          path: "spec.template.spec.imagePullSecrets"
-      - notExists:
-          path: "spec.template.spec.containers[0].envFrom"
-
-  - it: "should render common.imagePullSecrets on every workload"
-    documentSelector: *workloads
-    set:
-      common:
-        imagePullSecrets:
-          - name: registry-credentials
-    asserts:
-      - equal:
-          path: "spec.template.spec.imagePullSecrets"
-          value:
-            - name: registry-credentials
-
-  - it: "should accept plain Secret names in common.imagePullSecrets"
-    documentSelector: *workloads
-    set:
-      common:
-        imagePullSecrets:
-          - registry-credentials
-    asserts:
-      - equal:
-          path: "spec.template.spec.imagePullSecrets"
-          value:
-            - name: registry-credentials
-
-  - it: "should render common.imagePullPolicy on every workload"
+  - it: applies common image pull policy and labels to both workloads
     documentSelector: *workloads
     set:
       common:
         imagePullPolicy: Always
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].imagePullPolicy"
-          value: Always
-
-  - it: "should render the default logLevel on the controller"
-    templates:
-      - "templates/controller/deployment.yaml"
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].args"
-          content: "--log-level=info"
-
-  - it: "should render common.logLevel on the controller"
-    templates:
-      - "templates/controller/deployment.yaml"
-    set:
-      common:
-        logLevel: debug
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].args"
-          content: "--log-level=debug"
-      - notContains:
-          path: "spec.template.spec.containers[0].args"
-          content: "--log-level=info"
-
-  - it: "should not render common.logLevel on the fluent-bit DaemonSet"
-    templates:
-      - "templates/istio-fluent-bit/daemonset.yaml"
-      - "templates/istio-fluent-bit/configmap.yaml"
-    documentSelector: *workloads
-    set:
-      common:
-        logLevel: debug
-    asserts:
-      - notExists:
-          path: "spec.template.spec.containers[0].args"
-
-  - it: "should render common.labels on every workload"
-    documentSelector: *workloads
-    set:
-      common:
         labels:
           team: security
+        podLabels:
+          tier: policy
     asserts:
       - equal:
-          path: "metadata.labels.team"
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+      - equal:
+          path: metadata.labels.team
           value: security
-      - notExists:
-          path: "spec.template.metadata.labels.team"
+      - equal:
+          path: spec.template.metadata.labels.tier
+          value: policy
 
-  - it: "should render common.annotations on every workload"
+  - it: renders common log level and telemetry only on the controller
+    templates:
+      - templates/controller/deployment.yaml
+    set:
+      common:
+        logLevel: debug
+        otel:
+          endpoint: https://collector.example.com:4317
+          caSecretName: otel-ca
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --log-level=debug
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: https://collector.example.com:4317
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: otel-ca
+            secret:
+              secretName: otel-ca
+
+  - it: does not add log level or telemetry settings to the agent
+    template: templates/ztunnel-log-reader/daemonset.yaml
+    set:
+      common:
+        logLevel: debug
+        otel:
+          endpoint: https://collector.example.com:4317
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --log-level=debug
+      - notExists:
+          path: spec.template.spec.containers[0].env
+
+  - it: applies common annotations, affinity, spread constraints, and additional sources to both workloads
     documentSelector: *workloads
     set:
       common:
         annotations:
           example.com/owner: security
-    asserts:
-      - equal:
-          path: "metadata.annotations[\"example.com/owner\"]"
-          value: security
-      - notExists:
-          path: "spec.template.metadata.annotations[\"example.com/owner\"]"
-
-  - it: "should render common.podLabels on every workload"
-    documentSelector: *workloads
-    set:
-      common:
-        podLabels:
-          team: security
-    asserts:
-      - equal:
-          path: "spec.template.metadata.labels.team"
-          value: security
-      - notExists:
-          path: "metadata.labels.team"
-
-  - it: "should render common.podAnnotations on every workload"
-    documentSelector: *workloads
-    set:
-      common:
         podAnnotations:
-          example.com/owner: security
-    asserts:
-      - equal:
-          path: "spec.template.metadata.annotations[\"example.com/owner\"]"
-          value: security
-      - exists:
-          path: "spec.template.metadata.annotations[\"kubectl.kubernetes.io/default-container\"]"
-        template: "templates/controller/deployment.yaml"
-      - exists:
-          path: "spec.template.metadata.annotations[\"checksum/config\"]"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should render common.affinity on every workload"
-    documentSelector: *workloads
-    set:
-      common:
+          example.com/pod-owner: security
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
@@ -218,131 +121,46 @@ tests:
                     - key: kubernetes.io/arch
                       operator: In
                       values: [amd64]
-    asserts:
-      - equal:
-          path: "spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key"
-          value: kubernetes.io/arch
-
-  - it: "should render common.topologySpreadConstraints on every workload"
-    documentSelector: *workloads
-    set:
-      common:
         topologySpreadConstraints:
           - maxSkew: 1
             topologyKey: kubernetes.io/hostname
             whenUnsatisfiable: ScheduleAnyway
-    asserts:
-      - equal:
-          path: "spec.template.spec.topologySpreadConstraints"
-          value:
-            - maxSkew: 1
-              topologyKey: kubernetes.io/hostname
-              whenUnsatisfiable: ScheduleAnyway
-
-  - it: "should render common.priorityClassName on every workload"
-    documentSelector: *workloads
-    set:
-      common:
-        priorityClassName: system-cluster-critical
-    asserts:
-      - equal:
-          path: "spec.template.spec.priorityClassName"
-          value: system-cluster-critical
-
-  - it: "should render common.extraEnvFrom on every workload"
-    documentSelector: *workloads
-    set:
-      common:
         extraEnvFrom:
           - configMapRef:
-              name: proxy-env
+              name: shared-env
+        extraVolumes:
+          - name: shared-config
+            configMap:
+              name: shared-config
+        extraVolumeMounts:
+          - name: shared-config
+            mountPath: /etc/shared
+            readOnly: true
     asserts:
       - equal:
-          path: "spec.template.spec.containers[0].envFrom"
-          value:
-            - configMapRef:
-                name: proxy-env
-
-  - it: "should render common.extraVolumes on every workload"
-    documentSelector: *workloads
-    set:
-      common:
-        extraVolumes:
-          - name: extra-ca
+          path: metadata.annotations["example.com/owner"]
+          value: security
+      - equal:
+          path: spec.template.metadata.annotations["example.com/pod-owner"]
+          value: security
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: kubernetes.io/arch
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].maxSkew
+          value: 1
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[0].configMapRef.name
+          value: shared-env
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: shared-config
             configMap:
-              name: extra-ca
-    asserts:
+              name: shared-config
       - contains:
-          path: "spec.template.spec.volumes"
+          path: spec.template.spec.containers[0].volumeMounts
           content:
-            name: extra-ca
-            configMap:
-              name: extra-ca
-
-  - it: "should render common.extraVolumeMounts on every workload"
-    documentSelector: *workloads
-    set:
-      common:
-        extraVolumeMounts:
-          - name: extra-ca
-            mountPath: /etc/extra-ca
+            name: shared-config
+            mountPath: /etc/shared
             readOnly: true
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].volumeMounts"
-          content:
-            name: extra-ca
-            mountPath: /etc/extra-ca
-            readOnly: true
-
-  - it: "should render common.otel on the controller"
-    templates:
-      - "templates/controller/deployment.yaml"
-    set:
-      common:
-        otel:
-          endpoint: "https://collector.example.com:4317"
-          caSecretName: otel-ca
-          clientCertificateSecretName: otel-client
-    asserts:
-      - contains:
-          path: "spec.template.spec.containers[0].env"
-          content:
-            name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: "https://collector.example.com:4317"
-      - contains:
-          path: "spec.template.spec.volumes"
-          content:
-            name: otel-ca
-            secret:
-              secretName: otel-ca
-      - contains:
-          path: "spec.template.spec.volumes"
-          content:
-            name: otel-client-tls
-            secret:
-              secretName: otel-client
-
-  - it: "should not render common.otel on the fluent-bit DaemonSet"
-    templates:
-      - "templates/istio-fluent-bit/daemonset.yaml"
-      - "templates/istio-fluent-bit/configmap.yaml"
-    documentSelector: *workloads
-    set:
-      common:
-        otel:
-          endpoint: "https://collector.example.com:4317"
-          caSecretName: otel-ca
-          clientCertificateSecretName: otel-client
-    asserts:
-      - notContains:
-          path: "spec.template.spec.containers[0].env"
-          content:
-            name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: "https://collector.example.com:4317"
-      - notContains:
-          path: "spec.template.spec.volumes"
-          content:
-            name: otel-ca
-            secret:
-              secretName: otel-ca

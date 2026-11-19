@@ -89,13 +89,6 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Name of the controller OTLP service used to reach the istio scraper.
-*/}}
-{{- define "network-enforcer.controller.istioService" -}}
-{{ include "network-enforcer.fullname" . }}-istio-otlp
-{{- end -}}
-
-{{/*
 Resolved provider name.
 */}}
 {{- define "network-enforcer.provider.name" -}}
@@ -146,22 +139,6 @@ hubble-relay.kube-system.svc:80
 {{- end -}}
 
 {{/*
-Validated Istio OTLP port.
-Accepts configured int/string from controller.provider.istio.endpoint.
-*/}}
-{{- define "network-enforcer.controller.istioPort" -}}
-{{- $raw := include "network-enforcer.controller.providerEndpoint" . | trim -}}
-{{- if not (regexMatch "^[0-9]{1,5}$" $raw) -}}
-{{- fail (printf "controller.provider.istio.endpoint must be a numeric port when controller.provider.name=istio (got %q)" $raw) -}}
-{{- end -}}
-{{- $port := atoi $raw -}}
-{{- if or (lt $port 1) (gt $port 65535) -}}
-{{- fail (printf "controller.provider.istio.endpoint must be in range 1-65535 when controller.provider.name=istio (got %d)" $port) -}}
-{{- end -}}
-{{- $port -}}
-{{- end -}}
-
-{{/*
 Port the controller health/readiness probe endpoint binds to.
 Internal wiring: kept in a single place so the --health-probe-bind-address flag
 and the liveness/readiness probes cannot drift. Not user configurable.
@@ -204,17 +181,11 @@ Falls back to the chart CA Issuer when issuerRef.name is empty.
 {{- end -}}
 
 {{/*
-DNS SANs for the provider TLS certificate issued via CSI.
-Istio is a server hop, so the names must match the istio-otlp Service.
-Cilium's client certificate only has to sit in Cilium's own name space.
+DNS SANs for the provider TLS client certificate issued via CSI.
+Cilium's client certificate uses its own service identity; Calico uses the controller identity.
 */}}
 {{- define "network-enforcer.provider.tls.dnsNames" -}}
-{{- $provider := include "network-enforcer.provider.name" . -}}
-{{- if eq $provider "istio" -}}
-{{- $svc := include "network-enforcer.controller.istioService" . -}}
-{{- $ns := include "network-enforcer.namespace" . -}}
-{{- printf "%s,%s.%s,%s.%s.svc,%s.%s.svc.%s" $svc $svc $ns $svc $ns $svc $ns .Values.kubernetesClusterDomain -}}
-{{- else if eq $provider "cilium" -}}
+{{- if eq (include "network-enforcer.provider.name" . | trim) "cilium" -}}
 network-enforcer.hubble-relay.cilium.io
 {{- else -}}
 {{ include "network-enforcer.fullname" . }}-controller-manager
@@ -273,12 +244,6 @@ Validate provider TLS values and fail at template time.
 {{- end -}}
 {{- if and (eq $mode "existingSecret") (not $secret.name) -}}
 {{- fail (printf "%s.existingSecret.name is required when %s.mode=existingSecret" $path $path) -}}
-{{- end -}}
-{{/*
-Istio is a TLS server, so it needs tls.crt/tls.key mounted: only a same-namespace Secret or issuer CSI works.
-*/}}
-{{- if and (eq $provider "istio") (eq (include "network-enforcer.provider.tls.apiSecret" . | trim) "true") -}}
-{{- fail (printf "%s.existingSecret.namespace cannot be set when controller.provider.name=istio; the Istio scraper is a TLS server and needs tls.crt/tls.key mounted in the pod" $path) -}}
 {{- end -}}
 {{- if and (eq $mode "insecure") $tls.serverName -}}
 {{- fail (printf "%s.serverName is not accepted when %s.mode=insecure" $path $path) -}}
@@ -362,49 +327,6 @@ Volumes for provider TLS material.
 {{- end -}}
 
 {{/*
-Volume mounts for the Istio fluent-bit client certificate.
-*/}}
-{{- define "network-enforcer.istio.fluentBit.tls.volumeMounts" -}}
-{{- include "network-enforcer.provider.tls.validate" . -}}
-{{- $mode := include "network-enforcer.provider.tls.mode" . | trim -}}
-{{- if or (eq $mode "issuer") (and (eq $mode "existingSecret") (ne (include "network-enforcer.provider.tls.apiSecret" . | trim) "true")) }}
-- name: provider-tls
-  mountPath: {{ include "network-enforcer.provider.tls.certDir" . }}
-  readOnly: true
-{{- end -}}
-{{- end -}}
-
-{{/*
-Volumes for the Istio fluent-bit client certificate.
-Issuer mode uses cert-manager CSI with a per-Pod client cert. A same-namespace
-existingSecret is mounted as-is.
-*/}}
-{{- define "network-enforcer.istio.fluentBit.tls.volumes" -}}
-{{- include "network-enforcer.provider.tls.validate" . -}}
-{{- $mode := include "network-enforcer.provider.tls.mode" . | trim -}}
-{{- $tls := include "network-enforcer.provider.tls.values" . | fromJson -}}
-{{- $issuer := default dict $tls.issuerRef -}}
-{{- $secret := default dict $tls.existingSecret -}}
-{{- if eq $mode "issuer" }}
-- name: provider-tls
-  csi:
-    driver: "csi.cert-manager.io"
-    readOnly: true
-    volumeAttributes:
-      csi.cert-manager.io/issuer-name: {{ include "network-enforcer.provider.tls.issuerName" . }}
-      csi.cert-manager.io/issuer-kind: {{ default "Issuer" $issuer.kind }}
-      {{- if $issuer.group }}
-      csi.cert-manager.io/issuer-group: {{ $issuer.group }}
-      {{- end }}
-      csi.cert-manager.io/dns-names: {{ include "network-enforcer.fullname" . }}-istio-fluent-bit
-{{- else if and (eq $mode "existingSecret") $secret.name (not $secret.namespace) }}
-- name: provider-tls
-  secret:
-    secretName: {{ $secret.name }}
-{{- end -}}
-{{- end -}}
-
-{{/*
 Certificate helpers for mTLS (CA issuer and secret share a name).
 */}}
 {{- define "network-enforcer.caIssuerName" -}}
@@ -423,7 +345,7 @@ Values of the workloads
 The workload templates read their values through the public helpers below.
 Each public helper takes a context dict:
   root:      the root context ($)
-  workload:  the name of the workload block in .Values: "controller" or "istioFluentBit"
+  workload:  the name of the workload block in .Values: "controller" or "agent"
   component: the value of the app.kubernetes.io/component label, for example "controller"
 A context dict can also have:
   fixedWorkloadLabels: a map of extra fixed labels for the workload resource
@@ -531,11 +453,11 @@ labels:
 {{/*
 network-enforcer.priorityClassName renders "priorityClassName:".
 The name is the workload value, else common, else global.
-When none is set, the controller and the Istio fluent-bit DaemonSet use priorityClass.name.
+When none is set, the controller and agent DaemonSets use priorityClass.name.
 */}}
 {{- define "network-enforcer.priorityClassName" -}}
 {{- $name := include "network-enforcer._scalar" (dict "ctx" . "key" "priorityClassName") -}}
-{{- if and (not $name) (has .workload (list "controller" "istioFluentBit" "agent")) -}}
+{{- if and (not $name) (has .workload (list "controller" "agent")) -}}
 {{- $name = .root.Values.priorityClass.name | default "" -}}
 {{- end -}}
 {{- with $name -}}

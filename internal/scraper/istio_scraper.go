@@ -26,16 +26,11 @@ import (
 type LearningEnqueueFunc func(types.LearningEvent) bool
 
 const (
-	// Keys retained for the ztunnel Lua parity fixtures.
-	eventTypeKey         = "evt.type"
-	srcIdentityKey       = "src.identity"
-	dstNamespaceKey      = "dst.namespace"
-	dstNameKey           = "dst.name"
-	dstPortKey           = "dst.port"
-	messageKey           = "message"
-	policyKey            = "policy"
-	dstNamespacedNameKey = "dst.namespaced_name"
-	srcAddrKey           = "src.addr"
+	// Attribute keys shared with the ztunnel parser.
+	srcIdentityKey  = "src.identity"
+	dstNamespaceKey = "dst.namespace"
+	dstNameKey      = "dst.name"
+	dstPortKey      = "dst.port"
 
 	spiffeURIPrefix = "spiffe://"
 )

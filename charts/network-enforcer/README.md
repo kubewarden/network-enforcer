@@ -29,8 +29,7 @@ It operates in three phases:
 The project is built around a Kubernetes controller that manages the proposal
 and policy lifecycle. The controller reads flow telemetry from the configured
 data-plane provider: the Istio ambient ztunnel agent, Calico Goldmane, or
-Cilium Hubble Relay. The chart retains legacy Fluent Bit resources for Istio
-migration, but the current controller reads from the agent.
+Cilium Hubble Relay. For Istio, the chart deploys a per-node log reader agent.
 
 The design documents are in the
 [RFCs](https://github.com/kubewarden/network-enforcer/tree/main/docs/rfc).
@@ -98,24 +97,23 @@ The top-level keys of
 | `global`                  | The values for all workloads: registry, pull secrets, log level, labels, scheduling, extra env, `otel`.     |
 | `otel`                    | The telemetry export of this chart. A key that is set here wins over the workload `otel` and `global.otel`. |
 | `controller`              | The controller Deployment: image, replicas, resources, security context, PodDisruptionBudget.               |
-| `controller.provider`     | The data-plane provider (`istio`, `cilium`, `calico`), and per-provider endpoint/TLS settings.              |
-| `controller.provider.istio.agent` | ztunnel log reader DaemonSet settings, enabled by default only for Istio. The controller uses authenticated mTLS by default even when local deployment is disabled. |
-| `istioFluentBit`          | **Deprecated.** Legacy Fluent Bit resources retained temporarily for migration and scheduled for removal. Rendered only for Istio; not the current controller ingestion path. |
+| `controller.provider`     | The data-plane provider (`istio`, `cilium`, `calico`), and per-provider endpoint/TLS settings where applicable. |
+| `controller.provider.istio.agent` | Istio ztunnel log reader DaemonSet settings, enabled by default only for Istio. The controller uses authenticated mTLS by default even when local deployment is disabled. |
 | `kubernetesClusterDomain` | The DNS domain of the cluster.                                                                              |
-| `priorityClass`           | The PriorityClass shared by the controller, fluent-bit, and agent pods. A `priorityClassName` overrides it. |
+| `priorityClass`           | The PriorityClass shared by the controller and agent pods. A `priorityClassName` overrides it.              |
 | `nameOverride`            | Replaces the chart name in the generated resource names.                                                    |
 | `fullnameOverride`        | Replaces the whole `<release>-<chart>` prefix in the generated resource names.                              |
 
 ### Provider endpoint and TLS
 
-`controller.provider.name` selects which provider is active. Endpoint, TLS, and
-other provider-specific settings live under that provider's own tree
-(`controller.provider.istio`, `.cilium`, `.calico`). Only the active tree is
-applied; values under inactive providers are ignored.
+`controller.provider.name` selects which provider is active. Provider endpoint
+and TLS settings live under the selected provider's tree where applicable.
+Istio uses the nested `controller.provider.istio.agent.grpcPort` for the agent
+pull port and chart-managed CSI mTLS.
 
-| Provider | Default endpoint | Default TLS mode | Default material |
-| -------- | ---------------- | ---------------- | ---------------- |
-| `istio` | `4317` | `issuer` | chart CA Issuer |
+| Provider | Default endpoint or port | Default TLS mode | Default material |
+| -------- | ----------------------- | ---------------- | ---------------- |
+| `istio` | agent pull port `50052` (`controller.provider.istio.agent.grpcPort`) | chart-managed mTLS | shared chart CA and per-agent CSI certificate |
 | `cilium` | `hubble-relay.kube-system.svc:443` | `existingSecret` | `kube-system/hubble-relay-client-certs`, server name `ui.hubble-relay.cilium.io` |
 | `calico` | `goldmane.calico-system.svc:7443` | `existingSecret` | `calico-system/goldmane-key-pair` + `goldmane-ca-bundle` (CA key `tigera-ca-bundle.crt`) |
 
@@ -132,18 +130,18 @@ The controller serves a validating admission webhook for
 ### Scheduling
 
 The `global` block sets `tolerations`, `nodeSelector`, `affinity`, and the
-other scheduling keys for all workloads. The `controller`,
-`controller.provider.istio.agent`, and `istioFluentBit` blocks accept the same
-keys. A value in a workload block replaces the value in `global`.
+other scheduling keys for all workloads. The `controller` and
+`controller.provider.istio.agent` blocks accept the same keys. A value in a
+workload block replaces the value in `global`.
 
-The ztunnel log reader and deprecated Fluent Bit DaemonSets read logs from
-the node's filesystem and need a pod on every node running Istio's ambient
-`ztunnel` DaemonSet, including tainted nodes such as control-plane nodes.
-Their default `Exists` toleration matches ztunnel, but custom tolerations,
-node selectors, or affinity can leave ztunnel nodes uncovered.
+The ztunnel log reader reads logs from the node's filesystem and needs a pod
+on every node running Istio's ambient `ztunnel` DaemonSet, including tainted
+nodes such as control-plane nodes. Its default `Exists` toleration matches
+ztunnel, but custom tolerations, node selectors, or affinity can leave ztunnel
+nodes uncovered.
 
-`controller.provider.istio.agent.tolerations` and `istioFluentBit.tolerations`
-replace `common.tolerations` and `global.tolerations`. Set a workload's
+`controller.provider.istio.agent.tolerations` replaces
+`common.tolerations` and `global.tolerations`. Set a workload's
 tolerations to `[]` to fall back to `common.tolerations`, then
 `global.tolerations`. If those are also empty, the workload no longer tolerates
 taints and cannot collect logs from ztunnel on tainted nodes.
@@ -161,8 +159,8 @@ nodes.
 
 The ztunnel log reader is Network Enforcer's per-node agent, not Istio's own
 `istio-agent` component. It is configured under `controller.provider.istio.agent`.
-The image repository, binary, resource names, and discovery labels retain the
-`agent` name for compatibility; image tags are release-managed with the controller.
+The image repository, binary, resource names, and discovery labels use the
+`agent` name; image tags are release-managed with the controller.
 
 #### Log access and security
 
@@ -172,8 +170,7 @@ The log reader runs as root and accepts only
 and `/var/log/containers` read-only using `hostPath` `Directory` mounts. It does
 not mount a ServiceAccount token and has no Kubernetes RBAC permissions.
 The matcher excludes other namespaces, misleading pod names, all other container
-names, and rotated filenames. The retained Fluent Bit input uses its
-comma-separated `Path` list for the same two paths.
+names, and rotated filenames.
 
 The `.log` suffix excludes retained `.log.<timestamp>`, `.log.gz`, and `.log.tmp`
 rotations. An already-open renamed log receives a best-effort one-pass drain;
