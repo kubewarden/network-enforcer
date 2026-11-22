@@ -153,7 +153,7 @@ $(LOCALBIN):
 # renovate: datasource=go depName=sigs.k8s.io/controller-tools
 CONTROLLER_TOOLS_VERSION ?= v0.23.0
 # renovate: datasource=go depName=github.com/losisin/helm-values-schema-json/v2
-HELM_VALUES_SCHEMA_JSON_VERSION ?= v2.6.0
+HELM_VALUES_SCHEMA_JSON_VERSION ?= v2.6.1
 # renovate: datasource=go depName=github.com/bufbuild/buf
 BUF_VERSION ?= v1.75.0
 
