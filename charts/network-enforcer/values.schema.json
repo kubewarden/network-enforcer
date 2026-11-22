@@ -268,59 +268,6 @@
                                             }
                                         }
                                     }
-                                },
-                                "endpoint": {
-                                    "type": [
-                                        "integer",
-                                        "string"
-                                    ]
-                                },
-                                "tls": {
-                                    "type": "object",
-                                    "properties": {
-                                        "existingSecret": {
-                                            "type": "object",
-                                            "properties": {
-                                                "caBundleConfigMap": {
-                                                    "type": "string"
-                                                },
-                                                "caBundleKey": {
-                                                    "type": "string"
-                                                },
-                                                "name": {
-                                                    "type": "string"
-                                                },
-                                                "namespace": {
-                                                    "type": "string"
-                                                }
-                                            }
-                                        },
-                                        "issuerRef": {
-                                            "type": "object",
-                                            "properties": {
-                                                "group": {
-                                                    "type": "string"
-                                                },
-                                                "kind": {
-                                                    "type": "string"
-                                                },
-                                                "name": {
-                                                    "type": "string"
-                                                }
-                                            }
-                                        },
-                                        "mode": {
-                                            "type": "string",
-                                            "enum": [
-                                                "issuer",
-                                                "existingSecret",
-                                                "insecure"
-                                            ]
-                                        },
-                                        "serverName": {
-                                            "type": "string"
-                                        }
-                                    }
                                 }
                             }
                         },
@@ -460,49 +407,6 @@
                     "items": {
                         "$ref": "#/$defs/_definitions.json/definitions/io.k8s.api.core.v1.TopologySpreadConstraint",
                         "type": "object"
-                    }
-                }
-            }
-        },
-        "istioFluentBit": {
-            "deprecated": true,
-            "type": "object",
-            "properties": {
-                "image": {
-                    "type": "object",
-                    "required": [
-                        "repository",
-                        "tag"
-                    ],
-                    "properties": {
-                        "pullPolicy": {
-                            "type": "string"
-                        },
-                        "registry": {
-                            "type": "string"
-                        },
-                        "repository": {
-                            "type": "string"
-                        },
-                        "tag": {
-                            "type": "string"
-                        }
-                    }
-                },
-                "resources": {
-                    "$ref": "#/$defs/_definitions.json/definitions/io.k8s.api.core.v1.ResourceRequirements",
-                    "type": "object"
-                },
-                "tolerations": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/$defs/_definitions.json/definitions/io.k8s.api.core.v1.Toleration",
-                        "type": "object",
-                        "properties": {
-                            "operator": {
-                                "type": "string"
-                            }
-                        }
                     }
                 }
             }

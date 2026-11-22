@@ -1,5 +1,4 @@
 // Package ztunnel parses CRI-wrapped ztunnel logs into Istio events.
-// It is independent of the existing Fluent Bit pipeline.
 package ztunnel
 
 import (

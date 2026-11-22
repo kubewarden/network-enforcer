@@ -22,7 +22,7 @@ type fixture struct {
 	want map[string]string
 }
 
-// These cover the existing Lua test cases as well as missing fields and ports.
+// These cover supported ztunnel payloads, case sensitivity, and missing fields and ports.
 func fixtures() []fixture {
 	return []fixture{
 		{
@@ -192,6 +192,60 @@ func fixtures() []fixture {
 				"dst.port":     "",
 				"src.identity": fixtureSource,
 				"message":      "connection complete",
+			},
+		},
+		{name: "uppercase_message", body: `{"MESSAGE":"deny policy match"}`},
+		{name: "mixed_case_message", body: `{"Message":"deny policy match"}`},
+		{
+			name: "uppercase_direction",
+			body: `{"message":"connection complete","DIRECTION":"inbound","src.identity":"client","dst.identity":"server"}`,
+		},
+		{
+			name: "uppercase_identity",
+			body: `{"message":"connection complete","direction":"inbound","SRC.IDENTITY":"client","dst.identity":"server"}`,
+		},
+		{
+			name: "uppercase_policy_keys",
+			body: `{"message":"deny policy match","POLICY":"default/deny","PROXY":{"wl":"default/server"},"INBOUND":{"peer":"1.2.3.4:80"}}`,
+			want: map[string]string{
+				"evt.type":            "protect",
+				"dst.namespaced_name": "",
+				"policy":              "",
+				"src.addr":            "",
+				"message":             "deny policy match",
+			},
+		},
+		{
+			name: "uppercase_nested_keys",
+			body: `{"message":"deny policy match","proxy":{"WL":"default/server"},"inbound":{"PEER":"1.2.3.4:80"}}`,
+			want: map[string]string{
+				"evt.type":            "protect",
+				"dst.namespaced_name": "",
+				"policy":              "",
+				"src.addr":            "",
+				"message":             "deny policy match",
+			},
+		},
+		{
+			name: "case_variant_does_not_override",
+			body: `{"message":"deny policy match","MESSAGE":"unrelated"}`,
+			want: map[string]string{
+				"evt.type":            "protect",
+				"dst.namespaced_name": "",
+				"policy":              "",
+				"src.addr":            "",
+				"message":             "deny policy match",
+			},
+		},
+		{
+			name: "escaped_field_names",
+			body: `{"mess\u0061ge":"deny policy match","proxy":{"w\u006c":"default/server"}}`,
+			want: map[string]string{
+				"evt.type":            "protect",
+				"dst.namespaced_name": "default/server",
+				"policy":              "",
+				"src.addr":            "",
+				"message":             "deny policy match",
 			},
 		},
 	}

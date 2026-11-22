@@ -9,9 +9,6 @@ templates:
   - templates/ztunnel-log-reader/daemonset.yaml
   - templates/ztunnel-log-reader/serviceaccount.yaml
   - templates/controller/deployment.yaml
-  - templates/istio-fluent-bit/daemonset.yaml
-  - templates/istio-fluent-bit/configmap.yaml
-  - templates/istio-fluent-bit/serviceaccount.yaml
 tests:
   - it: deploys exactly one ztunnel log reader DaemonSet and a dedicated tokenless ServiceAccount by default
     asserts:

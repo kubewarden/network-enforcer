@@ -17,7 +17,8 @@ It operates in three phases:
 - **Protect** — enforce the approved policy and block flows that violate it.
 
 The controller reads flow telemetry from the configured data-plane provider:
-Istio ambient (ztunnel and fluent-bit), Calico Goldmane, or Cilium Hubble Relay.
+Istio ambient through the ztunnel log reader agent, Calico Goldmane, or Cilium
+Hubble Relay.
 
 For more information refer to the
 [documentation](https://docs.kubewarden.io/network-enforcer/latest/en/introduction.html).

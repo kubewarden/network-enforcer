@@ -11,7 +11,6 @@ require (
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.73.1
 	github.com/stretchr/testify v1.12.1
-	github.com/yuin/gopher-lua v1.1.2
 	go.opentelemetry.io/collector/component v1.71.0
 	go.opentelemetry.io/collector/extension/xextension v0.165.0
 	go.opentelemetry.io/otel v1.47.0

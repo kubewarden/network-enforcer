@@ -182,9 +182,6 @@ func netEnforcerHelmOpts(testCfg suiteConfig) []helm.Option {
 		helm.WithWait(),
 		helm.WithTimeout(defaultHelmTimeout.String()),
 	}
-	if testCfg.HasE2EDependency("cert-manager") && testCfg.IsIstioProvider() {
-		helmOpts = append(helmOpts, helm.WithArgs("--set", "controller.provider.istio.tls.mode=issuer"))
-	}
 	if testCfg.IsIstioProvider() {
 		agentRepo, agentTag := parseImage(testCfg.agentImage)
 		helmOpts = append(helmOpts,

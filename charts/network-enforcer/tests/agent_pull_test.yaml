@@ -125,3 +125,39 @@ tests:
       - hasDocuments:
           count: 0
         template: templates/ztunnel-log-reader/daemonset.yaml
+
+  - it: rejects an agent port below the schema minimum
+    template: templates/controller/deployment.yaml
+    set:
+      controller:
+        provider:
+          istio:
+            agent:
+              grpcPort: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "minimum: got 0, want 1"
+
+  - it: rejects an agent port above the schema maximum
+    template: templates/controller/deployment.yaml
+    set:
+      controller:
+        provider:
+          istio:
+            agent:
+              grpcPort: 65536
+    asserts:
+      - failedTemplate:
+          errorPattern: "maximum: got 65,536, want 65,535"
+
+  - it: rejects an agent port with the wrong type
+    template: templates/controller/deployment.yaml
+    set:
+      controller:
+        provider:
+          istio:
+            agent:
+              grpcPort: wrong
+    asserts:
+      - failedTemplate:
+          errorPattern: "got string, want integer"

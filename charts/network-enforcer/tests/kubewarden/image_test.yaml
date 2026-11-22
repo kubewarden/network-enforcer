@@ -1,135 +1,96 @@
-suite: "Values contract: images"
+suite: "Values contract: controller and nested agent images"
 templates:
-  - "templates/controller/deployment.yaml"
-  - "templates/istio-fluent-bit/daemonset.yaml"
-  - "templates/ztunnel-log-reader/daemonset.yaml"
-  # The DaemonSet computes a checksum of the ConfigMap, so the ConfigMap must render too.
-  # The documentSelector below keeps the assertions on the Deployment and the DaemonSet.
-  - "templates/istio-fluent-bit/configmap.yaml"
+  - templates/controller/deployment.yaml
+  - templates/ztunnel-log-reader/daemonset.yaml
 workloads: &workloads
   path: apiVersion
   value: apps/v1
   skipEmptyTemplates: true
   matchMany: true
 tests:
-  # The tag pattern is loose, because automation updates the default tags.
-  - it: "should render the default image for each workload"
+  - it: renders the controller and agent default images
     documentSelector: *workloads
     asserts:
       - matchRegex:
-          path: "spec.template.spec.containers[0].image"
+          path: spec.template.spec.containers[0].image
           pattern: "^ghcr\\.io/kubewarden/network-enforcer/controller:[^:/]+$"
-        template: "templates/controller/deployment.yaml"
+        template: templates/controller/deployment.yaml
       - matchRegex:
-          path: "spec.template.spec.containers[0].image"
-          pattern: "^docker\\.io/fluent/fluent-bit:[^:/]+$"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
+          path: spec.template.spec.containers[0].image
+          pattern: "^ghcr\\.io/kubewarden/network-enforcer/agent:[^:/]+$"
+        template: templates/ztunnel-log-reader/daemonset.yaml
 
-  - it: "should change only the tag with <name>.image.tag"
+  - it: uses the controller image pull policy only for the controller
+    templates:
+      - templates/controller/deployment.yaml
+      - templates/ztunnel-log-reader/daemonset.yaml
+    set:
+      controller:
+        image:
+          pullPolicy: Always
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+        template: templates/controller/deployment.yaml
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+        template: templates/ztunnel-log-reader/daemonset.yaml
+
+  - it: renders custom controller and agent repositories and tags independently
     documentSelector: *workloads
     set:
       controller:
         image:
+          repository: example/controller
           tag: v9.9.9-controller
-      istioFluentBit:
-        image:
-          tag: 9.9.9-fluent-bit
+        provider:
+          istio:
+            agent:
+              image:
+                repository: example/agent
+                tag: v9.9.9-agent
     asserts:
       - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "ghcr.io/kubewarden/network-enforcer/controller:v9.9.9-controller"
-        template: "templates/controller/deployment.yaml"
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/example/controller:v9.9.9-controller
+        template: templates/controller/deployment.yaml
       - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "docker.io/fluent/fluent-bit:9.9.9-fluent-bit"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/example/agent:v9.9.9-agent
+        template: templates/ztunnel-log-reader/daemonset.yaml
 
-  - it: "should change only the repository with <name>.image.repository"
+  - it: gives the global registry precedence over workload registries
     documentSelector: *workloads
-    set:
-      controller:
-        image:
-          tag: 1.0.0
-      istioFluentBit:
-        image:
-          repository: example/fluent-bit
-          tag: 2.0.0
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "docker.io/example/fluent-bit:2.0.0"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "ghcr.io/kubewarden/network-enforcer/controller:1.0.0"
-        template: "templates/controller/deployment.yaml"
-
-  # network-enforcer cases: registry rules
-  - it: "should prefer global.imageRegistry over the workload image.registry"
-    documentSelector: *workloads
-    set:
-      global:
-        imageRegistry: global.example.com
-      controller:
-        image:
-          registry: controller.example.com
-          tag: 1.0.0
-      istioFluentBit:
-        image:
-          registry: fluent.example.com
-          tag: 2.0.0
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "global.example.com/kubewarden/network-enforcer/controller:1.0.0"
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "global.example.com/fluent/fluent-bit:2.0.0"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should use the workload image.registry when global.imageRegistry is empty"
-    documentSelector: *workloads
-    set:
-      controller:
-        image:
-          registry: controller.example.com
-          tag: 1.0.0
-      istioFluentBit:
-        image:
-          registry: fluent.example.com
-          tag: 2.0.0
-    asserts:
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "controller.example.com/kubewarden/network-enforcer/controller:1.0.0"
-        template: "templates/controller/deployment.yaml"
-      - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "fluent.example.com/fluent/fluent-bit:2.0.0"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
-
-  - it: "should render the nested agent image and apply global registry precedence"
-    template: "templates/ztunnel-log-reader/daemonset.yaml"
     set:
       global:
         imageRegistry: mirror.example.com
       controller:
+        image:
+          registry: controller.example.com
+          tag: v1
         provider:
           istio:
             agent:
               image:
                 registry: agent.example.com
-                repository: example/network-enforcer-agent
-                tag: v9.9.9-agent
+                tag: v2
     asserts:
       - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "mirror.example.com/example/network-enforcer-agent:v9.9.9-agent"
+          path: spec.template.spec.containers[0].image
+          value: mirror.example.com/kubewarden/network-enforcer/controller:v1
+        template: templates/controller/deployment.yaml
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: mirror.example.com/kubewarden/network-enforcer/agent:v2
+        template: templates/ztunnel-log-reader/daemonset.yaml
 
-  - it: "should use the nested agent registry when the global registry is empty"
-    template: "templates/ztunnel-log-reader/daemonset.yaml"
+  - it: uses the nested agent registry when the global registry is empty
+    template: templates/ztunnel-log-reader/daemonset.yaml
     set:
+      global:
+        imageRegistry: ""
       controller:
         provider:
           istio:
@@ -139,10 +100,24 @@ tests:
                 tag: v9.9.9-agent
     asserts:
       - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "agent.example.com/kubewarden/network-enforcer/agent:v9.9.9-agent"
+          path: spec.template.spec.containers[0].image
+          value: agent.example.com/kubewarden/network-enforcer/agent:v9.9.9-agent
 
-  - it: "should render no registry prefix when every registry is empty"
+  - it: uses the controller registry when the global registry is empty
+    template: templates/controller/deployment.yaml
+    set:
+      global:
+        imageRegistry: ""
+      controller:
+        image:
+          registry: controller.example.com
+          tag: v9.9.9-controller
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: controller.example.com/kubewarden/network-enforcer/controller:v9.9.9-controller
+
+  - it: renders no registry prefix when all registries are empty
     documentSelector: *workloads
     set:
       global:
@@ -150,17 +125,19 @@ tests:
       controller:
         image:
           registry: ""
-          tag: 1.0.0
-      istioFluentBit:
-        image:
-          registry: ""
-          tag: 2.0.0
+          tag: v9.9.9-controller
+        provider:
+          istio:
+            agent:
+              image:
+                registry: ""
+                tag: v9.9.9-agent
     asserts:
       - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "kubewarden/network-enforcer/controller:1.0.0"
-        template: "templates/controller/deployment.yaml"
+          path: spec.template.spec.containers[0].image
+          value: kubewarden/network-enforcer/controller:v9.9.9-controller
+        template: templates/controller/deployment.yaml
       - equal:
-          path: "spec.template.spec.containers[0].image"
-          value: "fluent/fluent-bit:2.0.0"
-        template: "templates/istio-fluent-bit/daemonset.yaml"
+          path: spec.template.spec.containers[0].image
+          value: kubewarden/network-enforcer/agent:v9.9.9-agent
+        template: templates/ztunnel-log-reader/daemonset.yaml
