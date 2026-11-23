@@ -572,8 +572,8 @@ func benchmarkIstioLearningPath(b *testing.B, events []*agentv1.Event, aggregate
 	}
 	base := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 	reader := &countingLearningClient{Client: base}
-	var enqueued atomic.Int64
-	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	var enqueued, elapsedNanos atomic.Int64
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	var registerer prometheus.Registerer
 	if aggregated {
 		registerer = prometheus.NewRegistry()
@@ -585,8 +585,12 @@ func benchmarkIstioLearningPath(b *testing.B, events []*agentv1.Event, aggregate
 	if !aggregated {
 		scraper.learningAggregation = nil
 	}
-	scraper.now = func() time.Time { return now }
+	scraper.now = func() time.Time { return start.Add(time.Duration(elapsedNanos.Load())) }
 	ctx := context.Background()
+	process := func(i int) {
+		scraper.processEvent(ctx, events[i%len(events)])
+		elapsedNanos.Add(int64(time.Second / 5_000))
+	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	if twoPuller {
@@ -596,15 +600,14 @@ func benchmarkIstioLearningPath(b *testing.B, events []*agentv1.Event, aggregate
 			go func(worker int) {
 				defer workers.Done()
 				for i := worker; i < b.N; i += 2 {
-					scraper.processEvent(ctx, events[i%len(events)])
+					process(i)
 				}
 			}(worker)
 		}
 		workers.Wait()
 	} else {
 		for i := range b.N {
-			scraper.processEvent(ctx, events[i%len(events)])
-			now = now.Add(200 * time.Microsecond)
+			process(i)
 		}
 	}
 	b.StopTimer()
