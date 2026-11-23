@@ -249,6 +249,7 @@ func setupProviderScraper(
 			Logger:               logger.With("component", "istio-scraper"),
 			Enricher:             istio.NewEnricher(mgr.GetClient()),
 			FlowDumperBuffer:     flowDumperBuffer,
+			MetricsRegisterer:    ctrlmetrics.Registry,
 		})
 		istioScraper.ConfigurePulling(scraper.IstioPullConfig{
 			Cache:  mgr.GetCache(),

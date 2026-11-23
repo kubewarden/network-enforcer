@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	otellog "go.opentelemetry.io/otel/log"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -43,15 +45,19 @@ type IstioScraperConfig struct {
 	ViolationOtelLogger  otellog.Logger
 	Enricher             *istio.Enricher
 	FlowDumperBuffer     *ringbuf.Buffer[json.RawMessage]
+	MetricsRegisterer    prometheus.Registerer
 }
 
 // IstioScraper converts agent events into the existing learning and policy pipelines.
 type IstioScraper struct {
 	IstioScraperConfig
 
-	pull   IstioPullConfig
-	jitter func(time.Duration, float64) time.Duration
-	wait   func(context.Context, time.Duration) bool
+	pull                      IstioPullConfig
+	jitter                    func(time.Duration, float64) time.Duration
+	wait                      func(context.Context, time.Duration) bool
+	now                       func() time.Time
+	learningAggregation       *learningAggregation
+	learningLookupsSuppressed prometheus.Counter
 }
 
 // NewIstioScraper creates a scraper for typed Istio agent events.
@@ -59,11 +65,22 @@ func NewIstioScraper(conf IstioScraperConfig) *IstioScraper {
 	if conf.Logger == nil {
 		conf.Logger = slog.Default()
 	}
-	return &IstioScraper{
-		IstioScraperConfig: conf,
-		jitter:             wait.Jitter,
-		wait:               waitForDelay,
+	s := &IstioScraper{
+		IstioScraperConfig:  conf,
+		jitter:              wait.Jitter,
+		wait:                waitForDelay,
+		now:                 time.Now,
+		learningAggregation: newLearningAggregation(),
 	}
+	if conf.MetricsRegisterer != nil {
+		counter, err := registerLearningLookupsSuppressed(conf.MetricsRegisterer)
+		if err != nil {
+			s.Logger.Error("Failed to register Istio learning aggregation metric", "error", err)
+		} else {
+			s.learningLookupsSuppressed = counter
+		}
+	}
+	return s
 }
 
 func (s *IstioScraper) processEvent(ctx context.Context, event *agentv1.Event) {
@@ -125,7 +142,21 @@ func (s *IstioScraper) enqueueLearningEvent(ctx context.Context, event *agentv1.
 		return
 	}
 
-	dstWorkloadRef, err := s.Enricher.GetWorkloadRef(ctx,
+	podKey := learningPodKey{namespace: dstNamespace, name: dstPodName}
+	cacheable := s.learningAggregation != nil && !learningAggregationKeyTooLarge(podKey, srcIdentity)
+	var generation uint64
+	if cacheable {
+		var cacheHit bool
+		generation, cacheHit = s.learningAggregation.beginResolution(s.now, podKey, srcIdentity, dstPort)
+		if cacheHit {
+			if s.learningLookupsSuppressed != nil {
+				s.learningLookupsSuppressed.Inc()
+			}
+			return
+		}
+	}
+
+	dstWorkloadRef, ownerUID, err := s.Enricher.GetWorkloadRef(ctx,
 		k8stypes.NamespacedName{Namespace: dstNamespace, Name: dstPodName})
 	if err != nil {
 		s.Logger.WarnContext(ctx, "Failed to get destination workload reference", "error", err)
@@ -136,14 +167,45 @@ func (s *IstioScraper) enqueueLearningEvent(ctx context.Context, event *agentv1.
 			"dstWorkloadRef", dstWorkloadRef)
 		return
 	}
+	s.enqueueResolvedLearningEvent(ctx, podKey, generation, srcIdentity, dstPort, dstWorkloadRef, ownerUID, cacheable)
+}
 
-	// Istio learns the source principal; only the destination needs workload labels.
+func (s *IstioScraper) enqueueResolvedLearningEvent(
+	ctx context.Context,
+	pod learningPodKey,
+	generation uint64,
+	identity string,
+	port int32,
+	dstWorkloadRef securityv1alpha1.WorkloadRef,
+	ownerUID k8stypes.UID,
+	cacheable bool,
+) {
 	learningEvent := types.LearningEvent{
-		Source:   &securityv1alpha1.WorkloadRef{Identity: srcIdentity},
+		Source:   &securityv1alpha1.WorkloadRef{Identity: identity},
 		Dest:     &dstWorkloadRef,
-		DstPort:  dstPort,
+		DstPort:  port,
 		Protocol: corev1.ProtocolTCP,
 		Backend:  securityv1alpha1.PolicyBackendIstio,
+	}
+	if cacheable {
+		workloadKey := learningWorkloadKey{
+			namespace: dstWorkloadRef.Namespace,
+			kind:      dstWorkloadRef.OwnerKind,
+			name:      dstWorkloadRef.OwnerName,
+			uid:       ownerUID,
+		}
+		tuple := learningTupleKey{workload: workloadKey, identity: identity, port: port}
+		result := s.learningAggregation.enqueueResolved(s.now, generation, pod, tuple, func() bool {
+			return ctx.Err() == nil && s.EnqueueLearningEvent != nil && s.EnqueueLearningEvent(learningEvent)
+		})
+		if result == learningEnqueueRejected && ctx.Err() == nil {
+			s.Logger.WarnContext(ctx, "Failed to enqueue learning event, channel is full")
+		}
+		return
+	}
+
+	if ctx.Err() != nil {
+		return
 	}
 	if s.EnqueueLearningEvent == nil || !s.EnqueueLearningEvent(learningEvent) {
 		s.Logger.WarnContext(ctx, "Failed to enqueue learning event, channel is full")
