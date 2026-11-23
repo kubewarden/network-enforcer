@@ -28,8 +28,8 @@ It operates in three phases:
 
 The project is built around a Kubernetes controller that manages the proposal
 and policy lifecycle. The controller reads flow telemetry from the configured
-data-plane provider: the Istio ambient ztunnel agent, Calico Goldmane, or
-Cilium Hubble Relay. For Istio, the chart deploys a per-node log reader agent.
+data-plane provider: Istio ambient, Calico Goldmane, or Cilium Hubble Relay.
+For Istio, the chart deploys a per-node agent that reads ztunnel logs.
 
 The design documents are in the
 [RFCs](https://github.com/kubewarden/network-enforcer/tree/main/docs/rfc).
@@ -50,6 +50,11 @@ The full documentation is available at
 
 Network Enforcer is deployed with a Helm chart. The chart is published at
 https://charts.kubewarden.io.
+
+To check whether a published chart includes the Istio agent, look for
+`controller.provider.istio.agent` in `helm show values kubewarden/network-enforcer`.
+The [0.5 quick start](https://docs.kubewarden.io/network-enforcer/0.5/en/quickstart.html)
+uses the development chart and matching images.
 
 The chart needs Kubernetes 1.31 or later. The cluster must run one of the
 supported data-plane providers: Istio ambient, Calico with Goldmane, or Cilium
@@ -161,6 +166,17 @@ The ztunnel log reader is Network Enforcer's per-node agent, not Istio's own
 `istio-agent` component. It is configured under `controller.provider.istio.agent`.
 The image repository, binary, resource names, and discovery labels use the
 `agent` name; image tags are release-managed with the controller.
+
+On the Istio `ztunnel` chart, set `logAsJson=true` so the agent can read the logs.
+Set `env.AUTHZ_POLICY_INFO_LOGGING=true` so ztunnel logs authorization decisions.
+For monitor mode, set `pilot.env.AMBIENT_ENABLE_DRY_RUN_AUTHORIZATION_POLICY=true`
+on the `istiod` chart with `profile=ambient`.
+
+By default, the controller leader polls each agent pod IP over gRPC on port
+`50052`. Each agent holds up to 10,000 events in memory. New events replace the
+oldest ones when the buffer fills. Restarting the agent clears the buffer.
+A scrape drains the buffer before the agent replies. If the reply is lost, the
+agent cannot send those events again.
 
 #### Log access and security
 
