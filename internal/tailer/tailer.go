@@ -34,7 +34,7 @@ type Handler func(Line)
 // Config holds the tailer settings. Include is required.
 type Config struct {
 	// Include is the set of file globs to tail, for example
-	// "/var/log/containers/*ztunnel*.log".
+	// "/var/log/pods/istio-system_ztunnel-*/ztunnel/*.log".
 	Include []string
 	// Exclude is an optional set of globs to skip. A caller that tails kubelet
 	// container logs must exclude the rotation artifacts (".gz" and ".tmp"

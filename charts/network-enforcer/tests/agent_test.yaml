@@ -57,24 +57,11 @@ tests:
             mountPath: /var/log/pods
             readOnly: true
       - contains:
-          path: spec.template.spec.containers[0].volumeMounts
-          content:
-            name: varlog-containers
-            mountPath: /var/log/containers
-            readOnly: true
-      - contains:
           path: spec.template.spec.volumes
           content:
             name: varlog-pods
             hostPath:
               path: /var/log/pods
-              type: Directory
-      - contains:
-          path: spec.template.spec.volumes
-          content:
-            name: varlog-containers
-            hostPath:
-              path: /var/log/containers
               type: Directory
       - notContains:
           path: spec.template.spec.volumes
@@ -84,10 +71,10 @@ tests:
               path: /var/log
       - lengthEqual:
           path: spec.template.spec.volumes
-          count: 3
+          count: 2
       - lengthEqual:
           path: spec.template.spec.containers[0].volumeMounts
-          count: 3
+          count: 2
 
   - it: pins the ztunnel matcher and identity settings while preserving explicit mTLS opt-out
     template: templates/ztunnel-log-reader/daemonset.yaml
