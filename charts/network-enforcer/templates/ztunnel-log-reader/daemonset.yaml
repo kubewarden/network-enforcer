@@ -60,9 +60,6 @@ spec:
         - name: varlog-pods
           mountPath: /var/log/pods
           readOnly: true
-        - name: varlog-containers
-          mountPath: /var/log/containers
-          readOnly: true
         - name: grpc-certs
           mountPath: {{ include "network-enforcer.grpc.certDir" . }}
           readOnly: true
@@ -71,10 +68,6 @@ spec:
       - name: varlog-pods
         hostPath:
           path: /var/log/pods
-          type: Directory
-      - name: varlog-containers
-        hostPath:
-          path: /var/log/containers
           type: Directory
       - name: grpc-certs
         csi:

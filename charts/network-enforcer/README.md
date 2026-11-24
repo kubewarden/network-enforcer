@@ -182,8 +182,8 @@ agent cannot send those events again.
 
 The log reader runs as root and accepts only
 `/var/log/pods/istio-system_ztunnel-*/ztunnel/*.log` and
-`/var/log/pods/istio-system_ztunnel-*/istio-proxy/*.log`. It mounts `/var/log/pods`
-and `/var/log/containers` read-only using `hostPath` `Directory` mounts. It does
+`/var/log/pods/istio-system_ztunnel-*/istio-proxy/*.log`. It mounts only
+`/var/log/pods` read-only using a `hostPath` `Directory` mount. It does
 not mount a ServiceAccount token and has no Kubernetes RBAC permissions.
 The matcher excludes other namespaces, misleading pod names, all other container
 names, and rotated filenames.
