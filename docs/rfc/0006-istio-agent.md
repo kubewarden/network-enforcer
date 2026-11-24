@@ -72,6 +72,19 @@ address can resolve to the workload that replaced it. There is no age limit: on 
 node, an event can remain buffered until the next scrape regardless of its age. This
 misattribution risk is accepted rather than detected.
 
+Istio learning events use a bounded, fixed ten-second processing-time window shared by
+all agent pullers. `LearnEvent` identifies the destination by namespaced pod name rather
+than IP, so the destination memo uses that key and stores only workload identity, including
+the resolved owner's UID. A tuple already accepted for that workload (SPIFFE principal
+and TCP port) can skip `GetWorkloadRef`; a new tuple always resolves current pod and
+selector state before enqueueing. Conflicting concurrent resolutions disable fast-path
+suppression for that pod until the window expires. The policy-violation source-IP
+enrichment path is unchanged. If a pod is re-owned during a window, a stale memo can
+suppress an observation against the previous owner. Drained observations are not replayed:
+that observation can be missed, and expiry allows only a later event to teach the new
+owner. Cache saturation bypasses retention and falls back to normal resolution and
+enqueueing.
+
 ### Buffer and scraping
 
 The agent reuses `internal/ringbuf`, the same Record/Drain approach used by

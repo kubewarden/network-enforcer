@@ -22,16 +22,27 @@ func Get(
 	c client.Client,
 	podNamespacedName types.NamespacedName,
 ) (securityv1alpha1.WorkloadRef, error) {
+	ref, _, err := GetWithOwnerUID(ctx, c, podNamespacedName)
+	return ref, err
+}
+
+// GetWithOwnerUID resolves a Pod and returns the UID of its supported owner.
+func GetWithOwnerUID(
+	ctx context.Context,
+	c client.Client,
+	podNamespacedName types.NamespacedName,
+) (securityv1alpha1.WorkloadRef, types.UID, error) {
 	var pod corev1.Pod
 	if err := c.Get(ctx, podNamespacedName, &pod); err != nil {
-		return securityv1alpha1.WorkloadRef{}, fmt.Errorf("getting Pod %q: %w", podNamespacedName, err)
+		return securityv1alpha1.WorkloadRef{}, "", fmt.Errorf("getting Pod %q: %w", podNamespacedName, err)
 	}
 	ref := GetNameAndKind(&pod)
 	if !ref.IsSupported() {
-		return ref, nil
+		return ref, "", nil
 	}
-	if err := LookupPodSelectorForWorkload(ctx, c, &ref); err != nil {
-		return securityv1alpha1.WorkloadRef{}, fmt.Errorf(
+	uid, err := lookupPodSelectorForWorkload(ctx, c, &ref)
+	if err != nil {
+		return securityv1alpha1.WorkloadRef{}, "", fmt.Errorf(
 			"failed to lookup %s %s/%s label selector: %w",
 			ref.OwnerKind,
 			ref.Namespace,
@@ -39,7 +50,7 @@ func Get(
 			err,
 		)
 	}
-	return ref, nil
+	return ref, uid, nil
 }
 
 // GetNameAndKind resolves a Pod to its owning workload from controller
@@ -87,44 +98,54 @@ func LookupPodSelectorForWorkload(
 	c client.Client,
 	wk *securityv1alpha1.WorkloadRef,
 ) error {
+	_, err := lookupPodSelectorForWorkload(ctx, c, wk)
+	return err
+}
+
+func lookupPodSelectorForWorkload(
+	ctx context.Context,
+	c client.Client,
+	wk *securityv1alpha1.WorkloadRef,
+) (types.UID, error) {
 	key := types.NamespacedName{Name: wk.OwnerName, Namespace: wk.Namespace}
 	var selector *metav1.LabelSelector
+	var uid types.UID
 	switch wk.OwnerKind { //nolint:exhaustive // we don't support all workload kinds
 	case securityv1alpha1.WorkloadKindDeployment:
 		var deploy appsv1.Deployment
 		if err := c.Get(ctx, key, &deploy); err != nil {
-			return err
+			return "", err
 		}
-		selector = deploy.Spec.Selector
+		selector, uid = deploy.Spec.Selector, deploy.UID
 	case securityv1alpha1.WorkloadKindStatefulSet:
 		var sts appsv1.StatefulSet
 		if err := c.Get(ctx, key, &sts); err != nil {
-			return err
+			return "", err
 		}
-		selector = sts.Spec.Selector
+		selector, uid = sts.Spec.Selector, sts.UID
 	case securityv1alpha1.WorkloadKindDaemonSet:
 		var ds appsv1.DaemonSet
 		if err := c.Get(ctx, key, &ds); err != nil {
-			return err
+			return "", err
 		}
-		selector = ds.Spec.Selector
+		selector, uid = ds.Spec.Selector, ds.UID
 	default:
-		return fmt.Errorf("unsupported workload kind: %s", string(wk.OwnerKind))
+		return "", fmt.Errorf("unsupported workload kind: %s", string(wk.OwnerKind))
 	}
 
 	if selector == nil {
-		return errors.New("nil label selector not allowed")
+		return "", errors.New("nil label selector not allowed")
 	}
 
 	s, err := metav1.LabelSelectorAsSelector(selector)
 	if err != nil {
-		return fmt.Errorf("failed to convert label selector: %w", err)
+		return "", fmt.Errorf("failed to convert label selector: %w", err)
 	}
 	if s.Empty() {
-		return errors.New("empty selector not allowed")
+		return "", errors.New("empty selector not allowed")
 	}
 	wk.Selector = *selector
-	return nil
+	return uid, nil
 }
 
 // ResolveDenyingPolicy finds the WorkloadNetworkPolicy associated with the workload violation

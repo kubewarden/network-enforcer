@@ -186,6 +186,6 @@ func workloadRefFromPod(pod *corev1.Pod) securityv1alpha1.WorkloadRef {
 func (e *Enricher) GetWorkloadRef(
 	ctx context.Context,
 	podNamespacedName types.NamespacedName,
-) (securityv1alpha1.WorkloadRef, error) {
-	return workload.Get(ctx, e.client, podNamespacedName)
+) (securityv1alpha1.WorkloadRef, types.UID, error) {
+	return workload.GetWithOwnerUID(ctx, e.client, podNamespacedName)
 }
