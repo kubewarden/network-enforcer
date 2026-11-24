@@ -58,12 +58,12 @@ type learningPodMemo struct {
 	ambiguous bool
 }
 
-type learningEnqueueResult uint8
+type learningEnqueueResult string
 
 const (
-	learningEnqueueRejected learningEnqueueResult = iota
-	learningEnqueueAccepted
-	learningEnqueueDuplicate
+	learningEnqueueRejected  learningEnqueueResult = "rejected"
+	learningEnqueueAccepted  learningEnqueueResult = "accepted"
+	learningEnqueueDuplicate learningEnqueueResult = "duplicate"
 )
 
 type learningAggregation struct {
@@ -142,6 +142,6 @@ func (a *learningAggregation) enqueueResolved(
 	return learningEnqueueAccepted
 }
 
-func learningAggregationKeyTooLarge(pod learningPodKey, identity string) bool {
+func isLearningAggregationKeyTooLarge(pod learningPodKey, identity string) bool {
 	return len(pod.namespace)+len(pod.name)+len(identity) > maxLearningAggregationKeyBytes
 }

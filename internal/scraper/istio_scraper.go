@@ -143,7 +143,7 @@ func (s *IstioScraper) enqueueLearningEvent(ctx context.Context, event *agentv1.
 	}
 
 	podKey := learningPodKey{namespace: dstNamespace, name: dstPodName}
-	cacheable := s.learningAggregation != nil && !learningAggregationKeyTooLarge(podKey, srcIdentity)
+	cacheable := s.learningAggregation != nil && !isLearningAggregationKeyTooLarge(podKey, srcIdentity)
 	var generation uint64
 	if cacheable {
 		var cacheHit bool
@@ -152,6 +152,7 @@ func (s *IstioScraper) enqueueLearningEvent(ctx context.Context, event *agentv1.
 			if s.learningLookupsSuppressed != nil {
 				s.learningLookupsSuppressed.Inc()
 			}
+			s.logLearningVerdict(ctx, podKey, srcIdentity, dstPort, learningEnqueueDuplicate, true)
 			return
 		}
 	}
@@ -198,6 +199,7 @@ func (s *IstioScraper) enqueueResolvedLearningEvent(
 		result := s.learningAggregation.enqueueResolved(s.now, generation, pod, tuple, func() bool {
 			return ctx.Err() == nil && s.EnqueueLearningEvent != nil && s.EnqueueLearningEvent(learningEvent)
 		})
+		s.logLearningVerdict(ctx, pod, identity, port, result, false)
 		if result == learningEnqueueRejected && ctx.Err() == nil {
 			s.Logger.WarnContext(ctx, "Failed to enqueue learning event, channel is full")
 		}
@@ -209,6 +211,23 @@ func (s *IstioScraper) enqueueResolvedLearningEvent(
 	}
 	if s.EnqueueLearningEvent == nil || !s.EnqueueLearningEvent(learningEvent) {
 		s.Logger.WarnContext(ctx, "Failed to enqueue learning event, channel is full")
+	}
+}
+
+func (s *IstioScraper) logLearningVerdict(
+	ctx context.Context,
+	pod learningPodKey,
+	identity string,
+	port int32,
+	result learningEnqueueResult,
+	lookupSkipped bool,
+) {
+	if s.Logger.Enabled(ctx, slog.LevelDebug) {
+		s.Logger.DebugContext(ctx, "Evaluated Istio learning event",
+			"verdict", result, "workloadLookupSkipped", lookupSkipped,
+			dstNamespaceKey, pod.namespace, dstNameKey, pod.name,
+			srcIdentityKey, identity, dstPortKey, port,
+		)
 	}
 }
 

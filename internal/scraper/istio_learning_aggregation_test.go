@@ -445,6 +445,35 @@ func TestIstioLearningAggregationCancellationDoesNotMarkAccepted(t *testing.T) {
 	require.Equal(t, int32(2), reader.podGets.Load())
 }
 
+func TestIstioLearningAggregationLogsVerdicts(t *testing.T) {
+	pod, owner := newLearningObjects("server-0", "server", map[string]string{"app": "server"})
+	replica, _ := newLearningObjects("server-1", "server", nil)
+	reader := newLearningTestClient(t, pod, replica, owner)
+	accept := false
+	scraper := newLearningTestScraper(reader, func(types.LearningEvent) bool { return accept }, nil)
+	var logs strings.Builder
+	scraper.Logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	for _, tc := range []struct {
+		pod, verdict    string
+		accept, skipped bool
+	}{
+		{"server-0", "rejected", false, false},
+		{"server-0", "accepted", true, false},
+		{"server-1", "duplicate", true, false},
+		{"server-0", "duplicate", true, true},
+	} {
+		logs.Reset()
+		accept = tc.accept
+		scraper.processEvent(t.Context(), newLearningEvent(tc.pod, "client", "8080"))
+		log := logs.String()
+		require.Contains(t, log, "level=DEBUG")
+		require.Contains(t, log, "verdict="+tc.verdict)
+		require.Contains(t, log, fmt.Sprintf("workloadLookupSkipped=%t", tc.skipped))
+		require.Contains(t, log, "dst.name="+tc.pod)
+	}
+}
+
 func TestIstioLearningAggregationQueueRejectionCanRetry(t *testing.T) {
 	pod, owner := newLearningObjects("server-0", "server", map[string]string{"app": "server"})
 	reader := newLearningTestClient(t, pod, owner)
