@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"istio.io/api/annotation"
 	istiosecurityv1 "istio.io/client-go/pkg/apis/security/v1"
@@ -34,6 +35,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/e2e-framework/klient/k8s"
+	"sigs.k8s.io/e2e-framework/klient/wait"
+	"sigs.k8s.io/e2e-framework/klient/wait/conditions"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
@@ -62,35 +67,42 @@ func TestIstioAgentOrchestration(t *testing.T) {
 		t.Skip("Skipping disruptive Istio agent orchestration test on an existing cluster")
 	}
 
-	feature := features.New("Istio agent leader, handover, restart, certificate rotation and fairness").
-		Setup(setupIstioOrchestrationNamespace).
-		Setup(labelNamespaceAmbient).
-		Assess("exercise Istio agent orchestration with isolated traffic", runIstioAgentOrchestration).
+	var mesh istioPullFixture
+	feature := features.New("Istio agent pull path with three controller replicas").
+		Setup(setupTestNamespace).
+		Setup(mesh.setup).
+		Assess("Only the Lease holder pulls from agents", mesh.onlyLeaderPulls).
+		Assess("Violation count equals connections sent", mesh.exactViolationCount).
+		Assess("Leader handover does not inflate the violation count", mesh.leaderHandover).
+		Assess("The replacement agent is discovered and delivers fresh traffic", mesh.agentReplacement).
+		Assess("One pull permit serves both nodes", assessBoundedPermitFairness).
+		Assess("Client certificate rotation recovers without a controller restart", mesh.clientCertificateRotation).
 		Feature()
 	testEnv.Test(t, feature)
 }
 
-func setupIstioOrchestrationNamespace(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-	ctx = setupTestNamespace(ctx, t, cfg)
-	namespace := getNamespace(ctx)
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		clientset, err := kubernetes.NewForConfig(cfg.Client().RESTConfig())
-		if err != nil {
-			t.Errorf("create Kubernetes client to delete test namespace: %v", err)
-			return
-		}
-		deleteOrchestrationNamespace(cleanupCtx, t, clientset, namespace)
-	})
-	return ctx
+// Per-feature state. Handover and replacement update the leader and worker agent;
+// setup supplies both even when individual assessments are selected by name.
+type istioPullFixture struct {
+	client                         *kubernetes.Clientset
+	namespace, controller, agentDS string
+	ztunnel, workerAgent           corev1.Pod
+	leader                         orchestrationLeader
+	certificates                   orchestrationCertificateSet
 }
 
-func runIstioAgentOrchestration(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+func (s *istioPullFixture) setup(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 	t.Helper()
-	originalContext := ctx
 	ctx, cancel := context.WithTimeout(ctx, istioOrchestrationLimit)
-	defer cancel()
+	t.Cleanup(cancel)
+	// WithFailFast skips feature teardown. Register cleanup before setup can
+	// fail; shared workload rollback runs first (Cleanup is LIFO).
+	t.Cleanup(func() {
+		cleanupCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), defaultOperationTimeout)
+		defer stop()
+		teardownTestNamespace(cleanupCtx, t, cfg)
+	})
+	ctx = labelNamespaceAmbient(ctx, t, cfg)
 
 	clientset, clientErr := kubernetes.NewForConfig(cfg.Client().RESTConfig())
 	require.NoError(t, clientErr, "create Kubernetes client for orchestration test")
@@ -102,29 +114,24 @@ func runIstioAgentOrchestration(ctx context.Context, t *testing.T, cfg *envconf.
 	originalController := &appsv1.Deployment{}
 	require.NoError(t, getSecurityV1Alpha1Client(ctx).Get(ctx, controllerName, releaseNamespace, originalController),
 		"get controller Deployment before orchestration changes")
-	originalControllerSpec := originalController.Spec.DeepCopy()
 	originalAgent := &appsv1.DaemonSet{}
 	require.NoError(t, getSecurityV1Alpha1Client(ctx).Get(ctx, agentName, releaseNamespace, originalAgent),
 		"get agent DaemonSet before orchestration changes")
-	originalAgentSpec := originalAgent.Spec.DeepCopy()
-	originalReplicas := int32(1)
-	if originalController.Spec.Replicas != nil {
-		originalReplicas = *originalController.Spec.Replicas
-	}
-
+	s.client, s.namespace, s.controller, s.agentDS = clientset, releaseNamespace, controllerName, agentName
 	createdSecrets := make(map[string]types.UID)
-	// Roll back shared objects on fail-fast; namespace cleanup was registered
-	// immediately after namespace creation by setupIstioOrchestrationNamespace.
-	registerOrchestrationCleanup(t, clientset, releaseNamespace, controllerName, agentName,
-		originalControllerSpec, originalAgentSpec, originalReplicas, createdSecrets)
+	t.Cleanup(func() {
+		cleanupCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+		defer stop()
+		s.restoreWorkloads(cleanupCtx, t, originalController, originalAgent, createdSecrets)
+	})
 
 	workerNode, controlPlaneNode := requireIstioOrchestrationNodes(ctx, t, clientset)
-	workerZtunnel := requireNodeHasReadyDaemonSetPod(ctx, t, clientset, "ztunnel", istioNamespace, workerNode)
+	s.ztunnel = requireNodeHasReadyDaemonSetPod(ctx, t, clientset, "ztunnel", istioNamespace, workerNode)
 	requireNodeHasReadyDaemonSetPod(ctx, t, clientset, "ztunnel", istioNamespace, controlPlaneNode)
 	requireNodeHasReadyDaemonSetPod(ctx, t, clientset, agentName, releaseNamespace, workerNode)
 	requireNodeHasReadyDaemonSetPod(ctx, t, clientset, agentName, releaseNamespace, controlPlaneNode)
 
-	createOrchestrationWorkloads(ctx, t, clientset, workerNode, controlPlaneNode)
+	createOrchestrationWorkloads(ctx, t, workerNode, controlPlaneNode)
 	createIstioOrchestrationPolicy(ctx, t, "orchestration-serial-policy", "orchestration-serial-server")
 	createIstioOrchestrationPolicy(ctx, t, "orchestration-handover-policy", "orchestration-handover-server")
 
@@ -143,137 +150,61 @@ func runIstioAgentOrchestration(ctx context.Context, t *testing.T, cfg *envconf.
 	agents := requireReadyAgentsOnNodes(ctx, t, clientset, releaseNamespace, agentName,
 		[]string{workerNode, controlPlaneNode})
 	require.Len(t, agents, 2, "expected one release-owned agent on each Kind node")
-	controllerPods := requireReadyControllerPods(ctx, t, clientset, releaseNamespace, controllerName, 3)
-	lease := requireRenewedControllerLease(ctx, t, clientset, releaseNamespace, controllerPods, nil)
-	leader := requireOnlyLeaseHolderStartedPuller(ctx, t, clientset, controllerPods, lease, 1)
-	leaderState := requireManagerProcess(t, leader)
-
+	s.workerAgent = findAgentOnNode(t, agents, workerNode)
+	s.certificates = certificates
+	pods := requireReadyControllerPods(ctx, t, clientset, releaseNamespace, controllerName, 3)
+	lease := requireRenewedControllerLease(ctx, t, clientset, releaseNamespace, pods, nil)
+	holder := findHolderPod(t, pods, *lease.Spec.HolderIdentity)
+	s.leader = orchestrationLeader{pods: pods, lease: lease, pod: holder, process: requireManagerProcess(t, holder)}
 	waitForOrchestrationPolicies(ctx, t)
-
-	runStableLeaderExactCount(ctx, t, clientset, releaseNamespace, controllerName, leader, leaderState)
-
-	activeLeader := runLeaseConfirmedHandover(
-		ctx,
-		t,
-		clientset,
-		releaseNamespace,
-		controllerName,
-		controllerPods,
-		lease,
-		workerZtunnel,
-	)
-	replacement := runAgentRestartRecovery(ctx, t, clientset, releaseNamespace, controllerName, agentName,
-		workerNode, agents, activeLeader)
-	runBoundedPermitFairness(ctx, t)
-	runClientCertificateRotation(ctx, t, clientset, releaseNamespace, controllerName,
-		certificates, workerNode, replacement, activeLeader)
-	return originalContext
+	return ctx
 }
 
-func registerOrchestrationCleanup(
-	t *testing.T,
-	clientset *kubernetes.Clientset,
-	releaseNamespace, controllerName, agentName string,
-	controllerSpec *appsv1.DeploymentSpec,
-	agentSpec *appsv1.DaemonSetSpec,
-	controllerReplicas int32,
-	createdSecrets map[string]types.UID,
+func (s *istioPullFixture) restoreWorkloads(ctx context.Context, t *testing.T, controller *appsv1.Deployment,
+	agent *appsv1.DaemonSet, secrets map[string]types.UID,
 ) {
 	t.Helper()
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-		deployment, daemonSet, restored := restoreOrchestrationWorkloads(
-			cleanupCtx, t, clientset, releaseNamespace, controllerName, agentName,
-			controllerSpec, agentSpec, controllerReplicas)
-		if restored {
-			deleteCreatedOrchestrationSecrets(cleanupCtx, t, clientset, releaseNamespace,
-				createdSecrets, &deployment.Spec.Template.Spec, &daemonSet.Spec.Template.Spec)
-		}
+	depOK := assert.NoError(t, restoreDeploymentSpec(ctx, s.client, s.namespace, s.controller, &controller.Spec),
+		"restore controller Deployment")
+	dsOK := assert.NoError(t, restoreDaemonSetSpec(ctx, s.client, s.namespace, s.agentDS, &agent.Spec),
+		"restore agent DaemonSet")
+	if !depOK || !dsOK {
+		return
+	}
+
+	// DeploymentAvailable can still be true for the old revision. Wait for
+	// the restored pods on both workloads before removing the test Secrets.
+	c := conditions.New(getSecurityV1Alpha1Client(ctx))
+	expected := ptr.Deref(controller.Spec.Replicas, 1)
+	depReady := c.ResourceMatch(controller, func(_ k8s.Object) bool {
+		status := controller.Status
+		return ptr.Deref(controller.Spec.Replicas, 1) == expected && status.ObservedGeneration >= controller.Generation &&
+			status.Replicas == expected &&
+			status.UpdatedReplicas == expected &&
+			status.ReadyReplicas == expected &&
+			status.AvailableReplicas == expected
 	})
-}
-
-func restoreOrchestrationWorkloads(
-	ctx context.Context,
-	t *testing.T,
-	clientset *kubernetes.Clientset,
-	namespace, controllerName, agentName string,
-	controllerSpec *appsv1.DeploymentSpec,
-	agentSpec *appsv1.DaemonSetSpec,
-	replicas int32,
-) (*appsv1.Deployment, *appsv1.DaemonSet, bool) {
-	restored := true
-	restored = reportOrchestrationCleanupError(t, "restore controller Deployment",
-		restoreDeploymentSpec(ctx, clientset, namespace, controllerName, controllerSpec)) && restored
-	restored = reportOrchestrationCleanupError(t, "restore agent DaemonSet",
-		restoreDaemonSetSpec(ctx, clientset, namespace, agentName, agentSpec)) && restored
-	restored = reportOrchestrationCleanupError(t, "wait for original controller replicas",
-		waitForDeploymentReadyWithoutTest(ctx, clientset, namespace, controllerName, replicas)) && restored
-	restored = reportOrchestrationCleanupError(t, "wait for original agent DaemonSet",
-		waitForDaemonSetReadyWithoutTest(ctx, clientset, namespace, agentName)) && restored
-	if !restored {
-		return nil, nil, false
+	dsReady := c.DaemonSetReady(agent)
+	depOK = assert.NoError(t, wait.For(depReady, wait.WithContext(ctx)), "wait for restored controller replicas")
+	dsOK = assert.NoError(t, wait.For(func(ctx context.Context) (bool, error) {
+		ready, err := dsReady(ctx)
+		return ready && agent.Status.ObservedGeneration >= agent.Generation, err
+	}, wait.WithContext(ctx)), "wait for restored agent DaemonSet")
+	if !depOK || !dsOK {
+		return
 	}
-	deployment, deploymentErr := clientset.AppsV1().Deployments(namespace).Get(ctx, controllerName, metav1.GetOptions{})
-	if !reportOrchestrationCleanupError(t, "verify restored controller certificate references", deploymentErr) {
-		return nil, nil, false
-	}
-	daemonSet, daemonSetErr := clientset.AppsV1().DaemonSets(namespace).Get(ctx, agentName, metav1.GetOptions{})
-	if !reportOrchestrationCleanupError(t, "verify restored agent certificate references", daemonSetErr) {
-		return nil, nil, false
-	}
-	return deployment, daemonSet, true
-}
-
-func reportOrchestrationCleanupError(t *testing.T, operation string, err error) bool {
-	if err == nil {
-		return true
-	}
-	t.Errorf("%s: %v", operation, err)
-	return false
-}
-
-func deleteCreatedOrchestrationSecrets(
-	ctx context.Context,
-	t *testing.T,
-	clientset *kubernetes.Clientset,
-	namespace string,
-	created map[string]types.UID,
-	controllerSpec, agentSpec *corev1.PodSpec,
-) {
-	for name, uid := range created {
-		if podSpecUsesSecret(controllerSpec, name) || podSpecUsesSecret(agentSpec, name) {
+	for name, uid := range secrets {
+		if podSpecUsesSecret(&controller.Spec.Template.Spec, name) ||
+			podSpecUsesSecret(&agent.Spec.Template.Spec, name) {
 			t.Errorf("temporary certificate Secret %q is still referenced by a restored workload", name)
 			continue
 		}
-		deleteCreatedOrchestrationSecret(ctx, t, clientset, namespace, name, uid)
-	}
-}
-
-func deleteCreatedOrchestrationSecret(
-	ctx context.Context,
-	t *testing.T,
-	clientset *kubernetes.Clientset,
-	namespace, name string,
-	uid types.UID,
-) {
-	secret, err := clientset.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return
-	}
-	if err != nil {
-		t.Errorf("get temporary certificate Secret %q before cleanup: %v", name, err)
-		return
-	}
-	if secret.UID != uid {
-		t.Errorf("not deleting temporary certificate Secret %q: UID changed from %q to %q", name, uid, secret.UID)
-		return
-	}
-	deleteErr := clientset.CoreV1().Secrets(namespace).Delete(ctx, name, metav1.DeleteOptions{
-		Preconditions: &metav1.Preconditions{UID: &uid},
-	})
-	if deleteErr != nil && !apierrors.IsNotFound(deleteErr) {
-		t.Errorf("delete temporary certificate Secret %q: %v", name, deleteErr)
+		err := s.client.CoreV1().Secrets(s.namespace).Delete(ctx, name, metav1.DeleteOptions{
+			Preconditions: &metav1.Preconditions{UID: &uid},
+		})
+		if !apierrors.IsNotFound(err) {
+			assert.NoError(t, err, "delete temporary certificate Secret %q", name)
+		}
 	}
 }
 
@@ -284,23 +215,6 @@ func podSpecUsesSecret(spec *corev1.PodSpec, name string) bool {
 		}
 	}
 	return false
-}
-
-func deleteOrchestrationNamespace(
-	ctx context.Context,
-	t *testing.T,
-	clientset *kubernetes.Clientset,
-	name string,
-) {
-	t.Helper()
-	err := clientset.CoreV1().Namespaces().Delete(ctx, name, metav1.DeleteOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
-		t.Errorf("delete orchestration test namespace: %v", err)
-		return
-	}
-	if waitErr := waitForNamespaceDeleted(ctx, clientset, name); waitErr != nil {
-		t.Errorf("wait for orchestration test namespace deletion: %v", waitErr)
-	}
 }
 
 type echoBatchResult struct {
@@ -316,14 +230,15 @@ type orchestrationLeader struct {
 	process managerProcessState
 }
 
-func runStableLeaderExactCount(
-	ctx context.Context,
-	t *testing.T,
-	clientset *kubernetes.Clientset,
-	namespace, deploymentName string,
-	leader corev1.Pod,
-	process managerProcessState,
-) {
+func (s *istioPullFixture) onlyLeaderPulls(ctx context.Context, t *testing.T, _ *envconf.Config) context.Context {
+	t.Helper()
+	lease := readControllerLease(ctx, t, s.client, s.namespace)
+	require.Equal(t, *s.leader.lease.Spec.HolderIdentity, *lease.Spec.HolderIdentity, "initial Lease holder changed")
+	requireOnlyLeaseHolderStartedPuller(ctx, t, s.client, s.leader.pods, lease, 1)
+	return ctx
+}
+
+func (s *istioPullFixture) exactViolationCount(ctx context.Context, t *testing.T, _ *envconf.Config) context.Context {
 	t.Helper()
 	const policy = "orchestration-serial-policy"
 	warmupUntilAttributed(ctx, t, policy, "orchestration-serial-client", "orchestration-serial-server",
@@ -337,18 +252,11 @@ func runStableLeaderExactCount(
 		"every finite measured TCP connection must echo exactly once")
 	waitForExactStableViolationCount(ctx, t, policy, baseline+measuredConnections)
 	requireOnlyOrchestrationViolation(ctx, t, policy, "orchestration-serial-client", "orchestration-serial-server")
-	requireSameLeaderProcess(ctx, t, clientset, namespace, deploymentName, leader, process)
+	s.requireSameLeader(ctx, t)
+	return ctx
 }
 
-func runLeaseConfirmedHandover(
-	ctx context.Context,
-	t *testing.T,
-	clientset *kubernetes.Clientset,
-	namespace, deploymentName string,
-	previousPods []corev1.Pod,
-	previousLease coordinationv1.Lease,
-	workerZtunnel corev1.Pod,
-) orchestrationLeader {
+func (s *istioPullFixture) leaderHandover(ctx context.Context, t *testing.T, _ *envconf.Config) context.Context {
 	t.Helper()
 	const policy = "orchestration-serial-policy"
 	requireNoOrchestrationViolation(ctx, t, policy,
@@ -386,38 +294,28 @@ func runLeaseConfirmedHandover(
 		}
 	})
 
-	beforeDelete := requireHandoverProgress(ctx, t, "orchestration-handover-client", progressFile, 2)
-	require.Greater(t, beforeDelete, 1, "handover traffic must be flowing before holder deletion")
+	requireHandoverProgress(ctx, t, "orchestration-handover-client", progressFile, 2)
 	requireViolationFromSource(ctx, t, policy,
 		"orchestration-handover-client", "orchestration-serial-server")
 	countAtDelete := getOrchestrationViolationCount(ctx, t, policy)
 	require.Greater(t, countAtDelete, baseline, "old Lease holder must process counted traffic before deletion")
 
-	currentLease := readControllerLease(ctx, t, clientset, namespace)
-	require.Equal(t, *previousLease.Spec.HolderIdentity, *currentLease.Spec.HolderIdentity,
+	currentLease := readControllerLease(ctx, t, s.client, s.namespace)
+	require.Equal(t, *s.leader.lease.Spec.HolderIdentity, *currentLease.Spec.HolderIdentity,
 		"the original holder must remain stable until its deletion")
 	oldHolder := *currentLease.Spec.HolderIdentity
 	oldRenewTime := *currentLease.Spec.RenewTime
-	holderPod := findHolderPod(t, previousPods, oldHolder)
-	require.NoError(t, clientset.CoreV1().Pods(namespace).Delete(ctx, holderPod.Name, metav1.DeleteOptions{}),
+	require.NoError(t, s.client.CoreV1().Pods(s.namespace).Delete(ctx, s.leader.pod.Name, metav1.DeleteOptions{}),
 		"delete current controller Lease holder")
 
 	lease, successor, livePods := requireRenewedControllerLeaseOnLivePod(
-		ctx, t, clientset, namespace, deploymentName, oldHolder, &oldRenewTime)
+		ctx, t, s.client, s.namespace, s.controller, oldHolder, &oldRenewTime)
 	require.NotEqual(t, oldHolder, *lease.Spec.HolderIdentity, "handover must elect a different controller process")
-	_ = requireOnlyLeaseHolderStartedPuller(ctx, t, clientset, livePods, lease, 1)
+	requireOnlyLeaseHolderStartedPuller(ctx, t, s.client, livePods, lease, 1)
 	preSuccessorAttempt := latestSuccessfulAttemptID(
 		requireHandoverProgressOutput(ctx, t, "orchestration-handover-client", progressFile),
 	)
-	postSuccessorAttempt := requireHandoverSuccessAfter(
-		ctx,
-		t,
-		"orchestration-handover-client",
-		progressFile,
-		preSuccessorAttempt,
-	)
-	require.Greater(t, postSuccessorAttempt, preSuccessorAttempt,
-		"a successful finite send with a higher attempt ID must follow the same successor's Lease renewal")
+	requireHandoverSuccessAfter(ctx, t, "orchestration-handover-client", progressFile, preSuccessorAttempt)
 
 	countAfterSuccessor := getOrchestrationViolationCount(ctx, t, policy)
 	requireNoOrchestrationViolation(ctx, t, policy,
@@ -425,8 +323,7 @@ func runLeaseConfirmedHandover(
 	sendEchoOnce(ctx, t, "orchestration-handover-post-client", "orchestration-serial-service", "post-handover-marker")
 	requireViolationFromSource(ctx, t, policy,
 		"orchestration-handover-post-client", "orchestration-serial-server")
-	require.Greater(t, requireViolationCountIncrease(ctx, t, policy, countAfterSuccessor), countAfterSuccessor,
-		"status count must advance after successor renewal and the post-handover marker")
+	requireViolationCountIncrease(ctx, t, policy, countAfterSuccessor)
 
 	burstResult := <-resultCh
 	require.NoError(t, burstResult.err, "finite handover burst exec")
@@ -434,7 +331,7 @@ func runLeaseConfirmedHandover(
 	require.Len(t, attemptedEchoLines(burstResult.stdout), attempts,
 		"finite handover sender must record every bounded one-shot attempt")
 	settledCount := waitForSettledViolationCount(ctx, t, policy)
-	burstRecords := handoverBurstPolicyRecords(ctx, t, clientset, workerZtunnel)
+	burstRecords := handoverBurstPolicyRecords(ctx, t, s.client, s.ztunnel)
 	require.GreaterOrEqual(t, burstRecords, int64(len(successfulEchoLines(burstResult.stdout))),
 		"ztunnel logs must account for every confirmed echo in the burst")
 	require.GreaterOrEqual(t, settledCount, countAtDelete+1,
@@ -444,17 +341,18 @@ func runLeaseConfirmedHandover(
 	require.LessOrEqual(t, settledCount-baseline, burstRecords+1,
 		"handover must not count more than the emitted burst records plus the post-handover marker")
 
-	pods := requireReadyControllerPods(ctx, t, clientset, namespace, deploymentName, 3)
-	finalLease := readControllerLease(ctx, t, clientset, namespace)
+	pods := requireReadyControllerPods(ctx, t, s.client, s.namespace, s.controller, 3)
+	finalLease := readControllerLease(ctx, t, s.client, s.namespace)
 	require.Equal(t, *lease.Spec.HolderIdentity, *finalLease.Spec.HolderIdentity,
 		"successor must remain Lease holder after the unrelated replacement Pod becomes Ready")
-	_ = requireOnlyLeaseHolderStartedPuller(ctx, t, clientset, pods, finalLease, 1)
-	return orchestrationLeader{
+	requireOnlyLeaseHolderStartedPuller(ctx, t, s.client, pods, finalLease, 1)
+	s.leader = orchestrationLeader{
 		pods:    pods,
 		lease:   finalLease,
 		pod:     successor,
 		process: requireManagerProcess(t, successor),
 	}
+	return ctx
 }
 
 // Count ALLOW-miss records at the destination, independent of the controller.
@@ -502,23 +400,16 @@ func handoverBurstPolicyRecords(
 	return count
 }
 
-func runAgentRestartRecovery(
-	ctx context.Context,
-	t *testing.T,
-	clientset *kubernetes.Clientset,
-	namespace, controllerName, agentName, destinationNode string,
-	agents []corev1.Pod,
-	leader orchestrationLeader,
-) corev1.Pod {
+func (s *istioPullFixture) agentReplacement(ctx context.Context, t *testing.T, _ *envconf.Config) context.Context {
 	t.Helper()
-	requireSameLeaderProcess(ctx, t, clientset, namespace, controllerName, leader.pod, leader.process)
-	oldAgent := findAgentOnNode(t, agents, destinationNode)
-	require.NoError(t, clientset.CoreV1().Pods(namespace).Delete(ctx, oldAgent.Name, metav1.DeleteOptions{}),
+	s.requireSameLeader(ctx, t)
+	old := s.workerAgent
+	require.NoError(t, s.client.CoreV1().Pods(s.namespace).Delete(ctx, old.Name, metav1.DeleteOptions{}),
 		"delete destination-node agent Pod")
-	replacement := requireReplacementAgent(ctx, t, clientset, namespace, agentName, destinationNode, oldAgent.UID)
-	requireEventuallyAgentTailerStarted(ctx, t, clientset, namespace, replacement)
-	requireSameLeaderProcess(ctx, t, clientset, namespace, controllerName, leader.pod, leader.process)
-	requireLeaderDiscoveredAgentUID(ctx, t, clientset, leader.pod, replacement)
+	s.workerAgent = requireReplacementAgent(ctx, t, s.client, s.namespace, s.agentDS, old.Spec.NodeName, old.UID)
+	requireEventuallyAgentTailerStarted(ctx, t, s.client, s.namespace, s.workerAgent)
+	s.requireSameLeader(ctx, t)
+	requireLeaderDiscoveredAgentUID(ctx, t, s.client, s.leader.pod, s.workerAgent)
 
 	requireNoOrchestrationViolation(ctx, t, "orchestration-serial-policy",
 		"orchestration-restart-marker-client", "orchestration-serial-server")
@@ -526,12 +417,10 @@ func runAgentRestartRecovery(
 		"orchestration-serial-service", "restart-post-only-marker")
 	requireViolationFromSource(ctx, t, "orchestration-serial-policy",
 		"orchestration-restart-marker-client", "orchestration-serial-server")
-	waitForSettledViolationCount(ctx, t, "orchestration-serial-policy")
-	waitForSettledViolationCount(ctx, t, "orchestration-handover-policy")
-	return replacement
+	return ctx
 }
 
-func runBoundedPermitFairness(ctx context.Context, t *testing.T) {
+func assessBoundedPermitFairness(ctx context.Context, t *testing.T, _ *envconf.Config) context.Context {
 	t.Helper()
 	workerCount := waitForSettledViolationCount(ctx, t, "orchestration-serial-policy")
 	controlPlaneCount := waitForSettledViolationCount(ctx, t, "orchestration-handover-policy")
@@ -572,32 +461,28 @@ func runBoundedPermitFairness(ctx context.Context, t *testing.T) {
 		controlPlaneCount = requireViolationCountIncrease(ctx, t, "orchestration-handover-policy", controlPlaneCount)
 		t.Logf("max-in-flight=1 fairness round %d advanced both node-local policies with fresh observations", round)
 	}
+	return ctx
 }
 
-func runClientCertificateRotation(
+func (s *istioPullFixture) clientCertificateRotation(
 	ctx context.Context,
 	t *testing.T,
-	clientset *kubernetes.Clientset,
-	namespace, controllerName string,
-	certificates orchestrationCertificateSet,
-	workerNode string,
-	destinationAgent corev1.Pod,
-	leader orchestrationLeader,
-) {
+	_ *envconf.Config,
+) context.Context {
 	t.Helper()
-	require.Equal(t, workerNode, destinationAgent.Spec.NodeName,
+	require.Equal(t, s.ztunnel.Spec.NodeName, s.workerAgent.Spec.NodeName,
 		"certificate denial must be observed against the destination worker agent")
 	// The server CA and server leaf remain unchanged: only client CA A is
 	// removed, and the same agent must reject the current holder's cert A.
 	rotationStart := metav1.NewTime(time.Now())
-	require.NoError(t, rotateAgentClientTrustToB(ctx, clientset, namespace, certificates),
+	require.NoError(t, rotateAgentClientTrustToB(ctx, s.client, s.namespace, s.certificates),
 		"replace agent client trust A with B while preserving server identity and CA")
-	requireEventuallyControllerTLSDenial(ctx, t, clientset, namespace, leader.pod, destinationAgent, rotationStart)
-	requireSameLeaderProcess(ctx, t, clientset, namespace, controllerName, leader.pod, leader.process)
+	requireEventuallyControllerTLSDenial(ctx, t, s.client, s.namespace, s.leader.pod, s.workerAgent, rotationStart)
+	s.requireSameLeader(ctx, t)
 
 	// Allow bounded Secret projection and the puller's retry backoff before the
 	// next scrape proves cert B works without restarting the manager.
-	require.NoError(t, rotateControllerClientToB(ctx, clientset, namespace, certificates),
+	require.NoError(t, rotateControllerClientToB(ctx, s.client, s.namespace, s.certificates),
 		"project controller client certificate B")
 	warmupUntilAttributedWithin(
 		ctx,
@@ -609,10 +494,8 @@ func runClientCertificateRotation(
 		"certificate-b-marker",
 		2*defaultOperationTimeout,
 	)
-	requireSameLeaderProcess(ctx, t, clientset, namespace, controllerName, leader.pod, leader.process)
-	lease := readControllerLease(ctx, t, clientset, namespace)
-	require.Equal(t, *leader.lease.Spec.HolderIdentity, *lease.Spec.HolderIdentity,
-		"certificate rotation must not change the controller Lease holder")
+	s.requireSameLeader(ctx, t)
+	return ctx
 }
 
 type orchestrationCertificateSet struct {
@@ -637,7 +520,6 @@ type orchestrationCA struct {
 func createOrchestrationWorkloads(
 	ctx context.Context,
 	t *testing.T,
-	clientset *kubernetes.Clientset,
 	workerNode, controlPlaneNode string,
 ) {
 	t.Helper()
@@ -664,8 +546,9 @@ func createOrchestrationWorkloads(
 				},
 			},
 		}), "create Service for %q", name)
+		require.NoError(t, wait.For(conditions.New(getSecurityV1Alpha1Client(ctx)).DeploymentAvailable(name, namespace),
+			wait.WithContext(ctx), wait.WithTimeout(defaultOperationTimeout)), "wait for server Deployment %q", name)
 	}
-	waitOrchestrationDeployments(ctx, t, clientset)
 }
 
 func createOrchestrationServer(
@@ -719,39 +602,6 @@ func createIstioOrchestrationPolicy(ctx context.Context, t *testing.T, name, tar
 		mode:       v1alpha1.WorkloadNetworkPolicyModeMonitor,
 		selector:   map[string]string{"app": targetDeployment},
 	})
-}
-
-func waitOrchestrationDeployments(ctx context.Context, t *testing.T, clientset *kubernetes.Clientset) {
-	t.Helper()
-	for _, name := range []string{
-		"orchestration-serial-server", "orchestration-handover-server",
-		"orchestration-serial-client", "orchestration-handover-client", "orchestration-handover-post-client",
-		"orchestration-restart-marker-client", "orchestration-cert-marker-client",
-	} {
-		waitForOrchestrationDeployment(ctx, t, clientset, getNamespace(ctx), name)
-	}
-}
-
-func waitForOrchestrationDeployment(
-	ctx context.Context,
-	t *testing.T,
-	clientset *kubernetes.Clientset,
-	namespace, name string,
-) {
-	t.Helper()
-	var current *appsv1.Deployment
-	require.Eventually(t, func() bool {
-		deployment, err := clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			t.Logf("waiting for Deployment %q: %v", name, err)
-			return false
-		}
-		current = deployment
-		return deployment.Status.ObservedGeneration >= deployment.Generation &&
-			deployment.Status.UpdatedReplicas == 1 && deployment.Status.ReadyReplicas == 1 &&
-			deployment.Status.AvailableReplicas == 1
-	}, defaultOperationTimeout, time.Second, "Deployment %q did not become ready", name)
-	require.NotNil(t, current)
 }
 
 func waitForOrchestrationPolicies(ctx context.Context, t *testing.T) {
@@ -1160,24 +1010,25 @@ func requireOnlyLeaseHolderStartedPuller(
 	pods []corev1.Pod,
 	lease coordinationv1.Lease,
 	maxInFlight int,
-) corev1.Pod {
+) {
 	t.Helper()
 	leader := findHolderPod(t, pods, *lease.Spec.HolderIdentity)
 	for _, pod := range pods {
 		logs, err := readPodLogs(ctx, clientset, pod, "manager", nil)
 		require.NoError(t, err, "read manager logs for controller pod %q", pod.Name)
-		watching := hasStructuredLogMessage(logs, "Watching Pods for Istio agents")
+		const pullerStarted = "Watching Pods for Istio agents"
 		if pod.UID == leader.UID {
 			require.Contains(t, pod.Spec.Containers[0].Args, fmt.Sprintf("--agent-max-in-flight=%d", maxInFlight),
 				"Lease holder Pod must carry the configured maxInFlight flag")
-			require.True(t, watching, "Lease holder %q did not start the Istio puller", pod.Name)
-			require.True(t, hasStructuredLogField(logs, "Watching Pods for Istio agents", "maxInFlight", maxInFlight),
-				"Lease holder %q did not attest maxInFlight=%d", pod.Name, maxInFlight)
+			require.True(t, hasStructuredLogRecord(logs, func(entry map[string]any) bool {
+				return entry["msg"] == pullerStarted && entry["maxInFlight"] == float64(maxInFlight)
+			}), "Lease holder %q did not start the Istio puller with maxInFlight=%d", pod.Name, maxInFlight)
 		} else {
-			require.False(t, watching, "non-holder controller %q started the Istio puller", pod.Name)
+			require.False(t, hasStructuredLogRecord(logs, func(entry map[string]any) bool {
+				return entry["msg"] == pullerStarted
+			}), "non-holder controller %q started the Istio puller", pod.Name)
 		}
 	}
-	return leader
 }
 
 func readPodLogs(
@@ -1193,27 +1044,6 @@ func readPodLogs(
 	}
 	data, err := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, options).Do(ctx).Raw()
 	return string(data), err
-}
-
-func hasStructuredLogMessage(logs, message string) bool {
-	for line := range strings.SplitSeq(logs, "\n") {
-		var entry map[string]any
-		if json.Unmarshal([]byte(line), &entry) == nil && entry["msg"] == message {
-			return true
-		}
-	}
-	return false
-}
-
-func hasStructuredLogField(logs, message, field string, expected any) bool {
-	for line := range strings.SplitSeq(logs, "\n") {
-		var entry map[string]any
-		if json.Unmarshal([]byte(line), &entry) == nil && entry["msg"] == message &&
-			fmt.Sprint(entry[field]) == fmt.Sprint(expected) {
-			return true
-		}
-	}
-	return false
 }
 
 type managerProcessState struct {
@@ -1239,30 +1069,19 @@ func requireManagerProcess(t *testing.T, pod corev1.Pod) managerProcessState {
 	return managerProcessState{}
 }
 
-func requireSameLeaderProcess(
-	ctx context.Context,
-	t *testing.T,
-	clientset *kubernetes.Clientset,
-	namespace, deploymentName string,
-	leader corev1.Pod,
-	before managerProcessState,
-) {
+func (s *istioPullFixture) requireSameLeader(ctx context.Context, t *testing.T) {
 	t.Helper()
-	current, err := clientset.CoreV1().Pods(namespace).Get(ctx, leader.Name, metav1.GetOptions{})
+	leader, before := s.leader.pod, s.leader.process
+	current, err := s.client.CoreV1().Pods(s.namespace).Get(ctx, leader.Name, metav1.GetOptions{})
 	require.NoError(t, err, "read controller leader Pod after operation")
 	require.Equal(t, leader.UID, current.UID, "controller leader Pod UID changed")
 	state := requireManagerProcess(t, *current)
 	require.Equal(t, before.containerID, state.containerID, "controller manager container changed")
 	require.Equal(t, before.restartCount, state.restartCount, "controller manager restarted")
 	require.Equal(t, before.startedAt, state.startedAt, "controller manager start time changed")
-	lease := readControllerLease(ctx, t, clientset, namespace)
-	pods := requireReadyControllerPods(ctx, t, clientset, namespace, deploymentName, 3)
-	require.Equal(
-		t,
-		leader.UID,
-		findHolderPod(t, pods, *lease.Spec.HolderIdentity).UID,
-		"controller leader process changed",
-	)
+	requireReadyControllerPods(ctx, t, s.client, s.namespace, s.controller, 3)
+	lease := readControllerLease(ctx, t, s.client, s.namespace)
+	require.Equal(t, *s.leader.lease.Spec.HolderIdentity, *lease.Spec.HolderIdentity, "controller Lease holder changed")
 }
 
 func requireHandoverProgress(
@@ -1270,22 +1089,16 @@ func requireHandoverProgress(
 	t *testing.T,
 	clientDeployment, progressFile string,
 	minimum int,
-) int {
+) {
 	t.Helper()
-	observed := 0
 	require.Eventually(t, func() bool {
 		stdout, _, err := execInDeploymentRaw(
 			ctx,
 			clientDeployment,
 			[]string{"sh", "-c", "cat " + progressFile + " 2>/dev/null || true"},
 		)
-		if err != nil {
-			return false
-		}
-		observed = len(successfulEchoLines(stdout))
-		return observed >= minimum
+		return err == nil && len(successfulEchoLines(stdout)) >= minimum
 	}, 20*time.Second, 300*time.Millisecond, "handover burst did not reach %d successful sends", minimum)
-	return observed
 }
 
 func requireHandoverProgressOutput(ctx context.Context, t *testing.T, clientDeployment, progressFile string) string {
@@ -1313,20 +1126,14 @@ func requireHandoverSuccessAfter(
 	t *testing.T,
 	clientDeployment, progressFile string,
 	previousID int,
-) int {
+) {
 	t.Helper()
-	latest := -1
 	require.Eventually(t, func() bool {
 		stdout, _, err := execInDeploymentRaw(ctx, clientDeployment,
 			[]string{"sh", "-c", "cat " + progressFile + " 2>/dev/null || true"})
-		if err != nil {
-			return false
-		}
-		latest = latestSuccessfulAttemptID(stdout)
-		return latest > previousID
+		return err == nil && latestSuccessfulAttemptID(stdout) > previousID
 	}, defaultOperationTimeout, 500*time.Millisecond,
 		"finite handover sender did not produce a successful attempt above %d", previousID)
-	return latest
 }
 
 func finiteEchoCommand(service, prefix string, attempts int, interval time.Duration, progressFile string) []string {
@@ -1940,70 +1747,6 @@ func hasStructuredLogRecord(logs string, matches func(map[string]any) bool) bool
 		}
 	}
 	return false
-}
-
-func waitForDeploymentReadyWithoutTest(
-	ctx context.Context,
-	clientset *kubernetes.Clientset,
-	namespace, name string,
-	expected int32,
-) error {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		deployment, err := clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err == nil && deployment.Spec.Replicas != nil && *deployment.Spec.Replicas == expected &&
-			deployment.Status.ObservedGeneration >= deployment.Generation && deployment.Status.UpdatedReplicas == expected &&
-			deployment.Status.ReadyReplicas == expected && deployment.Status.AvailableReplicas == expected {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("deployment did not settle to %d replicas: %w", expected, ctx.Err())
-		case <-ticker.C:
-		}
-	}
-}
-
-func waitForDaemonSetReadyWithoutTest(
-	ctx context.Context,
-	clientset *kubernetes.Clientset,
-	namespace, name string,
-) error {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		daemonSet, err := clientset.AppsV1().DaemonSets(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err == nil && daemonSet.Status.ObservedGeneration >= daemonSet.Generation &&
-			daemonSet.Status.NumberReady == daemonSet.Status.DesiredNumberScheduled &&
-			daemonSet.Status.UpdatedNumberScheduled == daemonSet.Status.DesiredNumberScheduled {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("DaemonSet did not become Ready: %w", ctx.Err())
-		case <-ticker.C:
-		}
-	}
-}
-
-func waitForNamespaceDeleted(ctx context.Context, clientset *kubernetes.Clientset, name string) error {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		_, err := clientset.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		if err != nil && ctx.Err() != nil {
-			return fmt.Errorf("read namespace deletion state: %w", err)
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("namespace deletion did not finish: %w", ctx.Err())
-		case <-ticker.C:
-		}
-	}
 }
 
 func restoreDeploymentSpec(
