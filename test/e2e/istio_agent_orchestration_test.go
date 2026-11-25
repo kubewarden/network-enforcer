@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"strconv"
 	"strings"
 	"testing"
@@ -50,9 +51,8 @@ const (
 // TestIstioAgentOrchestration exercises the destructive Istio agent/controller
 // interactions only on the suite's disposable e2e cluster. Status counts are
 // calibrated with attributed, settled warm-up traffic and combined with evidence that
-// only the Lease holder starts the puller. This status read is not an
-// individual ztunnel-record read and cannot prove per-event exactly-once
-// delivery; the tests do not drain agent RPC.
+// only the Lease holder starts the puller. Comparing aggregate counts across
+// handover does not prove per-event exactly-once delivery.
 func TestIstioAgentOrchestration(t *testing.T) {
 	suite := loadSuiteConfig()
 	if !suite.IsIstioProvider() {
@@ -119,7 +119,7 @@ func runIstioAgentOrchestration(ctx context.Context, t *testing.T, cfg *envconf.
 		originalControllerSpec, originalAgentSpec, originalReplicas, createdSecrets)
 
 	workerNode, controlPlaneNode := requireIstioOrchestrationNodes(ctx, t, clientset)
-	requireNodeHasReadyDaemonSetPod(ctx, t, clientset, "ztunnel", istioNamespace, workerNode)
+	workerZtunnel := requireNodeHasReadyDaemonSetPod(ctx, t, clientset, "ztunnel", istioNamespace, workerNode)
 	requireNodeHasReadyDaemonSetPod(ctx, t, clientset, "ztunnel", istioNamespace, controlPlaneNode)
 	requireNodeHasReadyDaemonSetPod(ctx, t, clientset, agentName, releaseNamespace, workerNode)
 	requireNodeHasReadyDaemonSetPod(ctx, t, clientset, agentName, releaseNamespace, controlPlaneNode)
@@ -160,6 +160,7 @@ func runIstioAgentOrchestration(ctx context.Context, t *testing.T, cfg *envconf.
 		controllerName,
 		controllerPods,
 		lease,
+		workerZtunnel,
 	)
 	replacement := runAgentRestartRecovery(ctx, t, clientset, releaseNamespace, controllerName, agentName,
 		workerNode, agents, activeLeader)
@@ -346,9 +347,12 @@ func runLeaseConfirmedHandover(
 	namespace, deploymentName string,
 	previousPods []corev1.Pod,
 	previousLease coordinationv1.Lease,
+	workerZtunnel corev1.Pod,
 ) orchestrationLeader {
 	t.Helper()
 	const policy = "orchestration-serial-policy"
+	requireNoOrchestrationViolation(ctx, t, policy,
+		"orchestration-handover-client", "orchestration-serial-server")
 	baseline := getOrchestrationViolationCount(ctx, t, policy)
 	progressFile := "/tmp/orchestration-handover-progress"
 	const attempts = 75
@@ -382,8 +386,6 @@ func runLeaseConfirmedHandover(
 		}
 	})
 
-	requireNoOrchestrationViolation(ctx, t, policy,
-		"orchestration-handover-client", "orchestration-serial-server")
 	beforeDelete := requireHandoverProgress(ctx, t, "orchestration-handover-client", progressFile, 2)
 	require.Greater(t, beforeDelete, 1, "handover traffic must be flowing before holder deletion")
 	requireViolationFromSource(ctx, t, policy,
@@ -431,18 +433,16 @@ func runLeaseConfirmedHandover(
 	require.Empty(t, burstResult.stderr, "finite handover burst stderr")
 	require.Len(t, attemptedEchoLines(burstResult.stdout), attempts,
 		"finite handover sender must record every bounded one-shot attempt")
-	require.NotEmpty(
-		t,
-		successfulEchoLines(burstResult.stdout),
-		"handover burst must contain completed echo-checked sends",
-	)
 	settledCount := waitForSettledViolationCount(ctx, t, policy)
+	burstRecords := handoverBurstPolicyRecords(ctx, t, clientset, workerZtunnel)
+	require.GreaterOrEqual(t, burstRecords, int64(len(successfulEchoLines(burstResult.stdout))),
+		"ztunnel logs must account for every confirmed echo in the burst")
 	require.GreaterOrEqual(t, settledCount, countAtDelete+1,
 		"settled status must retain the pre-delete count plus a post-handover marker")
 	require.GreaterOrEqual(t, settledCount, countAfterSuccessor+1,
 		"settled status must retain a post-successor observation")
-	require.LessOrEqual(t, settledCount, baseline+int64(attempts+1),
-		"settled status increase must be bounded by finite attempts plus the unique marker")
+	require.LessOrEqual(t, settledCount-baseline, burstRecords+1,
+		"handover must not count more than the emitted burst records plus the post-handover marker")
 
 	pods := requireReadyControllerPods(ctx, t, clientset, namespace, deploymentName, 3)
 	finalLease := readControllerLease(ctx, t, clientset, namespace)
@@ -455,6 +455,51 @@ func runLeaseConfirmedHandover(
 		pod:     successor,
 		process: requireManagerProcess(t, successor),
 	}
+}
+
+// Count ALLOW-miss records at the destination, independent of the controller.
+// A failed echo can still emit a record; an attempt that never reached ztunnel cannot.
+func handoverBurstPolicyRecords(
+	ctx context.Context,
+	t *testing.T,
+	clientset *kubernetes.Clientset,
+	ztunnel corev1.Pod,
+) int64 {
+	t.Helper()
+	// Only the burst uses this source. Warm-up and the post-handover marker use other pods.
+	pods := clientset.CoreV1().Pods(getNamespace(ctx))
+	sources, err := pods.List(ctx, metav1.ListOptions{LabelSelector: "app=orchestration-handover-client"})
+	require.NoError(t, err)
+	require.Len(t, sources.Items, 1)
+	sourceIP := sources.Items[0].Status.PodIP
+	require.NotEmpty(t, sourceIP)
+	servers, err := pods.List(ctx,
+		metav1.ListOptions{LabelSelector: "app=orchestration-serial-server"})
+	require.NoError(t, err)
+	require.Len(t, servers.Items, 1)
+	destination := getNamespace(ctx) + "/" + servers.Items[0].Name
+	logs, err := readPodLogs(ctx, clientset, ztunnel, "istio-proxy", nil)
+	require.NoError(t, err, "read destination ztunnel logs")
+	var count int64
+	for line := range strings.SplitSeq(logs, "\n") {
+		var record struct {
+			Message string `json:"message"`
+			Proxy   struct {
+				Workload string `json:"wl"`
+			} `json:"proxy"`
+			Inbound struct {
+				Peer string `json:"peer"`
+			} `json:"inbound"`
+		}
+		if json.Unmarshal([]byte(line), &record) != nil || record.Message != "dry-run: no allow policies match" ||
+			record.Proxy.Workload != destination {
+			continue
+		}
+		if host, _, splitErr := net.SplitHostPort(record.Inbound.Peer); splitErr == nil && host == sourceIP {
+			count++
+		}
+	}
+	return count
 }
 
 func runAgentRestartRecovery(
@@ -798,8 +843,9 @@ func requireNodeHasReadyDaemonSetPod(
 	t *testing.T,
 	clientset *kubernetes.Clientset,
 	name, namespace, node string,
-) {
+) corev1.Pod {
 	t.Helper()
+	var ready corev1.Pod
 	daemonSet, err := clientset.AppsV1().DaemonSets(namespace).Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err, "get %s DaemonSet", name)
 	selector := daemonSet.Spec.Selector.MatchLabels
@@ -812,12 +858,14 @@ func requireNodeHasReadyDaemonSetPod(
 		}
 		for _, pod := range pods.Items {
 			if pod.Spec.NodeName == node && pod.DeletionTimestamp == nil && isPodReady(&pod) {
+				ready = pod
 				return true
 			}
 		}
 		return false
 	}, defaultOperationTimeout, time.Second,
 		"expected a Ready %s DaemonSet pod on node %q", name, node)
+	return ready
 }
 
 func requireReadyAgentsOnNodes(
