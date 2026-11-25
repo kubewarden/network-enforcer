@@ -178,7 +178,8 @@ func (s *istioPullFixture) restoreWorkloads(ctx context.Context, t *testing.T, c
 	expected := ptr.Deref(controller.Spec.Replicas, 1)
 	depReady := c.ResourceMatch(controller, func(_ k8s.Object) bool {
 		status := controller.Status
-		return ptr.Deref(controller.Spec.Replicas, 1) == expected && status.ObservedGeneration >= controller.Generation &&
+		return ptr.Deref(controller.Spec.Replicas, 1) == expected &&
+			status.ObservedGeneration >= controller.Generation &&
 			status.Replicas == expected &&
 			status.UpdatedReplicas == expected &&
 			status.ReadyReplicas == expected &&
