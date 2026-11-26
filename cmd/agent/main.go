@@ -22,7 +22,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -160,16 +159,9 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
-	listenConfig := net.ListenConfig{}
-	listener, err := listenConfig.Listen(ctx, "tcp", fmt.Sprintf(":%d", options.grpcPort))
-	if err != nil {
-		logger.Error("Failed to listen for the agent gRPC server", "err", err, "port", options.grpcPort)
-		os.Exit(1)
-	}
-
 	logger.Info("Starting agent")
 	exitCode := 0
-	if runErr := runAgent(ctx, cfg, buffer, server, listener, logger); runErr != nil {
+	if runErr := runAgent(ctx, cfg, buffer, server.Start, logger); runErr != nil {
 		logger.Error("Agent failed", "err", runErr)
 		exitCode = 1
 	}
@@ -180,8 +172,14 @@ func main() {
 	}
 }
 
-// run starts the tailer, blocks until the context ends, then stops the tailer.
-func run(ctx context.Context, cfg tailer.Config, h tailer.Handler, logger *slog.Logger) error {
+// run keeps the tailer running for the lifetime of the server.
+func run(
+	ctx context.Context,
+	cfg tailer.Config,
+	h tailer.Handler,
+	logger *slog.Logger,
+	serve func(context.Context) error,
+) error {
 	t, err := tailer.New(cfg, h)
 	if err != nil {
 		return err
@@ -190,9 +188,9 @@ func run(ctx context.Context, cfg tailer.Config, h tailer.Handler, logger *slog.
 		return startErr
 	}
 	logger.InfoContext(ctx, "Started tailer", "glob", cfg.Include)
-	<-ctx.Done()
+	err = serve(ctx)
 	logger.InfoContext(ctx, "Stopping tailer")
-	return t.Stop()
+	return errors.Join(err, t.Stop())
 }
 
 // validateGRPCTLS checks the certificate directory the agent serves with.

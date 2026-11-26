@@ -50,6 +50,7 @@ Always use `kubebuilder create api` and `kubebuilder create webhook` to scaffold
 ### E2E Tests Require an Isolated Kind Cluster
 The e2e tests are designed to validate the solution in an isolated environment (similar to GitHub Actions CI).
 Ensure you run them against a dedicated [Kind](https://kind.sigs.k8s.io/) cluster (not your “real” dev/prod cluster).
+In e2e tests, prefer `wait.For` with the step context and a bounded timeout. Reuse framework conditions for Kubernetes readiness. Use `context.WithTimeout` for work spanning multiple operations and pass the bounded context to each call, rather than polling a wall-clock deadline.
 
 ## After Making Changes
 

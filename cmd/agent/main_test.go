@@ -276,7 +276,7 @@ func TestRunDrainsPreRenameLogAndReadsReplacementWithProductionPattern(t *testin
 		defer close(finished)
 		done <- run(ctx, cfg, func(line tailer.Line) {
 			lineEvents <- string(line.Raw)
-		}, logger)
+		}, logger, waitForCancellation)
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -382,7 +382,7 @@ func TestRunTailsAndStops(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, cfg, h, logger) }()
+	go func() { done <- run(ctx, cfg, h, logger, waitForCancellation) }()
 
 	time.Sleep(100 * time.Millisecond)
 	f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_APPEND, 0o600)
