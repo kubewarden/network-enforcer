@@ -9,6 +9,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -31,9 +32,9 @@ func newTestLearningReconciler(t *testing.T, objs []client.Object) *LearningReco
 
 	cl := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(objs...).
+		WithObjects(append(objs, &corev1.Namespace{Name: "default"})...).
 		Build()
-	r := NewLearningReconciler(cl, scheme, ringbuf.New[violation.Observation](), nil)
+	r := NewLearningReconciler(cl, scheme, ringbuf.New[violation.Observation](), nil, labels.Everything())
 	require.NotNil(t, r)
 	return r
 }
@@ -310,6 +311,81 @@ func TestProcessKubernetesLearningEvent(t *testing.T) {
 			}
 
 			tt.assert(t, r)
+		})
+	}
+}
+
+func TestLearningNamespaceSelector(t *testing.T) {
+	t.Parallel()
+
+	learnSelector := labels.SelectorFromSet(labels.Set{"learn": "true"})
+	newRef := func(namespace, name string) *securityv1alpha1.WorkloadRef {
+		return &securityv1alpha1.WorkloadRef{
+			Namespace: namespace,
+			OwnerKind: securityv1alpha1.WorkloadKindDeployment,
+			OwnerName: name,
+			Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
+		}
+	}
+	src, dst := newRef("src", "frontend"), newRef("dst", "backend")
+	newObjs := func(learningNamespace string) []client.Object {
+		objs := []client.Object{
+			&corev1.Namespace{Name: "src"},
+			&corev1.Namespace{Name: "dst"},
+			&appsv1.Deployment{Name: "frontend", Namespace: "src"},
+			&appsv1.Deployment{Name: "backend", Namespace: "dst"},
+		}
+		for _, obj := range objs {
+			if obj.GetName() == learningNamespace {
+				obj.SetLabels(map[string]string{"learn": "true"})
+			}
+		}
+		return objs
+	}
+
+	k8s, istio := securityv1alpha1.PolicyBackendKubernetes, securityv1alpha1.PolicyBackendIstio
+	tests := []struct {
+		name          string
+		selector      labels.Selector
+		learningNS    string
+		backend       securityv1alpha1.PolicyBackend
+		expectEgress  bool
+		expectIngress bool
+	}{
+		{"kubernetes_source_namespace_matches", learnSelector, "src", k8s, true, false},
+		{"kubernetes_destination_namespace_matches", learnSelector, "dst", k8s, false, true},
+		{"kubernetes_learning_disabled", nil, "src", k8s, false, false},
+		{"istio_destination_namespace_matches", learnSelector, "dst", istio, false, true},
+		{"istio_destination_namespace_does_not_match", learnSelector, "src", istio, false, false},
+		{"istio_learning_disabled", nil, "dst", istio, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := newTestLearningReconciler(t, newObjs(tt.learningNS))
+			r.learningNamespaceSelector = tt.selector
+
+			_, err := r.Reconcile(t.Context(), netypes.LearningEvent{
+				Source:   src,
+				Dest:     dst,
+				DstPort:  8080,
+				Protocol: corev1.ProtocolTCP,
+				Backend:  tt.backend,
+			})
+			require.NoError(t, err)
+
+			assertProposal := func(ref *securityv1alpha1.WorkloadRef, dir networkingv1.PolicyType, expected bool) {
+				proposal := getProposalMetadata(ref, dir)
+				getErr := r.Get(t.Context(), proposal.NamespacedName(), proposal)
+				if expected {
+					require.NoError(t, getErr, "expected %s proposal", dir)
+				} else {
+					require.True(t, apierrors.IsNotFound(getErr), "expected no %s proposal, got %v", dir, getErr)
+				}
+			}
+			assertProposal(src, networkingv1.PolicyTypeEgress, tt.expectEgress)
+			assertProposal(dst, networkingv1.PolicyTypeIngress, tt.expectIngress)
 		})
 	}
 }

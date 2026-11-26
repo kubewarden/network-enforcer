@@ -38,6 +38,8 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	istiosecurityv1 "istio.io/client-go/pkg/apis/security/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -155,6 +157,8 @@ type config struct {
 	otel                 otelConf
 	tlsOpts              []func(*tls.Config)
 	wnpStatusSyncConfig  controller.WorkloadNetworkPolicyStatusSyncConfig
+	// learningNamespaceSelector is a JSON LabelSelector. An empty value disables learning.
+	learningNamespaceSelector string
 }
 
 func parseLogLevel(level string) (slog.Level, error) {
@@ -163,6 +167,30 @@ func parseLogLevel(level string) (slog.Level, error) {
 		return 0, fmt.Errorf("invalid log level %q: %w", level, err)
 	}
 	return parsed, nil
+}
+
+// parseLearningNamespaceSelector parses a JSON LabelSelector, for example {"matchLabels":{"env":"prod"}}.
+// It returns a nil selector when the value is empty, which disables learning.
+func parseLearningNamespaceSelector(s string) (labels.Selector, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil //nolint:nilnil // a nil selector disables learning
+	}
+	if !strings.HasPrefix(s, "{") {
+		return nil, fmt.Errorf("invalid JSON label selector %q: must be a JSON object", s)
+	}
+	var ls metav1.LabelSelector
+	if err := json.Unmarshal([]byte(s), &ls); err != nil {
+		return nil, fmt.Errorf("invalid JSON label selector %q: %w", s, err)
+	}
+	selector, err := metav1.LabelSelectorAsSelector(&ls)
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON label selector %q: %w", s, err)
+	}
+	if selector.Empty() {
+		return nil, fmt.Errorf("invalid JSON label selector %q: must not be empty if learning is enabled", s)
+	}
+	return selector, nil
 }
 
 // Reads through GetAPIReader so a cross-namespace Secret does not start a cluster-wide informer.
@@ -491,11 +519,22 @@ func run(logger *slog.Logger, conf *config) error {
 		}
 	}
 
+	learningNamespaceSelector, err := parseLearningNamespaceSelector(conf.learningNamespaceSelector)
+	if err != nil {
+		return fmt.Errorf("invalid learning-namespace-selector: %w", err)
+	}
+	if learningNamespaceSelector == nil {
+		logger.InfoContext(ctx, "Learning mode is disabled")
+	} else {
+		logger.InfoContext(ctx, "Learning mode is enabled", "namespaceSelector", learningNamespaceSelector.String())
+	}
+
 	learningReconciler := controller.NewLearningReconciler(
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		violationBuffer,
 		eventLogger,
+		learningNamespaceSelector,
 	)
 	if err = learningReconciler.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create learning reconciler: %w", err)
@@ -682,6 +721,8 @@ func main() {
 		"wnp-status-reconciler-update-interval",
 		defaultWnpStatusUpdateInterval,
 		"The interval at which WorkloadNetworkPolicy status is synced.")
+	flag.StringVar(&conf.learningNamespaceSelector, "learning-namespace-selector", "",
+		"Namespace selector for learning. Accepts a JSON LabelSelector. An empty value disables learning.")
 	flag.Parse()
 	conf.legacyIstioFlags = explicitlySetProviderFlags(flag.CommandLine)
 	// The OpenTelemetry SDK reads the other OTEL_EXPORTER_OTLP_* variables itself.

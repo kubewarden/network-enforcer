@@ -48,6 +48,9 @@ spec:
         {{- end }}
         {{- end }}
         - --wnp-status-reconciler-update-interval={{ $w.wnpStatusUpdateInterval }}
+        {{- if .Values.learning.namespaceSelector }}
+        - --learning-namespace-selector={{ .Values.learning.namespaceSelector | toJson }}
+        {{- end }}
         command:
         - /controller
         env:

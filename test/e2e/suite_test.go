@@ -179,6 +179,10 @@ func netEnforcerHelmOpts(testCfg suiteConfig) []helm.Option {
 			testCfg.wnpStatusUpdateInterval.String())),
 		// The suite deploys this collector before it installs the chart.
 		helm.WithArgs("--set", "global.otel.endpoint="+otelCollectorEndpoint(testCfg.releaseNS)),
+		helm.WithArgs("--set-json", fmt.Sprintf(
+			`'learning.namespaceSelector={"matchExpressions":null,"matchLabels":{"%s":"%s"}}'`,
+			learningNamespaceLabelKey, learningNamespaceLabelValue,
+		)),
 		helm.WithWait(),
 		helm.WithTimeout(defaultHelmTimeout.String()),
 	}

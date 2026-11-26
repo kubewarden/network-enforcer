@@ -64,7 +64,11 @@ func (r *LearningReconciler) reconcileKubernetesProposal(
 	}
 	switch len(policies) {
 	case 0:
-		// Continue and maintain the proposal.
+		// Continue and maintain the proposal if learning is allowed for the workload namespace.
+		allowed, nsErr := r.isLearningAllowed(ctx, workload.Namespace)
+		if nsErr != nil || !allowed {
+			return nsErr
+		}
 	case 1:
 		// Policy already promoted; skip learning updates for this proposal.
 		policy := policies[0]

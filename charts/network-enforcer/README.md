@@ -105,6 +105,7 @@ The top-level keys of
 | `controller.provider`     | The data-plane provider (`istio`, `cilium`, `calico`), and per-provider endpoint/TLS settings where applicable. |
 | `controller.provider.istio.agent` | Istio ztunnel log reader DaemonSet settings, enabled by default only for Istio. The controller uses authenticated mTLS by default even when local deployment is disabled. |
 | `kubernetesClusterDomain` | The DNS domain of the cluster.                                                                              |
+| `learning`                | The `namespaceSelector` that limits the namespaces where learning writes proposals. Set it to `{}` to disable learning. |
 | `priorityClass`           | The PriorityClass shared by the controller and agent pods. A `priorityClassName` overrides it.              |
 | `nameOverride`            | Replaces the chart name in the generated resource names.                                                    |
 | `fullnameOverride`        | Replaces the whole `<release>-<chart>` prefix in the generated resource names.                              |

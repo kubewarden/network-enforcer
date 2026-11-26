@@ -89,6 +89,38 @@ tests:
           path: spec.template.spec.containers[0].args
           content: --log-level=debug
 
+  - it: "should not include learning flag when there is no selector"
+    set:
+      learning:
+        # null removes the default selector. Helm merges {} with the default.
+        namespaceSelector: null
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: '--learning-namespace-selector={"matchExpressions":[{"key":"kubernetes.io/metadata.name","operator":"Exists"}]}'
+
+  - it: "should include default learning selector"
+    set:
+      learning:
+        # Helm merges {} with the default selector.
+        namespaceSelector: {}
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: '--learning-namespace-selector={"matchExpressions":[{"key":"kubernetes.io/metadata.name","operator":"Exists"}]}'
+
+  - it: "should render a custom learning namespace selector"
+    set:
+      learning:
+        namespaceSelector:
+          matchExpressions: null
+          matchLabels:
+            env: prod
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: '--learning-namespace-selector={"matchLabels":{"env":"prod"}}'
+
   - it: "uses default flow debug settings"
     set:
       controller:

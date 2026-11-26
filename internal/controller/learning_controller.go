@@ -5,8 +5,10 @@ import (
 	"fmt"
 
 	otellog "go.opentelemetry.io/otel/log"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -37,8 +39,12 @@ type LearningReconciler struct {
 	eventChan           chan event.TypedGenericEvent[types.LearningEvent]
 	violationBuffer     *ringbuf.Buffer[violation.Observation]
 	violationOtelLogger otellog.Logger
+	// learningNamespaceSelector selects the namespaces where proposals are written.
+	// A nil selector disables learning.
+	learningNamespaceSelector labels.Selector
 }
 
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets;daemonsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networkenforcer.kubewarden.io,resources=workloadnetworkpolicyproposals,verbs=get;list;watch;create;update;patch
@@ -49,6 +55,7 @@ func NewLearningReconciler(
 	scheme *runtime.Scheme,
 	violationBuffer *ringbuf.Buffer[violation.Observation],
 	violationOtelLogger otellog.Logger,
+	learningNamespaceSelector labels.Selector,
 ) *LearningReconciler {
 	return &LearningReconciler{
 		Client: client,
@@ -57,9 +64,25 @@ func NewLearningReconciler(
 			chan event.TypedGenericEvent[types.LearningEvent],
 			defaultEventChannelBufferSize,
 		),
-		violationBuffer:     violationBuffer,
-		violationOtelLogger: violationOtelLogger,
+		violationBuffer:           violationBuffer,
+		violationOtelLogger:       violationOtelLogger,
+		learningNamespaceSelector: learningNamespaceSelector,
 	}
+}
+
+// isLearningAllowed returns true when the controller can write proposals in the namespace.
+func (r *LearningReconciler) isLearningAllowed(ctx context.Context, namespace string) (bool, error) {
+	if r.learningNamespaceSelector == nil {
+		return false, nil
+	}
+	var ns corev1.Namespace
+	if err := r.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("getting Namespace %q: %w", namespace, err)
+	}
+	return r.learningNamespaceSelector.Matches(labels.Set(ns.Labels)), nil
 }
 
 func (r *LearningReconciler) setOwnerReference(
