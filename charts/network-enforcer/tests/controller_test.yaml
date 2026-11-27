@@ -121,6 +121,15 @@ tests:
           path: spec.template.spec.containers[0].args
           content: '--learning-namespace-selector={"matchLabels":{"env":"prod"}}'
 
+  - it: "should fail with an empty learning namespace selector"
+    set:
+      learning:
+        namespaceSelector:
+          matchExpressions: []
+    asserts:
+      - failedTemplate:
+          errorPattern: "learning.namespaceSelector must not be empty"
+
   - it: "uses default flow debug settings"
     set:
       controller:

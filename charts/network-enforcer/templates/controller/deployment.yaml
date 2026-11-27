@@ -48,8 +48,11 @@ spec:
         {{- end }}
         {{- end }}
         - --wnp-status-reconciler-update-interval={{ $w.wnpStatusUpdateInterval }}
-        {{- if .Values.learning.namespaceSelector }}
-        - --learning-namespace-selector={{ .Values.learning.namespaceSelector | toJson }}
+        {{- with .Values.learning.namespaceSelector }}
+        {{- if not (or .matchLabels .matchExpressions) }}
+        {{- fail "learning.namespaceSelector must not be empty: set it to null to disable learning" }}
+        {{- end }}
+        - --learning-namespace-selector={{ . | toJson }}
         {{- end }}
         command:
         - /controller
