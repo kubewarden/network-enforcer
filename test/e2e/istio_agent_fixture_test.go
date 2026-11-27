@@ -3,10 +3,15 @@ package e2e_test
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"net"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	coordinationv1 "k8s.io/api/coordination/v1"
 
 	"github.com/stretchr/testify/require"
 	"istio.io/api/annotation"
@@ -20,8 +25,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/cert"
-	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/e2e-framework/klient/k8s"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/klient/wait"
@@ -32,8 +37,10 @@ import (
 )
 
 const (
-	pullNodeRoleLabel  = "e2e.network-enforcer.io/role" // clusters/istio.yaml
-	clientLeafLifetime = 2 * time.Minute
+	istioOrchestrationLimit = 25 * time.Minute
+	istioAgentLeaseName     = "6163c1ee.networkenforcer.kubewarden.io"
+	pullNodeRoleLabel       = "e2e.network-enforcer.io/role" // clusters/istio.yaml
+	clientLeafLifetime      = 2 * time.Minute
 )
 
 // The disposable Kind cluster has one worker and one tainted control plane.
@@ -88,26 +95,10 @@ func (s *istioPullFixture) setup(ctx context.Context, t *testing.T, cfg *envconf
 
 func (s *istioPullFixture) configureController(ctx context.Context, t *testing.T) {
 	t.Helper()
-	deployments := s.client.AppsV1().Deployments(s.namespace)
-	dep, err := deployments.Get(ctx, s.controller, metav1.GetOptions{})
-	require.NoError(t, err)
-	s.controllerSelector = metav1.FormatLabelSelector(dep.Spec.Selector)
-	original := dep.Spec.DeepCopy()
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
-		defer cancel()
-		restoreErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			current, getErr := deployments.Get(cleanupCtx, s.controller, metav1.GetOptions{})
-			if getErr != nil {
-				return getErr
-			}
-			current.Spec = *original
-			_, updateErr := deployments.Update(cleanupCtx, current, metav1.UpdateOptions{})
-			return updateErr
-		})
-		require.NoError(t, restoreErr, "restore controller Deployment")
-		s.waitForControllerRollout(cleanupCtx, t, ptr.Deref(original.Replicas, 1))
-	})
+	original := &appsv1.Deployment{}
+	require.NoError(t, s.r.Get(ctx, s.controller, s.namespace, original))
+	s.controllerSelector = metav1.FormatLabelSelector(original.Spec.Selector)
+	dep := original.DeepCopy()
 	dep.Spec.Replicas = new(int32(3))
 	container := &dep.Spec.Template.Spec.Containers[0]
 	container.Args = append(container.Args, "--agent-max-in-flight=1")
@@ -120,8 +111,18 @@ func (s *istioPullFixture) configureController(ctx context.Context, t *testing.T
 	require.NotNil(t, csi)
 	require.Equal(t, "csi.cert-manager.io", csi.Driver)
 	csi.VolumeAttributes["csi.cert-manager.io/duration"] = clientLeafLifetime.String()
-	_, err = deployments.Update(ctx, dep, metav1.UpdateOptions{})
-	require.NoError(t, err, "configure controller replicas, pull limit and CSI leaf lifetime")
+	// Patch populates its target with the API response. Keep both snapshots
+	// unchanged so the inverse patch touches only the same spec fields.
+	c := s.r.GetControllerRuntimeClient()
+	require.NoError(t, c.Patch(ctx, dep.DeepCopy(), client.StrategicMergeFrom(original)),
+		"configure controller replicas, pull limit and CSI leaf lifetime")
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+		defer cancel()
+		require.NoError(t, c.Patch(cleanupCtx, original.DeepCopy(), client.StrategicMergeFrom(dep)),
+			"remove test overrides from the shared controller Deployment")
+		s.waitForControllerRollout(cleanupCtx, t, ptr.Deref(original.Spec.Replicas, 1))
+	})
 }
 
 func (s *istioPullFixture) waitForControllerRollout(ctx context.Context, t *testing.T, expected int32) {
@@ -408,4 +409,260 @@ func (s *istioPullFixture) createPullWorkloads(ctx context.Context, t *testing.T
 	require.NoError(t, err)
 	require.Len(t, servers.Items, 1)
 	return servers.Items[0].Spec.NodeName
+}
+
+type orchestrationLeader struct {
+	pods    []corev1.Pod
+	lease   coordinationv1.Lease
+	pod     corev1.Pod
+	process managerProcessState
+}
+
+func (s *istioPullFixture) onlyLeaderPulls(ctx context.Context, t *testing.T, _ *envconf.Config) context.Context {
+	t.Helper()
+	lease := readControllerLease(ctx, t, s.client, s.namespace)
+	require.Equal(t, *s.leader.lease.Spec.HolderIdentity, *lease.Spec.HolderIdentity, "initial Lease holder changed")
+	requireOnlyLeaseHolderStartedPuller(ctx, t, s.client, s.leader.pods, lease, 1)
+	return ctx
+}
+
+func (s *istioPullFixture) exactViolationCount(ctx context.Context, t *testing.T, _ *envconf.Config) context.Context {
+	t.Helper()
+	checkExactViolationCount(ctx, t)
+	s.requireSameLeader(ctx, t)
+	return ctx
+}
+
+func (s *istioPullFixture) leaderHandover(ctx context.Context, t *testing.T, _ *envconf.Config) context.Context {
+	t.Helper()
+	checkHandoverTraffic(ctx, t, func() {
+		lease := readControllerLease(ctx, t, s.client, s.namespace)
+		require.Equal(t, *s.leader.lease.Spec.HolderIdentity, *lease.Spec.HolderIdentity,
+			"the original holder must remain stable until its deletion")
+		require.NoError(t, s.client.CoreV1().Pods(s.namespace).Delete(ctx, s.leader.pod.Name, metav1.DeleteOptions{}),
+			"delete current controller Lease holder")
+		s.leader = s.renewedLeader(ctx, t, *lease.Spec.HolderIdentity, lease.Spec.RenewTime)
+		requireOnlyLeaseHolderStartedPuller(ctx, t, s.client, s.leader.pods, s.leader.lease, 1)
+	}, func() int64 { return handoverBurstPolicyRecords(ctx, t, s.client, s.ztunnel) })
+	s.leader.pods = s.readyControllerPods(ctx, t)
+	finalLease := readControllerLease(ctx, t, s.client, s.namespace)
+	require.Equal(t, *s.leader.lease.Spec.HolderIdentity, *finalLease.Spec.HolderIdentity,
+		"successor must remain Lease holder after the unrelated replacement Pod becomes Ready")
+	requireOnlyLeaseHolderStartedPuller(ctx, t, s.client, s.leader.pods, finalLease, 1)
+	return ctx
+}
+
+// Count ALLOW-miss records at the destination, independent of the controller.
+// A failed echo can still emit a record; an attempt that never reached ztunnel cannot.
+func handoverBurstPolicyRecords(
+	ctx context.Context,
+	t *testing.T,
+	clientset *kubernetes.Clientset,
+	ztunnel corev1.Pod,
+) int64 {
+	t.Helper()
+	// Only the burst uses this source. Warm-up and the post-handover marker use other pods.
+	pods := clientset.CoreV1().Pods(getNamespace(ctx))
+	sources, err := pods.List(ctx, metav1.ListOptions{LabelSelector: "app=orchestration-handover-client"})
+	require.NoError(t, err)
+	require.Len(t, sources.Items, 1)
+	sourceIP := sources.Items[0].Status.PodIP
+	require.NotEmpty(t, sourceIP)
+	servers, err := pods.List(ctx,
+		metav1.ListOptions{LabelSelector: "app=orchestration-serial-server"})
+	require.NoError(t, err)
+	require.Len(t, servers.Items, 1)
+	destination := getNamespace(ctx) + "/" + servers.Items[0].Name
+	logs, err := readPodLogs(ctx, clientset, ztunnel, "istio-proxy", nil)
+	require.NoError(t, err, "read destination ztunnel logs")
+	var count int64
+	for line := range strings.SplitSeq(logs, "\n") {
+		var record struct {
+			Message string `json:"message"`
+			Proxy   struct {
+				Workload string `json:"wl"`
+			} `json:"proxy"`
+			Inbound struct {
+				Peer string `json:"peer"`
+			} `json:"inbound"`
+		}
+		if json.Unmarshal([]byte(line), &record) != nil || record.Message != "dry-run: no allow policies match" ||
+			record.Proxy.Workload != destination {
+			continue
+		}
+		if host, _, splitErr := net.SplitHostPort(record.Inbound.Peer); splitErr == nil && host == sourceIP {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *istioPullFixture) agentReplacement(ctx context.Context, t *testing.T, _ *envconf.Config) context.Context {
+	t.Helper()
+	s.requireSameLeader(ctx, t)
+	s.replaceWorkerAgent(ctx, t)
+	s.requireSameLeader(ctx, t)
+
+	requireNoOrchestrationViolation(ctx, t, "orchestration-serial-policy",
+		"orchestration-restart-marker-client", "orchestration-serial-server")
+	sendEchoOnce(ctx, t, "orchestration-restart-marker-client",
+		"orchestration-serial-service", "restart-post-only-marker")
+	requireViolationFromSource(ctx, t, "orchestration-serial-policy",
+		"orchestration-restart-marker-client", "orchestration-serial-server")
+	return ctx
+}
+
+// CSI renews the mounted client credential in place. After all leaves issued
+// at baseline expire, replacing the worker agent forces a new TLS connection:
+// neither a cached leaf nor an already-authenticated connection can pass.
+func (s *istioPullFixture) clientCertificateRotation(
+	ctx context.Context,
+	t *testing.T,
+	_ *envconf.Config,
+) context.Context {
+	t.Helper()
+	s.requireSameLeader(ctx, t)
+	baseline := s.requireClientLeafAfter(ctx, t, time.Time{})
+	require.LessOrEqual(t, time.Until(baseline), clientLeafLifetime+time.Second, "expected a short-lived CSI leaf")
+	t.Logf("Waiting for client leaf on %s to expire at %s", s.leader.pod.Name, baseline.UTC())
+	s.requireClientLeafAfter(ctx, t, baseline)
+	s.replaceWorkerAgent(ctx, t)
+	requireNoOrchestrationViolation(
+		ctx,
+		t,
+		"orchestration-serial-policy",
+		"orchestration-cert-marker-client",
+		"orchestration-serial-server",
+	)
+	sendEchoOnce(ctx, t, "orchestration-cert-marker-client", "orchestration-serial-service", "post-renewal-marker")
+	requireViolationFromSource(
+		ctx,
+		t,
+		"orchestration-serial-policy",
+		"orchestration-cert-marker-client",
+		"orchestration-serial-server",
+	)
+	s.requireSameLeader(ctx, t)
+	return ctx
+}
+
+func readControllerLease(
+	ctx context.Context,
+	t *testing.T,
+	clientset *kubernetes.Clientset,
+	namespace string,
+) coordinationv1.Lease {
+	t.Helper()
+	lease, err := clientset.CoordinationV1().Leases(namespace).Get(ctx, istioAgentLeaseName, metav1.GetOptions{})
+	require.NoError(t, err, "read controller Lease")
+	require.NotNil(t, lease.Spec.HolderIdentity)
+	require.NotNil(t, lease.Spec.RenewTime)
+	return *lease
+}
+
+func holderPodIndex(pods []corev1.Pod, holder string) (int, bool) {
+	for index := range pods {
+		if holder == pods[index].Name || strings.HasPrefix(holder, pods[index].Name+"_") {
+			return index, true
+		}
+	}
+	return 0, false
+}
+
+func findHolderPod(t *testing.T, pods []corev1.Pod, holder string) corev1.Pod {
+	t.Helper()
+	index, found := holderPodIndex(pods, holder)
+	require.True(t, found, "Lease holder %q is not one of the Ready controller pods", holder)
+	return pods[index]
+}
+
+func requireOnlyLeaseHolderStartedPuller(
+	ctx context.Context,
+	t *testing.T,
+	clientset *kubernetes.Clientset,
+	pods []corev1.Pod,
+	lease coordinationv1.Lease,
+	maxInFlight int,
+) {
+	t.Helper()
+	leader := findHolderPod(t, pods, *lease.Spec.HolderIdentity)
+	for _, pod := range pods {
+		logs, err := readPodLogs(ctx, clientset, pod, "manager", nil)
+		require.NoError(t, err, "read manager logs for controller pod %q", pod.Name)
+		const pullerStarted = "Watching Pods for Istio agents"
+		if pod.UID == leader.UID {
+			require.Contains(t, pod.Spec.Containers[0].Args, fmt.Sprintf("--agent-max-in-flight=%d", maxInFlight),
+				"Lease holder Pod must carry the configured maxInFlight flag")
+			require.True(t, hasStructuredLogRecord(logs, func(entry map[string]any) bool {
+				return entry["msg"] == pullerStarted && entry["maxInFlight"] == float64(maxInFlight)
+			}), "Lease holder %q did not start the Istio puller with maxInFlight=%d", pod.Name, maxInFlight)
+		} else {
+			require.False(t, hasStructuredLogRecord(logs, func(entry map[string]any) bool {
+				return entry["msg"] == pullerStarted
+			}), "non-holder controller %q started the Istio puller", pod.Name)
+		}
+	}
+}
+
+func readPodLogs(
+	ctx context.Context,
+	clientset *kubernetes.Clientset,
+	pod corev1.Pod,
+	container string,
+	since *metav1.Time,
+) (string, error) {
+	options := &corev1.PodLogOptions{Container: container}
+	if since != nil {
+		options.SinceTime = since
+	}
+	data, err := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, options).Do(ctx).Raw()
+	return string(data), err
+}
+
+type managerProcessState struct {
+	containerID  string
+	restartCount int32
+	startedAt    metav1.Time
+}
+
+func requireManagerProcess(t *testing.T, pod corev1.Pod) managerProcessState {
+	t.Helper()
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == "manager" {
+			require.NotEmpty(t, status.ContainerID, "manager container ID")
+			require.NotNil(t, status.State.Running, "manager container is running")
+			return managerProcessState{
+				containerID:  status.ContainerID,
+				restartCount: status.RestartCount,
+				startedAt:    status.State.Running.StartedAt,
+			}
+		}
+	}
+	t.Fatal("manager container status was missing")
+	return managerProcessState{}
+}
+
+func (s *istioPullFixture) requireSameLeader(ctx context.Context, t *testing.T) {
+	t.Helper()
+	leader, before := s.leader.pod, s.leader.process
+	current, err := s.client.CoreV1().Pods(s.namespace).Get(ctx, leader.Name, metav1.GetOptions{})
+	require.NoError(t, err, "read controller leader Pod after operation")
+	require.Equal(t, leader.UID, current.UID, "controller leader Pod UID changed")
+	state := requireManagerProcess(t, *current)
+	require.Equal(t, before.containerID, state.containerID, "controller manager container changed")
+	require.Equal(t, before.restartCount, state.restartCount, "controller manager restarted")
+	require.Equal(t, before.startedAt, state.startedAt, "controller manager start time changed")
+	s.readyControllerPods(ctx, t)
+	lease := readControllerLease(ctx, t, s.client, s.namespace)
+	require.Equal(t, *s.leader.lease.Spec.HolderIdentity, *lease.Spec.HolderIdentity, "controller Lease holder changed")
+}
+
+func hasStructuredLogRecord(logs string, matches func(map[string]any) bool) bool {
+	for line := range strings.SplitSeq(logs, "\n") {
+		var entry map[string]any
+		if json.Unmarshal([]byte(line), &entry) == nil && matches(entry) {
+			return true
+		}
+	}
+	return false
 }
