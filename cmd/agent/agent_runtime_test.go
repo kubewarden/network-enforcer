@@ -21,12 +21,25 @@ import (
 	agentv1 "github.com/kubewarden/network-enforcer/proto/agent/v1"
 )
 
+func waitForCancellation(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
+}
+
+func TestAgentDoesNotServeWhenTailerFailsToStart(t *testing.T) {
+	err := runAgent(t.Context(), tailer.Config{}, agentbuffer.New(), func(context.Context) error {
+		t.Fatal("listener must not open before the tailer starts")
+		return nil
+	}, slog.New(slog.DiscardHandler))
+	require.Error(t, err)
+}
+
 func startTestAgent(t *testing.T, cfg tailer.Config, buffer *agentbuffer.Buffer) func() {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	logger := slog.New(slog.DiscardHandler)
-	go func() { done <- runAgent(ctx, cfg, buffer, nil, nil, logger) }()
+	go func() { done <- runAgent(ctx, cfg, buffer, waitForCancellation, logger) }()
 	var once sync.Once
 	stop := func() {
 		t.Helper()
@@ -122,7 +135,9 @@ func TestRunAgentServesBufferedEventsOverGRPC(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { done <- runAgent(ctx, cfg, buffer, srv, lis, logger) }()
+	go func() {
+		done <- runAgent(ctx, cfg, buffer, func(ctx context.Context) error { return srv.Serve(ctx, lis) }, logger)
+	}()
 	t.Cleanup(func() {
 		cancel()
 		select {

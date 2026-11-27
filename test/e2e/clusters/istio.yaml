@@ -7,5 +7,11 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
+# Pin one destination per agent for the pull/fairness tests. The control-plane
+# destination explicitly tolerates Kind's control-plane:NoSchedule taint.
 - role: control-plane
+  labels:
+    e2e.network-enforcer.io/role: control-plane
 - role: worker
+  labels:
+    e2e.network-enforcer.io/role: worker

@@ -48,6 +48,9 @@ spec:
         image: '{{ template "system_default_registry" $ctx }}{{ $agent.image.repository }}:{{ $agent.image.tag }}'
         imagePullPolicy: {{ include "network-enforcer.imagePullPolicy" $ctx }}
         name: agent
+        readinessProbe:
+          tcpSocket:
+            port: {{ $agent.grpcPort }}
         {{- with $agent.resources }}
         resources:
           {{- toYaml . | nindent 10 }}
