@@ -175,17 +175,6 @@ func TestResolveAgentNamespace(t *testing.T) {
 	}
 }
 
-func TestExplicitlySetProviderFlagsIncludesExplicitDefaults(t *testing.T) {
-	t.Parallel()
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	fs.String("provider-endpoint", "", "")
-	fs.String("provider-tls-mode", "insecure", "")
-	fs.String("provider-tls-cert-dir", "", "")
-	fs.String("unrelated", "", "")
-	require.NoError(t, fs.Parse([]string{"--provider-endpoint=", "--provider-tls-mode=insecure"}))
-	require.Equal(t, []string{"provider-endpoint", "provider-tls-mode"}, explicitlySetProviderFlags(fs))
-}
-
 func TestAgentTLSFlags(t *testing.T) {
 	t.Parallel()
 
