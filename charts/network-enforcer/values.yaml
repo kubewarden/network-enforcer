@@ -257,6 +257,21 @@ controller:
     port: 9080
     bufferSize: 10000
 
+# Learning mode configuration
+learning:
+  # The default value enables learning inside all namespaces of the cluster.
+  # Override namespaceSelector to limit the learning scope.
+  # Set namespaceSelector to null to disable learning for all namespaces.
+  # The controller writes an egress proposal only when the source workload namespace matches,
+  # and an ingress proposal only when the destination workload namespace matches.
+  # With Istio, the controller writes only ingress proposals.
+  # @schema $ref: $k8s/_definitions.json#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.LabelSelector
+  namespaceSelector:
+    # @schema hidden
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: Exists
+
 kubernetesClusterDomain: cluster.local
 
 # PriorityClass shared by the controller and Istio agent pods.

@@ -104,6 +104,10 @@ func (r *LearningReconciler) processIstioLearningEvent(ctx context.Context, req 
 	switch len(policies) {
 	case 0:
 		// no policy associated with the proposal
+		allowed, nsErr := r.isLearningAllowed(ctx, wk.Namespace)
+		if nsErr != nil || !allowed {
+			return nsErr
+		}
 		return r.updateProposal(ctx, req)
 	case 1:
 		// we do nothing, we already have a policy

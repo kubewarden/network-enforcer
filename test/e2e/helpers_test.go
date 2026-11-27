@@ -79,7 +79,10 @@ func setupTestNamespace(ctx context.Context, t *testing.T, _ *envconf.Config) co
 	testNamespace := envconf.RandomName(defaultNamespacePref, 32)
 	t.Logf("creating test namespace: %q", testNamespace)
 	err := getSecurityV1Alpha1Client(ctx).Create(ctx, &corev1.Namespace{
-		Name: testNamespace})
+		Name: testNamespace,
+		// The suite enables learning only in namespaces with this label.
+		Labels: map[string]string{learningNamespaceLabelKey: learningNamespaceLabelValue},
+	})
 	require.NoError(t, err, "failed to create test namespace %q", testNamespace)
 	return context.WithValue(ctx, key("namespace"), testNamespace)
 }

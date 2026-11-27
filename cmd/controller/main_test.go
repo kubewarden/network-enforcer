@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -74,6 +75,47 @@ func TestValidateCalicoTLSMode(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
+		})
+	}
+}
+
+func TestParseLearningNamespaceSelector(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		value    string
+		wantNil  bool
+		wantErr  bool
+		matching map[string]string
+	}{
+		{name: "empty disables learning", value: " ", wantNil: true},
+		{name: "chart default matches all namespaces",
+			value:    `{"matchExpressions":[{"key":"kubernetes.io/metadata.name","operator":"Exists"}]}`,
+			matching: map[string]string{"kubernetes.io/metadata.name": "default"}},
+		{name: "match labels", value: `{"matchLabels":{"env":"prod"}}`, matching: map[string]string{"env": "prod"}},
+		{name: "rejects empty selector", value: `{}`, wantErr: true},
+		{name: "rejects non JSON object", value: `env=prod`, wantErr: true},
+		{name: "rejects invalid operator",
+			value: `{"matchExpressions":[{"key":"env","operator":"Bad"}]}`, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			selector, err := parseLearningNamespaceSelector(tc.value)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			if tc.wantNil {
+				require.Nil(t, selector)
+				return
+			}
+			require.True(t, selector.Matches(labels.Set(tc.matching)))
+			require.False(t, selector.Matches(labels.Set{}))
 		})
 	}
 }

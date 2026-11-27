@@ -414,6 +414,15 @@
         "kubernetesClusterDomain": {
             "type": "string"
         },
+        "learning": {
+            "type": "object",
+            "properties": {
+                "namespaceSelector": {
+                    "$ref": "#/$defs/_definitions.json/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.LabelSelector",
+                    "type": "object"
+                }
+            }
+        },
         "nameOverride": {
             "type": "string"
         },
