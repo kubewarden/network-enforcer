@@ -150,7 +150,6 @@ type config struct {
 	logLevel             string
 	provider             providerConfig
 	agent                agentConfig
-	legacyIstioFlags     []string
 	flowDumper           flowdumper.Config
 	otel                 otelConf
 	tlsOpts              []func(*tls.Config)
@@ -192,25 +191,6 @@ func newAgentClientFactory(conf *config) (*grpcexporter.AgentClientFactory, erro
 		return nil, fmt.Errorf("unable to create agent client factory: %w", err)
 	}
 	return factory, nil
-}
-
-func explicitlySetProviderFlags(fs *flag.FlagSet) []string {
-	legacy := map[string]bool{
-		"provider-endpoint":          true,
-		"provider-tls-mode":          true,
-		"provider-tls-cert-dir":      true,
-		"provider-tls-cert-secret":   true,
-		"provider-tls-ca-configmap":  true,
-		"provider-tls-ca-bundle-key": true,
-		"provider-tls-server-name":   true,
-	}
-	var explicitlySet []string
-	fs.Visit(func(f *flag.Flag) {
-		if legacy[f.Name] {
-			explicitlySet = append(explicitlySet, f.Name)
-		}
-	})
-	return explicitlySet
 }
 
 // validateCalicoTLSMode rejects plaintext; Goldmane requires mTLS.
@@ -416,7 +396,7 @@ func resolveAgentNamespace(namespace, namespaceFile string) (string, error) {
 	return namespace, nil
 }
 
-func validateProviderConfiguration(logger *slog.Logger, conf *config) error {
+func validateProviderConfiguration(conf *config) error {
 	if types.Provider(conf.provider.name) != types.ProviderIstio {
 		if err := certsource.Validate(conf.provider.certSourceConfig()); err != nil {
 			return fmt.Errorf("invalid provider TLS flags: %w", err)
@@ -431,14 +411,11 @@ func validateProviderConfiguration(logger *slog.Logger, conf *config) error {
 	if conf.agent.maxRecvMsgSize <= 0 {
 		return errors.New("--agent-grpc-max-recv-msg-size must be positive")
 	}
-	for _, name := range conf.legacyIstioFlags {
-		logger.Warn("Istio provider flag is deprecated and ignored; use the agent pull settings", "flag", "--"+name)
-	}
 	return nil
 }
 
 func run(logger *slog.Logger, conf *config) error {
-	if err := validateProviderConfiguration(logger, conf); err != nil {
+	if err := validateProviderConfiguration(conf); err != nil {
 		return err
 	}
 
@@ -683,7 +660,6 @@ func main() {
 		defaultWnpStatusUpdateInterval,
 		"The interval at which WorkloadNetworkPolicy status is synced.")
 	flag.Parse()
-	conf.legacyIstioFlags = explicitlySetProviderFlags(flag.CommandLine)
 	// The OpenTelemetry SDK reads the other OTEL_EXPORTER_OTLP_* variables itself.
 	conf.otel.Endpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	conf.otel.Protocol = os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
