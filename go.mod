@@ -22,7 +22,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.opentelemetry.io/proto/otlp v1.11.1
 	go.uber.org/zap v1.28.0
-	golang.org/x/sync v0.25.0
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	istio.io/api v1.32.0
@@ -31,7 +30,8 @@ require (
 	k8s.io/apiextensions-apiserver v0.37.2
 	k8s.io/apimachinery v0.37.2
 	k8s.io/client-go v0.37.2
-	sigs.k8s.io/controller-runtime v0.25.2
+	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
+	sigs.k8s.io/controller-runtime v0.25.3
 	sigs.k8s.io/e2e-framework v0.7.0
 )
 
@@ -116,6 +116,7 @@ require (
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/oauth2 v0.38.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
@@ -132,7 +133,6 @@ require (
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/streaming v0.37.2 // indirect
-	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
